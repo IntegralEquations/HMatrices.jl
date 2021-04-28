@@ -1,0 +1,13 @@
+name = "HMatrices"
+uuid = "8646bddf-ab1c-4fa7-9c51-ba187d647618"
+authors = ["Luiz M. Faria <maltezfaria@gmail.com> and contributors"]
+version = "0.1.0"
+
+[compat]
+julia = "1"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
