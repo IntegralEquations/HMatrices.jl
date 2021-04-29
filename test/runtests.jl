@@ -1,6 +1,7 @@
-using HMatrices
-using Test
+using SafeTestsets
 
-@testset "HMatrices.jl" begin
-    # Write your tests here.
-end
+@safetestset "Hyperrectangle" begin include("hyperrectangle_test.jl") end
+
+@safetestset "Clustertree" begin include("clustertree_test.jl") end
+
+@safetestset "Blocktree" begin include("clustertree_test.jl") end
