@@ -8,6 +8,8 @@ struct HyperRectangle{N,T}
     low_corner::SVector{N,T}
     high_corner::SVector{N,T}
 end
+HyperRectangle(lc::SVector,hc::SVector) = HyperRectangle(promote(lc,hc)...)
+
 low_corner(r::HyperRectangle)  = r.low_corner
 high_corner(r::HyperRectangle) = r.high_corner
 low_corner(r::HyperRectangle,i::Int)  = r.low_corner[i]
@@ -53,7 +55,7 @@ function Base.split(rec::HyperRectangle,axis,place)
     return (rec1, rec2)
 end
 function Base.split(rec::HyperRectangle,axis)
-    place              = (rec.high_corner[axis] + rec.low_corner[axis])/2
+    place        = (rec.high_corner[axis] + rec.low_corner[axis])/2
     split(rec,axis,place)
 end
 function Base.split(rec::HyperRectangle)
@@ -82,18 +84,29 @@ function distance(rec1::HyperRectangle{N},rec2::HyperRectangle{N}) where {N}
     return sqrt(d2)
 end
 
-"""
-    HyperRectangle(pts::Vector{<:SVector})
 
-Contruct the smallest [`HyperRectangle`](@ref) containing all `pts`.
+
 """
-function HyperRectangle{N,T}(pts::Vector{SVector{N,T}}) where {N,T}
-    pt_min = reduce((x, v) -> min.(x, v), pts)
-    pt_max = reduce((x, v) -> max.(x, v), pts)
-    return HyperRectangle(pt_min,pt_max)
+    HyperRectangle(pts::Vector{<:SVector},cube=false)
+
+Contruct the smallest [`HyperRectangle`](@ref) containing all `pts`. If
+`cube=true`, construct instead the smallest hypercube containing all `pts`. Note
+that hypercube is not a type in itself, and therefore whether or not a
+`HyperRectangle` is a hypercube has to be determined dynamically.
+"""
+function HyperRectangle{N,T}(pts::AbstractVector{SVector{N,T}},cube::Bool=false) where {N,T}
+    lb = reduce((x, v) -> min.(x, v), pts) # lower bound
+    ub = reduce((x, v) -> max.(x, v), pts) # upper bound
+    if cube # fit a square/cube instead
+        w  = maximum(ub-lb)
+        xc = (ub + lb) / 2
+        lb = xc .- w/2
+        ub = xc .+ w/2
+    end
+    return HyperRectangle(lb,ub)
 end
-function HyperRectangle(pts::Vector{SVector{N,T}}) where {N,T}
-    HyperRectangle{N,T}(pts)
+function HyperRectangle(pts::AbstractVector{SVector{N,T}},args...) where {N,T}
+    HyperRectangle{N,T}(pts,args...)
 end
 
 center(rec::HyperRectangle) = (rec.low_corner + rec.high_corner) ./ 2
