@@ -4,4 +4,8 @@ using SafeTestsets
 
 @safetestset "Clustertree" begin include("clustertree_test.jl") end
 
-@safetestset "Blocktree" begin include("clustertree_test.jl") end
+@safetestset "Lowrank matrices" begin include("lowrankmatrices_test.jl") end
+
+@safetestset "Compressors" begin include("compressor_test.jl") end
+
+@safetestset "HMatrix" begin include("hmatrix_test.jl") end

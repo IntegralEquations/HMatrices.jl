@@ -86,13 +86,8 @@ An optional first argument can be passed to control how the assembling is done.
 The current options are:
 - `::CPU1`
 - `::CPUThreads`
-- `tg::TaskGraph`
-
-When a `tg::TaskGraph` is passed, the computations are delayed until `execute`
-is called on the `tg`, meaning the returned `HMatrix` is still empty and should
-not be immediately used.
 """
-function HMatrix(resource::Union{AbstractResource,HS.Scheduler},
+function HMatrix(resource::Union{AbstractResource},
                 K,rowtree,coltree,adm,comp;
                 permute_kernel=true)
     T  = eltype(K)

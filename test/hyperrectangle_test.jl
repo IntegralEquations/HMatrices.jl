@@ -3,7 +3,7 @@ using HMatrices
 using Test
 using LinearAlgebra
 
-using HMatrices: HyperRectangle, center, diameter, radius
+using HMatrices: HyperRectangle, center, diameter, radius, distance
 
 @testset "HyperRectangle" begin
     low_corner  = SVector(0.0,0.0)
@@ -29,5 +29,19 @@ using HMatrices: HyperRectangle, center, diameter, radius
             push!(pts,SVector(x,y))
         end
     end
-    @test HyperRectangle(pts) == HyperRectangle(SVector(-1.,-1),SVector(1,1.))
+    @test HyperRectangle(pts)      == HyperRectangle(SVector(-1.,-1),SVector(1,1.))
+    @test HyperRectangle(pts,true) == HyperRectangle(SVector(-1.,-1),SVector(1,1.))
+    pts = SVector{2,Float64}[]
+    for x=-1:0.1:1
+        for y=-1:0.1:2
+            push!(pts,SVector(x,y))
+        end
+    end
+    @test HyperRectangle(pts)      == HyperRectangle(SVector(-1.,-1),SVector(1,2.))
+    @test HyperRectangle(pts,true) == HyperRectangle(SVector(-1.5,-1),SVector(3/2,2.))
+    rec1 = HyperRectangle(SVector(0,0),SVector(1,1))
+    rec2 = HyperRectangle(SVector(2,0),SVector(3,1))
+    @test distance(rec1,rec2) ≈ 1
+    rec2 = HyperRectangle(SVector(2,2),SVector(3,3))
+    distance(rec1,rec2) ≈ sqrt(2)
 end
