@@ -66,7 +66,7 @@ A `BlockTree` is admissible under this condition if the minimum of the
 between the `ClusterTree`s, where `eta::Float64` is an adjustable parameter.
 """
 Base.@kwdef struct StrongAdmissibilityStd <: AbstractAdmissibilityCondition
-    eta::Float64=Parameters.eta
+    eta::Float64=3.0
 end
 
 function (adm::StrongAdmissibilityStd)(left_node::ClusterTree, right_node::ClusterTree)
@@ -112,7 +112,7 @@ end
 """
     _build_block_tree!(adm_fun,current_node)
 
-Recursive constructor for [`BlockClusterTree`](@ref). Should not be called directly.
+Recursive constructor for [`BlockTree`](@ref). Should not be called directly.
 """
 function _build_block_tree!(adm, current_node)
     if adm(current_node)
@@ -134,4 +134,18 @@ end
 
 function Base.show(io::IO,tree::BlockTree)
     print(io,"BlockTree spanning $(rowrange(tree)) × $(colrange(tree))")
+end
+
+function Base.summary(tree::BlockTree)
+    print("BlockTree spanning $(rowrange(tree)) × $(colrange(tree))")
+    nodes = collect(AbstractTrees.PreOrderDFS(tree))
+    @printf "\n\t number of nodes: %i" length(nodes)
+    leaves = collect(AbstractTrees.Leaves(tree))
+    @printf "\n\t number of leaves: %i" length(leaves)
+    points_per_leaf = map(length,leaves)
+    @printf "\n\t min number of elements per leaf: %i" minimum(points_per_leaf)
+    @printf "\n\t max number of elements per leaf: %i" maximum(points_per_leaf)
+    depth_per_leaf = map(depth,leaves)
+    @printf "\n\t min depth of leaves: %i" minimum(depth_per_leaf)
+    @printf "\n\t max depth of leaves: %i" maximum(depth_per_leaf)
 end

@@ -1,53 +1,37 @@
 """
-    mutable struct ClusterTree{T,S}
+    mutable struct ClusterTree{N,T}
 
-Tree structure used to hierarchically sort data of type `Vector{T}` into
-containers of type `S`. For example a
-`ClusterTree{SVector{3,Float64},HyperRectangle{3,Float64}}` can be used to sort
-points in three dimensions into axis aligned hyperrectangles.
+Tree structure used to hierarchically sort points in `N` dimensions.
 
-A `ClusterTree` node explicitly stores its `parent` and its `children`. The
-`data` field references the data at the root level of the tree which was
-used in the construction. The data inside the node is given by
-`data[index_range]`. In order for the `data` in each node to be contiguous, the
-`data` vector is permuted during the construction of the tree. This permutation
-is stored in the `perm` field.
+Each node in the tree contains the indices `loc2glob[loc_idxs]`.
 """
-mutable struct ClusterTree{T,S}
-    data::Vector{T}
-    perm::Vector{Int}
-    container::S
-    index_range::UnitRange{Int}
-    children::Maybe{Vector{ClusterTree{T,S}}}
-    parent::Maybe{ClusterTree{T,S}}
+mutable struct ClusterTree{N,T}
+    points::Vector{SVector{N,T}}
+    weights::Vector{T}
+    loc_idxs::UnitRange{Int}
+    bounding_box::HyperRectangle{N,T}
+    loc2glob::Vector{Int}
+    glob2loc::Vector{Int}
+    children::Maybe{Vector{ClusterTree{N,T}}}
+    parent::Maybe{ClusterTree{N,T}}
 end
 
-Base.eltype(tree::ClusterTree{T}) where T = T
-container_type(tree::ClusterTree{T,S}) where {T,S} = S
-
 # interface to AbstractTrees
-AbstractTrees.children(clt::ClusterTree) = getchildren(clt)
+AbstractTrees.children(clt::ClusterTree) = clt.children
 
-# setters and getters
+isleaf(clt::ClusterTree) = clt.children  === ()
+isroot(clt::ClusterTree) = clt.parent    === ()
+
 getchildren(clt::ClusterTree) = clt.children
-getparent(clt::ClusterTree)   = clt.parent
-getdata(clt::ClusterTree)     = clt.data
-getperm(clt::ClusterTree)     = clt.perm
-setchildren!(clt::ClusterTree,children) = (clt.children = children)
-setparent!(clt::ClusterTree,parent)     = (clt.parent   = parent)
-setdata!(clt::ClusterTree,data)     = (clt.data = data)
-container(clt::ClusterTree) = clt.container
 
-isleaf(clt::ClusterTree) = getchildren(clt)  === ()
-isroot(clt::ClusterTree) = getparent(clt) === ()
+diameter(node::ClusterTree)                      = diameter(node.bounding_box)
+radius(node::ClusterTree)                        = diameter(node)/2
+distance(node1::ClusterTree,node2::ClusterTree)  = distance(node1.bounding_box, node2.bounding_box)
 
-diameter(node::ClusterTree)                         = diameter(container(node))
-distance(node1::ClusterTree,node2::ClusterTree)     = distance(container(node1), container(node2))
+dimension(clt::ClusterTree{N}) where {N} = N
 
-dimension(clt::ClusterTree) = container(clt) |> dimension
-
-Base.length(node::ClusterTree) = length(node.index_range)
-Base.range(node::ClusterTree)  = node.index_range
+Base.length(node::ClusterTree) = length(node.loc_idxs)
+Base.range(node::ClusterTree)  = node.loc_idxs
 
 """
     ClusterTree(data,splitter)
@@ -55,33 +39,32 @@ Base.range(node::ClusterTree)  = node.index_range
 Construct a `ClusterTree` from the  given `data` using the splitting strategy
 encoded in `splitter`.
 """
-function ClusterTree(;data,splitter=CardinalitySplitter(),container=HyperRectangle(data),reorder=true)
-    if reorder
-        @info "Input data modified upon construction of ClusterTree"
-    else
-        data = copy(data)
+function ClusterTree(points::Vector{SVector{N,T}},splitter;weights=T[]) where {N,T}
+    @timeit "ClusterTree construction" begin
+        bbox         = HyperRectangle(points)
+        n            = length(points)
+        loc_idxs     = 1:n
+        loc2glob     = collect(loc_idxs)
+        glob2loc     = copy(loc2glob)
+        children     = ()
+        parent       = ()
+        #build the root, then recurse
+        root         = ClusterTree(points,weights,loc_idxs,bbox,loc2glob,glob2loc,children,parent)
+        _build_cluster_tree!(root,splitter)
+        root.glob2loc = invperm(root.loc2glob)
     end
-    n_el    = length(data)
-    indices   = collect(1:n_el)
-    #build the root, then recurse
-    root    = ClusterTree(data,indices,container,1:n_el,(),())
-    _build_cluster_tree!(root,splitter)
     return root
 end
 
 function _build_cluster_tree!(current_node,splitter)
     if should_split(current_node,splitter)
         children          = split!(current_node,splitter)
-        setchildren!(current_node,children)
+        current_node.children = children
         for child in children
-            setparent!(child,current_node)
+            child.parent = current_node
             _build_cluster_tree!(child,splitter)
         end
     end
-end
-
-function Base.show(io::IO,tree::ClusterTree)
-    print(io,"ClusterTree with $(length(tree)) elements of type $(eltype(tree))")
 end
 
 """
@@ -117,9 +100,39 @@ function split!(clt,splitter)
 end
 
 """
+    struct DyadicSplitter
+
+Used to split an `N` dimensional `ClusterTree` into `2^N` children until at most
+`nmax` points are contained in node *or* the depth `dmax` is reached.
+"""
+Base.@kwdef struct DyadicSplitter <: AbstractSplitter
+    nmax::Int=typemax(Int)
+    dmax::Int=-1
+end
+
+function should_split(node::ClusterTree,splitter::DyadicSplitter)
+    length(node) > splitter.nmax || depth(node) < splitter.dmax
+end
+
+function split!(cluster::ClusterTree,splitter::DyadicSplitter)
+    d        = dimension(cluster)
+    clusters = [cluster]
+    for i in 1:d
+        rec  = cluster.bounding_box
+        pos = (rec.high_corner[i] + rec.low_corner[i])/2
+        nel = length(clusters) #2^(i-1)
+        for _ in 1:nel
+            clt = popfirst!(clusters)
+            append!(clusters,_binary_split!(clt,i,pos))
+        end
+    end
+    return clusters
+end
+
+"""
     struct GeometricSplitter <: AbstractSplitter
 
-Used to split a `ClusterTree` along the largest dimension if `length(tree)>nmax`.
+Used to split a `ClusterTree` in half along the largest axis.
 """
 @Base.kwdef struct GeometricSplitter <: AbstractSplitter
     nmax::Int=50
@@ -128,9 +141,10 @@ end
 should_split(node::ClusterTree,splitter::GeometricSplitter) = length(node) > splitter.nmax
 
 function split!(cluster::ClusterTree,splitter::GeometricSplitter)
-    rec         = container(cluster)
-    wmax, imax  = findmax(rec.high_corner - rec.low_corner)
-    return _binary_split(cluster, imax, rec.low_corner[imax]+wmax/2, false)
+    rec          = cluster.bounding_box
+    wmax, imax   = findmax(rec.high_corner - rec.low_corner)
+    left_node, right_node = _binary_split!(cluster, imax, rec.low_corner[imax]+wmax/2)
+    return [left_node, right_node]
 end
 
 """
@@ -145,35 +159,46 @@ end
 should_split(node::ClusterTree,splitter::GeometricMinimalSplitter) = length(node) > splitter.nmax
 
 function split!(cluster::ClusterTree,splitter::GeometricMinimalSplitter)
-    rec  = container(cluster)
-    wmax, imax          = findmax(rec.high_corner - rec.low_corner)
-    return _binary_split(cluster, imax, rec.low_corner[imax]+wmax/2)
+    rec  = cluster.bounding_box
+    wmax, imax  = findmax(rec.high_corner - rec.low_corner)
+    mid = rec.low_corner[imax]+wmax/2
+    predicate = (x) -> x[imax] < mid
+    left_node,right_node =  _binary_split!(predicate,cluster)
+    return [left_node, right_node]
 end
 
 """
-    struct QuadOctSplitter <: AbstractSplitter
-
-Used to split a `ClusterTree` into `2^N` equally sized children.
+    struct PrincipalComponentSplitter <: AbstractSplitter
 """
-@Base.kwdef struct QuadOctSplitter <: AbstractSplitter
+@Base.kwdef struct PrincipalComponentSplitter <: AbstractSplitter
     nmax::Int=50
 end
 
-should_split(node::ClusterTree,splitter::QuadOctSplitter) = length(node) > splitter.nmax
+should_split(node::ClusterTree,splitter::PrincipalComponentSplitter) = length(node) > splitter.nmax
 
-function split!(cluster::ClusterTree,splitter::QuadOctSplitter)
-    d    = dimension(cluster)
-    clusters = [cluster]
-    for i=1:d
-        rec  = container(cluster)
-        pos = (rec.high_corner[i] + rec.low_corner[i])/2
-        nel = length(clusters)#2^(i-1)
-        for k=1:nel
-            clt = popfirst!(clusters)
-            append!(clusters,_binary_split(clt,i,pos, false))
-        end
+function split!(cluster::ClusterTree,splitter::PrincipalComponentSplitter)
+    pts       = cluster.points
+    loc_idxs  = cluster.loc_idxs
+    glob_idxs = view(cluster.loc2glob,loc_idxs)
+    xc   = centroid(cluster)
+    cov  = sum(glob_idxs) do i
+        (pts[i] - xc)*transpose(pts[i] - xc)
     end
-    return clusters
+    v = eigvecs(cov)[:,end]
+    predicate = (x) -> dot(x-xc,v) < 0
+    left_node, right_node = _binary_split!(predicate,cluster)
+    return [left_node, right_node]
+end
+
+function centroid(clt::ClusterTree)
+    pts       = clt.points
+    loc_idxs  = clt.loc_idxs
+    glob_idxs = view(clt.loc2glob,loc_idxs)
+    w    = clt.weights
+    n    = length(loc_idxs)
+    M    = isempty(w) ? n : sum(i->w[i],glob_idxs)
+    xc   = isempty(w) ? sum(i->pts[i]/M,glob_idxs) : sum(i->w[i]*pts[i]/M,glob_idxs)
+    return xc
 end
 
 """
@@ -190,75 +215,149 @@ end
 should_split(node::ClusterTree,splitter::CardinalitySplitter) = length(node) > splitter.nmax
 
 function split!(cluster::ClusterTree,splitter::CardinalitySplitter)
-    data                = getdata(cluster)
-    rec                 = container(cluster)
-    index_range         = cluster.index_range
-    wmax, imax          = findmax(rec.high_corner - rec.low_corner)
-    med                 = median(data[n][imax] for n in index_range) # the median along largest axis `imax`
-    return _binary_split(cluster, imax, med)
+    points     = cluster.points
+    loc_idxs   = cluster.loc_idxs
+    glob_idxs  = view(cluster.loc2glob,loc_idxs)
+    rec        = cluster.bounding_box
+    _, imax  = findmax(rec.high_corner - rec.low_corner)
+    med         = median(points[i][imax] for i in glob_idxs) # the median along largest axis `imax`
+    predicate = (x) -> x[imax] < med
+    left_node, right_node = _binary_split!(predicate,cluster)
+    return [left_node, right_node]
 end
 
-# TODO: implement nested dissection splitter
-# """
-#     struct NestedDissectionSplitter <: AbstractSplitter
-# """
-# @Base.kwdef struct NestedDissectionSplitter <: AbstractSplitter
-#     nmax::Int=50
-# end
-
-# function split!(cluster::ClusterTree,splitter::NestedDissectionSplitter)
-#     clt1, clt2 = split(cluster,GeometricMinimalSplitter(splitter.nmax))
-#     S          = getconnectivity(getdata(cluster))
-#     perm       = cluster.perm
-#     tmp        = Int[]
-#     for i in clt1.index_range
-#         for j in clt2.index_range
-#             if S[perm[i],perm[j]] != 0
-#                 push!(tmp,j)
-#                 push!(tmp,i)
-#             end
-#         end
-#     end
-#     # sep = Cluster(data,perm,bbox,sep_index_range,(),cluster)
-#     return [clt1, clt2, tmp]
-# end
-
 """
-    _binary_split(clt::ClusterTree,dir,pos,shrink=true)
+    _binary_split!(node::ClusterTree,dir,pos)
+    _binary_split!(f,node::ClusterTree)
 
-Generate two `ClusterTree`s by dividing the `container` of `clt` along `dir` at
-`pos`. If `shrink==true`, a minimal container is generated for the children clusters.
+Split a `ClusterTree` into two, sorting all points and data in the process.
+
+Passing a `dir` and `pos` arguments splits the `bounding_box` box of `node`
+along direction `dir` at position `pos`, then sorts all points into the
+resulting  left/right nodes.
+
+If passed a predicate `f`, each point is sorted
+according to whether `f(x)` returns `true` (point sorted on
+the left node) or `false` (point sorted on the right node). At the end a minimal
+`HyperRectangle` containing all left/right points is created.
 """
-function _binary_split(cluster::ClusterTree,dir,pos,shrink=true)
-    B                   = container_type(cluster)
-    perm                = cluster.perm
-    rec                 = container(cluster)
-    index_range         = cluster.index_range
-    data                = getdata(cluster)
-    left_rec, right_rec = split(rec, dir, pos)
-    perm_idxs           = Vector{Int}(undef,length(cluster))
-    npts_left           = 0
-    npts_right          = 0
+function _binary_split!(cluster::ClusterTree{N,T},dir::Int,pos::Number) where {N,T}
+    points        = cluster.points
+    weights       = cluster.weights
+    loc_idxs      = cluster.loc_idxs
+    glob_idxs     = view(cluster.loc2glob,loc_idxs)
+    glob_idxs_new = view(cluster.glob2loc,loc_idxs)
+    npts_left  = 0
+    npts_right = 0
+    rec = cluster.bounding_box
+    left_rec, right_rec = split(rec,dir,pos)
+    n                   = length(loc_idxs)
     #sort the points into left and right rectangle
-    for i in cluster.index_range
-        pt = data[i]
+    for i in glob_idxs
+        pt = points[i]
         if pt in left_rec
             npts_left += 1
-            perm_idxs[npts_left] = i
-        else
-            perm_idxs[length(cluster)-npts_right] = i
+            glob_idxs_new[npts_left]    = i
+        else  pt # pt in right_rec
+            glob_idxs_new[n-npts_right] = i
             npts_right += 1
         end
     end
-    perm[index_range]     = perm[perm_idxs]
-    data[index_range]     = data[perm_idxs] # reorders the global index set
-    left_index_range      = index_range.start:(index_range.start)+npts_left-1
-    right_index_range     = (index_range.start+npts_left):index_range.stop
-    if shrink
-        left_rec   = B(data[left_index_range])
-        right_rec  = B(data[right_index_range])
-    end
-    clt1 = ClusterTree(data, perm, left_rec,  left_index_range,  (), cluster)
-    clt2 = ClusterTree(data, perm, right_rec, right_index_range, (), cluster)
-    return [clt1, clt2]
+    @assert npts_left + npts_right == n "points lost during split"
+    # update loc2glob map
+    copy!(glob_idxs,glob_idxs_new)
+    # new ranges for cluster
+    left_indices      = loc_idxs.start:(loc_idxs.start)+npts_left-1
+    right_indices     = (loc_idxs.start+npts_left):loc_idxs.stop
+    # create children
+    clt1 = ClusterTree(points,weights,left_indices,  left_rec,  cluster.loc2glob, cluster.glob2loc,(), cluster)
+    clt2 = ClusterTree(points,weights,right_indices, right_rec, cluster.loc2glob, cluster.glob2loc,(), cluster)
+    return clt1, clt2
 end
+
+function _binary_split!(f::Function,cluster::ClusterTree{N,T}) where {N,T}
+    points        = cluster.points
+    weights       = cluster.weights
+    loc_idxs      = cluster.loc_idxs
+    glob_idxs     = view(cluster.loc2glob,loc_idxs)
+    glob_idxs_new = view(cluster.glob2loc,loc_idxs)
+    npts_left  = 0
+    npts_right = 0
+    xl_left = xl_right = svector(i->typemax(T),N)
+    xu_left = xu_right = svector(i->typemin(T),N)
+    n          = length(loc_idxs)
+    #sort the points into left and right rectangle
+    for i in glob_idxs
+        pt = points[i]
+        if f(pt)
+            xl_left = min.(xl_left,pt)
+            xu_left = max.(xu_left,pt)
+            npts_left += 1
+            glob_idxs_new[npts_left]    = i
+        else
+            xl_right = min.(xl_right,pt)
+            xu_right = max.(xu_right,pt)
+            glob_idxs_new[n-npts_right] = i
+            npts_right += 1
+        end
+    end
+    @assert npts_left + npts_right == n "points lost during split"
+    # update loc2glob map
+    copy!(glob_idxs,glob_idxs_new)
+    # new ranges for cluster
+    left_indices      = loc_idxs.start:(loc_idxs.start)+npts_left-1
+    right_indices     = (loc_idxs.start+npts_left):loc_idxs.stop
+    # compute bounding boxes
+    left_rec   = HyperRectangle(xl_left,xu_left)
+    right_rec  = HyperRectangle(xl_right,xu_right)
+    # create children
+    clt1 = ClusterTree(points,weights,left_indices,  left_rec,  cluster.loc2glob, cluster.glob2loc,(), cluster)
+    clt2 = ClusterTree(points,weights,right_indices, right_rec, cluster.loc2glob, cluster.glob2loc,(), cluster)
+    return clt1, clt2
+end
+
+function Base.show(io::IO,tree::ClusterTree{N,T}) where {N,T}
+    print(io,"ClusterTree with $(length(tree)) elements of type Point{$N,$T}")
+end
+
+function Base.summary(clt::ClusterTree)
+    @printf "Cluster tree with %i elements" length(clt)
+    nodes = collect(AbstractTrees.PreOrderDFS(clt))
+    @printf "\n\t number of nodes: %i" length(nodes)
+    leaves = collect(AbstractTrees.Leaves(clt))
+    @printf "\n\t number of leaves: %i" length(leaves)
+    points_per_leaf = map(length,leaves)
+    @printf "\n\t min number of elements per leaf: %i" minimum(points_per_leaf)
+    @printf "\n\t max number of elements per leaf: %i" maximum(points_per_leaf)
+    depth_per_leaf = map(depth,leaves)
+    @printf "\n\t min depth of leaves: %i" minimum(depth_per_leaf)
+    @printf "\n\t max depth of leaves: %i" maximum(depth_per_leaf)
+end
+
+"""
+    struct StrongAdmissibilityStd
+
+A `BlockTree` is admissible under this condition if the minimum of the
+`diameter` of its `ClusterTree`s is smaller than `eta` times the `distance`
+between the `ClusterTree`s, where `eta::Float64` is an adjustable parameter.
+"""
+Base.@kwdef struct StrongAdmissibilityStd
+    eta::Float64=3.0
+end
+
+function (adm::StrongAdmissibilityStd)(left_node::ClusterTree, right_node::ClusterTree)
+    diam_min = minimum(diameter,(left_node,right_node))
+    dist     = distance(left_node,right_node)
+    return diam_min < adm.eta*dist
+end
+
+"""
+    struct WeakAdmissibilityStd
+
+A `BlockTree` is admissible under this condition if the `distance`
+between its `ClusterTree`s is positive.
+"""
+struct WeakAdmissibilityStd
+end
+
+(adm::WeakAdmissibilityStd)(left_node::ClusterTree, right_node::ClusterTree) = distance(left_node,right_node) > 0
