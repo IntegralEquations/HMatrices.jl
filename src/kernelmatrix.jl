@@ -7,7 +7,7 @@ Concrete subtypes should implement at least
 
     `Base.getindex(K::AbstractKernelMatrix,i::Int,j::Int)`
 
-See [`LaplaceMatrixVec`](@ref) for an example of an implementation.
+See [`LaplaceMatrix`](@ref) for an example of an implementation.
 """
 abstract type AbstractKernelMatrix{T} <: AbstractMatrix{T} end
 
@@ -21,15 +21,71 @@ parameter `T` is the return type, and `Td` is the type used to reprenset the
 points `X` and `Y`.
 """
 struct LaplaceMatrix{T,Td} <: AbstractKernelMatrix{T}
-    X::Vector{SVector{3,Td}}
-    Y::Vector{SVector{3,Td}}
+    X::Matrix{Td}
+    Y::Matrix{Td}
+    function LaplaceMatrix{T}(X::Matrix{Td},Y::Matrix{Td}) where {T,Td}
+        @assert size(X,2) == size(Y,2) == 3
+        new{T,Td}(X,Y)
+    end
 end
-LaplaceMatrix{T}(X::Vector{SVector{3,Td}},Y::Vector{SVector{3,Td}}) where {T,Td} = LaplaceMatrix{T,Td}(X,Y)
+
+function LaplaceMatrix{T}(_X::Vector{SVector{3,Td}},_Y::Vector{SVector{3,Td}}) where {T,Td}
+    X = reshape(reinterpret(Td,_X), 3,:) |> transpose |> collect
+    Y = reshape(reinterpret(Td,_Y), 3,:) |> transpose |> collect
+    LaplaceMatrix{T}(X,Y)
+end
 LaplaceMatrix(args...) = LaplaceMatrix{Float64}(args...) # default to Float64
 
-function Base.getindex(K::LaplaceMatrix{T},i::Int,j::Int)::T where {T}
-    d = norm(K.X[i]-K.Y[j])
-    inv(4π*d)
+@inline function Base.getindex(K::LaplaceMatrix{T},i::Int,j::Int)::T where {T}
+    d2 = (K.X[i,1] - K.Y[j,1])^2 + (K.X[i,2] - K.Y[j,2])^2 + (K.X[i,3] - K.Y[j,3])^2
+    d = sqrt(d2)
+    return inv(4π*d)
+end
+function Base.getindex(K::LaplaceMatrix,I::UnitRange,J::UnitRange)
+    T = eltype(K)
+    m = length(I)
+    n = length(J)
+    Xv = view(K.X,I,:)
+    Yv = view(K.Y,J,:)
+    out = Matrix{T}(undef,m,n)
+    for j in 1:n
+        for i in 1:m
+            d2 = (Xv[i,1] - Yv[j,1])^2
+            d2 += (Xv[i,2] - Yv[j,2])^2
+            d2 += (Xv[i,3] - Yv[j,3])^2
+            d = sqrt(d2)
+            out[i,j] = inv(4*π*d)
+        end
+    end
+    return out
+end
+function Base.getindex(K::LaplaceMatrix,i::Int,J::UnitRange)
+    T = eltype(K)
+    n = length(J)
+    Yv = view(K.Y,J,:)
+    out = Vector{T}(undef,n)
+    for j in 1:n
+        d2 =  (K.X[i,1] - Yv[j,1])^2
+        d2 += (K.X[i,2] - Yv[j,2])^2
+        d2 += (K.X[i,3] - Yv[j,3])^2
+        d = sqrt(d2)
+        out[j] = inv(4*π*d)
+    end
+    return out
+end
+function Base.getindex(K::LaplaceMatrix,I::UnitRange,j::Int)
+    T = eltype(K)
+    m = length(I)
+    Xv = view(K.X,I,:)
+    out = Vector{T}(undef,m)
+    for i in 1:m
+        d2 =  (Xv[i,1] - K.Y[j,1])^2
+        d2 += (Xv[i,2] - K.Y[j,2])^2
+        d2 += (Xv[i,3] - K.Y[j,3])^2
+        d = sqrt(d2)
+        out[i] = inv(4*π*d)
+    end
+    return out
 end
 
 """
