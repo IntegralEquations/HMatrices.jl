@@ -46,15 +46,12 @@ The ratio of the uncompressed size of `H` to its compressed size.
 """
 function compression_ratio(H::HMatrix)
     ns = 0 # stored entries
-    nr = 0 # represented entries
-    for block in AbstractTrees.PreOrderDFS(H)
-        if hasdata(block)
-            data = block.data
-            ns  += num_stored_elements(data)
-            nr  += length(data)
-        end
-    end
-    return nr/ns
+    nr = length(H) # represented entries
+    for block in AbstractTrees.Leaves(H)
+        data = block.data
+        ns  += num_stored_elements(data)
+   end
+   return nr/ns
 end
 
 num_stored_elements(M::Base.Matrix) = length(M)
@@ -204,7 +201,7 @@ function assemble!(resource::CPUThreads,hmat,K,comp)
     # of the tasks by directly calling the serial method for blocks which are
     # smaller than a given length (1000^2 here).
     blocks  = getblocks(x -> isleaf(x) || length(x)<1000*1000,hmat)
-    sort!(blocks;lt=lt=(x,y)->length(x)<length(y),rev=true)
+    sort!(blocks;lt=(x,y)->length(x)<length(y),rev=true)
     n = length(blocks)
     @sync begin
         for i in 1:n
@@ -234,12 +231,10 @@ function Base.summary(io::IO,hmat::HMatrix)
     dense_leaves  = filter(x->!isadmissible(x),leaves)
     @printf("\n\t number of leaves: %i (%i admissible + %i full)",length(leaves),length(sparse_leaves),
     length(dense_leaves))
-    rmin = minimum(x->rank(x.data),sparse_leaves)
-    rmax = maximum(x->rank(x.data),sparse_leaves)
+    rmin,rmax = isempty(sparse_leaves) ? (-1,-1) : extrema(x->rank(x.data),sparse_leaves)
     @printf("\n\t minimum rank of sparse blocks : %i",rmin)
     @printf("\n\t maximum rank of sparse blocks : %i",rmax)
-    dense_min = minimum(x->length(x.data),dense_leaves)
-    dense_max = maximum(x->length(x.data),dense_leaves)
+    dense_min,dense_max = isempty(dense_leaves) ? (-1,-1) : extrema(x->length(x.data),dense_leaves)
     @printf("\n\t minimum length of dense blocks : %i",dense_min)
     @printf("\n\t maximum length of dense blocks : %i",dense_max)
     points_per_leaf = map(length,leaves)
@@ -247,7 +242,7 @@ function Base.summary(io::IO,hmat::HMatrix)
     @printf "\n\t max number of elements per leaf: %i" maximum(points_per_leaf)
     depth_per_leaf = map(depth,leaves)
     @printf "\n\t depth of tree: %i" maximum(depth_per_leaf)
-    @printf "\n\t compression ratio: %f" compression_ratio(hmat)
+    @printf "\n\t compression ratio: %f\n" compression_ratio(hmat)
 end
 
 function LinearAlgebra.mul!(C::AbstractVector,A::HMatrix,B::AbstractVector,a::Number,b::Number)
