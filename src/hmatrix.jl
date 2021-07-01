@@ -59,10 +59,12 @@ end
 
 num_stored_elements(M::Base.Matrix) = length(M)
 
-# Interface to AbstractTrees
+# Interface to AbstractTrees.
+# NOTE: for performance critical parts of the code, it is often better to
+# recurse than to use this interface due to allocations incurred by the
+# iterators. Maybe this can be fixed...
 AbstractTrees.children(H::HMatrix) = H.children
-Base.eltype(::Type{<:AbstractTrees.TreeIterator{T}}) where {T<:HMatrix}         = T
-Base.IteratorEltype(::Type{<:AbstractTrees.TreeIterator{T}}) where {T<:HMatrix} = Base.HasEltype()
+AbstractTrees.nodetype(H::HMatrix) = typeof(H)
 
 function Base.show(io::IO,hmat::HMatrix)
     adm_str = hmat.admissible ? "admissible " : "non-admissible "
@@ -197,7 +199,7 @@ function assemble!(resource::CPU1,hmat,K,comp)
     return hmat
 end
 
-function assemble!(resource::CPUThreads,hmat,K,comp)
+function assemble!(::CPUThreads,hmat,K,comp)
     # NOTE: ideally something like omp for schedule(guided) should be used here
     # to avoid spawning too many (small) tasks. In the absece of such scheduling
     # strategy in julia at the moment, we resort to manually limiting the size
@@ -250,26 +252,91 @@ function Base.summary(io::IO,hmat::HMatrix)
     @printf "\n\t compression ratio: %f" compression_ratio(hmat)
 end
 
-function LinearAlgebra.mul!(C::AbstractVector,A::HMatrix,B::AbstractVector,a::Number,b::Number)
+function _mul!(::CPU1,C::AbstractVector,A::HMatrix,B::AbstractVector,a::Number,b::Number)
+    rmul!(C,b)
+    _mul_recursive!(C,A,B,a,1)
+    return C
+end
+
+function _mul!(::CPUThreads,C::AbstractVector,A::HMatrix,B::AbstractVector,a::Number,b::Number)
+    # multiply by b at root level
+    rmul!(C,b)
+    # make copies of C and run in parallel
+    nt        = Threads.nthreads()
+    Cthreads  = [zero(C) for _ in 1:nt]
+    blocks    = getblocks(x -> isleaf(x),A)
+    @sync for block in blocks
+        Threads.@spawn begin
+            id = Threads.threadid()
+            _mul_recursive!(Cthreads[id],block,B,a,1)
+        end
+    end
+    # reduce
+    for Ct in Cthreads
+        axpy!(1,Ct,C)
+    end
+    return C
+end
+
+function _mul_hilbert!(C::AbstractVector,A::HMatrix,B::AbstractVector,a::Number,b::Number)
+    # multiply by b at root level
+    rmul!(C,b)
+    # create a lock for the reduction step
+    mutex = ReentrantLock()
+    nt        = Threads.nthreads()
+    partition = hilbert_partitioning(A,nt)
+    Threads.@threads for n in 1:nt
+        t = @elapsed begin
+            leaves = partition[n]
+            Cloc   = zero(C)
+            for leaf in leaves
+                irange = rowrange(leaf)
+                jrange = colrange(leaf)
+                data   = leaf.data
+                mul!(view(Cloc,irange),data,view(B,jrange),a,1)
+            end
+            # reduction
+            lock(mutex) do
+                axpy!(1,Cloc,C)
+            end
+        end
+        @debug "Matrix vector product" Threads.threadid() t
+    end
+    return C
+end
+
+function LinearAlgebra.mul!(C::AbstractVector,A::HMatrix,B::AbstractVector,a::Number,b::Number,permute::Val{P}=Val(true)) where {P}
     # since the HMatrix represents A = Pr*H*Pc, where Pr and Pc are row and column
     # permutations, we need first to rewrite C <-- b*C + a*(Pc*H*Pb)*B as
     # C <-- Pr*(b*inv(Pr)*C + a*H*(Pc*B)). Following this rewrite, the
-    # multiplication is performed by first defining B′ = Pc*B, and C <--
-    # inv(Pr)*C, doing the multiplication with the permuted entries, and the
-    # permuting the result  C <-- Pr*C at the end.
-    ctree      = A.coltree
-    rtree      = A.rowtree
-    B′         = B[ctree.loc2glob]
-    C          = permute!(C,rtree.loc2glob)
-    LinearAlgebra.rmul!(C,b)
-    shift = pivot(A) .- 1
-    for block in AbstractTrees.Leaves(A)
-        irange = rowrange(block) .- shift[1]
-        jrange = colrange(block) .- shift[2]
-        data   = block.data
-        LinearAlgebra.mul!(view(C,irange),data,view(B′,jrange),a,1)
+    # multiplication is performed by first defining B <-- Pc*B, and C <--
+    # inv(Pr)*C, doing the multiplication with the permuted entries, and then
+    # permuting the result  C <-- Pr*C at the end. This is controlled by the
+    # flat `P`
+    ctree     = A.coltree
+    rtree     = A.rowtree
+    if P
+        B         = B[ctree.loc2glob]
+        C         = permute!(C,rtree.loc2glob)
     end
-    permute!(C,rtree.glob2loc)
+    # _mul!(CPU1(),C,A,B,a,b)
+    # _mul!(CPUThreads(),C,A,B,a,b)
+    _mul_hilbert!(C,A,B,a,b)
+    P && permute!(C,rtree.glob2loc)
+end
+
+function _mul_recursive!(C::AbstractVector,A::HMatrix,B::AbstractVector,a,b)
+    @assert b == 1
+    if isleaf(A)
+        irange = rowrange(A)
+        jrange = colrange(A)
+        data   = A.data
+        LinearAlgebra.mul!(view(C,irange),data,view(B,jrange),a,b)
+    else
+        for block in A.children
+            _mul_recursive!(C,block,B,a,b)
+        end
+    end
     return C
 end
 
@@ -280,6 +347,54 @@ function Base.:(*)(H::HMatrix,x::AbstractVector)
     y  = Vector{TS}(undef,size(H,1))
     mul!(y,H,x)
 end
+
+function hilbert_partitioning(H::HMatrix,np=Threads.nthreads())
+    # the hilbert curve will be indexed from (0,0) × (N-1,N-1), so set N to be
+    # the smallest power of two larger than max(m,n), where m,n = size(H)
+    m,n = size(H)
+    N   = max(m,n)
+    N   = nextpow(2,N)
+    # sort the leaves by their hilbert index
+    leaves = getblocks(x -> isleaf(x),H)
+    hilbert_indices = map(leaves) do leaf
+        i,j = pivot(leaf) .- 1
+        hilbert_cartesian_to_linear(N,i,j)
+    end
+    p = sortperm(hilbert_indices)
+    permute!(leaves,p)
+    # now compute a np-partition of leaves based on an estimated computational
+    # cost of each leaf
+    ctot = sum(cost_mv,leaves)
+    cavg = ctot ÷ np
+    acc = 0
+    partition = [empty(leaves) for _ in 1:np]
+    k = 1
+    for leaf in leaves
+        push!(partition[k],leaf)
+        acc += cost_mv(leaf)
+        if acc > cavg
+            acc = 0
+            k == np || (k += 1)
+        end
+    end
+    return partition
+end
+
+"""
+    cost_mv(A::AbstractMatrix)
+
+A proxy for the computational cost of a matrix/vector product.
+"""
+function cost_mv(R::RkMatrix)
+    rank(R)*sum(size(R))
+end
+function cost_mv(M::Base.Matrix)
+    length(M)
+end
+function cost_mv(H::HMatrix)
+    cost_mv(H.data)
+end
+
 
 @recipe function f(hmat::HMatrix)
     legend --> false

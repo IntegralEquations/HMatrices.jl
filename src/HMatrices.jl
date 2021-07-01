@@ -1,5 +1,6 @@
 module HMatrices
 
+using StaticArrays: sort
 using StaticArrays
 using LinearAlgebra
 using Statistics: median
@@ -12,6 +13,7 @@ using RecipesBase
 import AbstractTrees
 
 include("utils.jl")
+include("hilbertcurve.jl")
 include("kernelmatrix.jl")
 include("hyperrectangle.jl")
 include("clustertree.jl")
