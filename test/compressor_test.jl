@@ -2,8 +2,10 @@ using HMatrices
 using Test
 using StaticArrays
 using LinearAlgebra
-
 using HMatrices: ACA, PartialACA, TSVD, LaplaceMatrix, RkMatrix, HelmholtzMatrix
+
+using Random
+Random.seed!(1)
 
 @testset "Compressor" begin
     T = ComplexF64

@@ -5,7 +5,7 @@ using ComputationalResources
 using LinearAlgebra
 
 const HM = HMatrices
-HM.debug()
+# HM.debug()
 using HMatrices: CardinalitySplitter, ClusterTree, RkMatrix
 
 @testset "CPU1" begin
