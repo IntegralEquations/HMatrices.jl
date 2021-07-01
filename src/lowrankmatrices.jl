@@ -10,6 +10,7 @@ to get the respective adjoints.
 struct RkMatrix{T}
     A::Matrix{T}
     B::Matrix{T}
+    buffer::Vector{T}
     function RkMatrix(A::Matrix{T},B::Matrix{T}) where {T<:Number}
         @assert size(A,2) == size(B,2) "second dimension of `A` and `B` must match"
         m,r = size(A)
@@ -17,7 +18,8 @@ struct RkMatrix{T}
         if  r*(m+n) >= m*n
             @debug "Inefficient RkMatrix:" size(A) size(B)
         end
-        new{T}(A,B)
+        buffer = Vector{T}(undef,r)
+        new{T}(A,B,buffer)
     end
 end
 RkMatrix(A,B) = RkMatrix(promote(A,B)...)
@@ -113,8 +115,8 @@ function Base.vcat(M1::RkMatrix{T},M2::RkMatrix{T}) where {T}
 end
 
 function LinearAlgebra.mul!(C::AbstractVector,Rk::RkMatrix,F::AbstractVector,a::Number,b::Number)
-    BtF = adjoint(Rk.B)*F
-    LinearAlgebra.mul!(C,Rk.A,BtF,a,b)
+    mul!(Rk.buffer,adjoint(Rk.B),F)
+    mul!(C,Rk.A,Rk.buffer,a,b)
 end
 
 function Base.:(*)(R::RkMatrix{T},x::AbstractVector{S}) where {T,S}
