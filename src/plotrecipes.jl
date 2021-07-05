@@ -68,3 +68,30 @@ plot(tree::ClusterTree,args...) = ()
         end
     end
 end
+
+@recipe function f(hmat::HMatrix)
+    legend --> false
+    grid   --> false
+    aspect_ratio --> :equal
+    yflip  := true
+    seriestype := :shape
+    linecolor  --> :black
+    # all leaves
+    for block in AbstractTrees.Leaves(hmat)
+        @series begin
+            if block.admissible
+                fillcolor    --> :blue
+                seriesalpha  --> 1/compression_ratio(block.data)
+            else
+                fillcolor    --> :red
+                seriesalpha  --> 0.3
+            end
+            pt1 = pivot(block)
+            pt2 = pt1 .+ size(block) .- 1
+            y1, y2 = pt1[1],pt2[1]
+            x1, x2 = pt1[2],pt2[2]
+            # annotations := ((x1+x2)/2,(y1+y2)/2, rank(block.data))
+            [x1,x2,x2,x1,x1],[y1,y1,y2,y2,y1]
+        end
+    end
+end

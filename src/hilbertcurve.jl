@@ -9,7 +9,8 @@ output `d` ranges from `0` to `n^2-1`.
 
 See [https://en.wikipedia.org/wiki/Hilbert_curve](https://en.wikipedia.org/wiki/Hilbert_curve).
 """
-function hilbert_cartesian_to_linear(n,x,y)
+function hilbert_cartesian_to_linear(n::Integer,x,y)
+    @assert ispow2(n)
     @assert 0 ≤ x ≤ n-1
     @assert 0 ≤ y ≤ n-1
     d = 0
@@ -33,7 +34,8 @@ n-1` and `0 ≤ y ≤ n-1` on the Hilbert curve of order `n`.
 
 See [https://en.wikipedia.org/wiki/Hilbert_curve](https://en.wikipedia.org/wiki/Hilbert_curve).
 """
-function hilbert_linear_to_cartesian(n,d)
+function hilbert_linear_to_cartesian(n::Integer,d)
+    @assert ispow2(n)
     @assert 0 ≤ d ≤ n^2-1
     x,y = 0,0
     s = 1
@@ -63,13 +65,14 @@ function _rot(n,x,y,rx,ry)
     return x,y
 end
 
-# function plot_hilbert(n)
-#     xx = []
-#     yy = []
-#     for d in 0:n^2-1
-#         x,y = d2xy(n,d)
-#         push!(xx,x)
-#         push!(yy,y)
-#     end
-#     plot(xx,yy,m=:o)
-# end
+function hilbert_points(n::Integer)
+    @assert ispow2(n)
+    xx = Int[]
+    yy = Int[]
+    for d in 0:n^2-1
+        x,y = hilbert_linear_to_cartesian(n,d)
+        push!(xx,x)
+        push!(yy,y)
+    end
+    xx,yy
+end

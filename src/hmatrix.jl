@@ -352,7 +352,9 @@ function hilbert_partitioning(H::HMatrix,np=Threads.nthreads())
     # sort the leaves by their hilbert index
     leaves = getblocks(x -> isleaf(x),H)
     hilbert_indices = map(leaves) do leaf
-        i,j = pivot(leaf) .- 1
+        # use the center of the leaf as a cartesian index
+        i,j = pivot(leaf) .- 1 .+ size(leaf) .÷ 2
+        # i,j = pivot(leaf) .- 1
         hilbert_cartesian_to_linear(N,i,j)
     end
     p = sortperm(hilbert_indices)
@@ -388,32 +390,4 @@ function cost_mv(M::Base.Matrix)
 end
 function cost_mv(H::HMatrix)
     cost_mv(H.data)
-end
-
-
-@recipe function f(hmat::HMatrix)
-    legend --> false
-    grid   --> false
-    aspect_ratio --> :equal
-    yflip  := true
-    seriestype := :shape
-    linecolor  --> :black
-    # all leaves
-    for block in AbstractTrees.Leaves(hmat)
-        @series begin
-            if block.admissible
-                fillcolor    := :blue
-                seriesalpha  := 1/compression_ratio(block.data)
-            else
-                fillcolor    := :red
-                seriesalpha  := 0.3
-            end
-            pt1 = pivot(block)
-            pt2 = pt1 .+ size(block) .- 1
-            y1, y2 = pt1[1],pt2[1]
-            x1, x2 = pt1[2],pt2[2]
-            # annotations := ((x1+x2)/2,(y1+y2)/2, rank(block.data))
-            [x1,x2,x2,x1,x1],[y1,y1,y2,y2,y1]
-        end
-    end
 end
