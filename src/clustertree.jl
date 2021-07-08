@@ -1,20 +1,25 @@
 """
-    mutable struct ClusterTree{N,T}
+    mutable struct ClusterTree{N,T,D}
 
 Tree structure used to hierarchically sort points in `N` dimensions.
 
-Each node in the tree contains the indices `loc2glob[loc_idxs]`.
+Each node in the tree contains a `bounding_box` enclosing the `points` with
+indices `loc2glob[loc_idxs]`.
 """
-mutable struct ClusterTree{N,T}
+mutable struct ClusterTree{N,T,D}
     points::Vector{SVector{N,T}}
-    weights::Vector{T}
     loc_idxs::UnitRange{Int}
     bounding_box::HyperRectangle{N,T}
     loc2glob::Vector{Int}
     glob2loc::Vector{Int}
-    children::Maybe{Vector{ClusterTree{N,T}}}
-    parent::Maybe{ClusterTree{N,T}}
+    children::Maybe{Vector{ClusterTree{N,T,D}}}
+    parent::Maybe{ClusterTree{N,T,D}}
+    data::D
+    function ClusterTree{D}(points::Vector{SVector{N,T}},loc_idxs,bounding_box,loc2glob,glob2loc,children,parent) where {N,T,D}
+        new{N,T,D}(points,loc_idxs,bounding_box,loc2glob,glob2loc,children,parent)
+    end
 end
+ClusterTree(args...;kwargs...) = ClusterTree{Nothing}(args...;kwargs...)
 
 # interface to AbstractTrees
 AbstractTrees.children(clt::ClusterTree) = clt.children
@@ -39,7 +44,7 @@ Base.range(node::ClusterTree)  = node.loc_idxs
 Construct a `ClusterTree` from the  given `data` using the splitting strategy
 encoded in `splitter`.
 """
-function ClusterTree(points::Vector{SVector{N,T}},splitter;weights=T[]) where {N,T}
+function ClusterTree(points::Vector{SVector{N,T}},splitter) where {N,T}
     @timeit "ClusterTree construction" begin
         bbox         = HyperRectangle(points)
         n            = length(points)
@@ -49,7 +54,7 @@ function ClusterTree(points::Vector{SVector{N,T}},splitter;weights=T[]) where {N
         children     = ()
         parent       = ()
         #build the root, then recurse
-        root         = ClusterTree(points,weights,loc_idxs,bbox,loc2glob,glob2loc,children,parent)
+        root         = ClusterTree(points,loc_idxs,bbox,loc2glob,glob2loc,children,parent)
         _build_cluster_tree!(root,splitter)
         root.glob2loc = invperm(root.loc2glob)
     end
@@ -194,10 +199,12 @@ function centroid(clt::ClusterTree)
     pts       = clt.points
     loc_idxs  = clt.loc_idxs
     glob_idxs = view(clt.loc2glob,loc_idxs)
-    w    = clt.weights
+    # w    = clt.weights
     n    = length(loc_idxs)
-    M    = isempty(w) ? n : sum(i->w[i],glob_idxs)
-    xc   = isempty(w) ? sum(i->pts[i]/M,glob_idxs) : sum(i->w[i]*pts[i]/M,glob_idxs)
+    # M    = isempty(w) ? n : sum(i->w[i],glob_idxs)
+    # xc   = isempty(w) ? sum(i->pts[i]/M,glob_idxs) : sum(i->w[i]*pts[i]/M,glob_idxs)
+    M    = n
+    xc   = sum(i->pts[i]/M,glob_idxs)
     return xc
 end
 
@@ -243,7 +250,7 @@ the left node) or `false` (point sorted on the right node). At the end a minimal
 """
 function _binary_split!(cluster::ClusterTree{N,T},dir::Int,pos::Number) where {N,T}
     points        = cluster.points
-    weights       = cluster.weights
+    # weights       = cluster.weights
     loc_idxs      = cluster.loc_idxs
     glob_idxs     = view(cluster.loc2glob,loc_idxs)
     glob_idxs_new = view(cluster.glob2loc,loc_idxs)
@@ -270,14 +277,14 @@ function _binary_split!(cluster::ClusterTree{N,T},dir::Int,pos::Number) where {N
     left_indices      = loc_idxs.start:(loc_idxs.start)+npts_left-1
     right_indices     = (loc_idxs.start+npts_left):loc_idxs.stop
     # create children
-    clt1 = ClusterTree(points,weights,left_indices,  left_rec,  cluster.loc2glob, cluster.glob2loc,(), cluster)
-    clt2 = ClusterTree(points,weights,right_indices, right_rec, cluster.loc2glob, cluster.glob2loc,(), cluster)
+    clt1 = ClusterTree(points,left_indices,  left_rec,  cluster.loc2glob, cluster.glob2loc,(), cluster)
+    clt2 = ClusterTree(points,right_indices, right_rec, cluster.loc2glob, cluster.glob2loc,(), cluster)
     return clt1, clt2
 end
 
 function _binary_split!(f::Function,cluster::ClusterTree{N,T}) where {N,T}
     points        = cluster.points
-    weights       = cluster.weights
+    # weights       = cluster.weights
     loc_idxs      = cluster.loc_idxs
     glob_idxs     = view(cluster.loc2glob,loc_idxs)
     glob_idxs_new = view(cluster.glob2loc,loc_idxs)
@@ -311,8 +318,8 @@ function _binary_split!(f::Function,cluster::ClusterTree{N,T}) where {N,T}
     left_rec   = HyperRectangle(xl_left,xu_left)
     right_rec  = HyperRectangle(xl_right,xu_right)
     # create children
-    clt1 = ClusterTree(points,weights,left_indices,  left_rec,  cluster.loc2glob, cluster.glob2loc,(), cluster)
-    clt2 = ClusterTree(points,weights,right_indices, right_rec, cluster.loc2glob, cluster.glob2loc,(), cluster)
+    clt1 = ClusterTree(points,left_indices,  left_rec,  cluster.loc2glob, cluster.glob2loc,(), cluster)
+    clt2 = ClusterTree(points,right_indices, right_rec, cluster.loc2glob, cluster.glob2loc,(), cluster)
     return clt1, clt2
 end
 
