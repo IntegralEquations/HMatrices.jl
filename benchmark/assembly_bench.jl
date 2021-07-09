@@ -1,9 +1,14 @@
+using HMatrices
+using StaticArrays
+using LinearAlgebra
+using ComputationalResources
+using BenchmarkTools
+
 SUITE["Assembly"]         = BenchmarkGroup(["assembly","hmatrix"])
 
-using ComputationalResources
-
 # parameters
-N    = 50_000
+
+N    = 200_000
 nmax = 200
 eta  = 3
 radius = 1
@@ -28,9 +33,8 @@ end
 _step     = 1.75*π*radius/sqrt(N)
 X         = points_on_cylinder(radius,_step,N)
 splitter  = HMatrices.CardinalitySplitter(nmax)
-Xclt      = HMatrices.ClusterTree(X,splitter,reorder)
+Xclt      = HMatrices.ClusterTree(X,splitter)
 adm       = HMatrices.StrongAdmissibilityStd(eta)
-bclt      = HMatrices.BlockTree(Xclt,Xclt,adm)
 
 # compression method
 comp      = HMatrices.PartialACA(;rtol)
@@ -47,7 +51,18 @@ function Base.getindex(K::LaplaceMatrix{T},i::Int,j::Int)::T where {T}
 end
 
 K         = LaplaceMatrix{Float64}(X,X)
-resource  = CPU1()
+resource  = CPUThreads()
 comp      = HMatrices.PartialACA(rtol=rtol)
 
-SUITE["Assembly"]["Laplace kernel $N"] = @benchmarkable $HMatrix($K,$bclt,$comp)
+H = HMatrix(resource,K,Xclt,Xclt,adm,comp)
+
+x = rand(N)
+y = similar(x)
+
+@btime mul!($y,$H,$x);
+
+nt = Threads.nthreads()
+partition = HMatrices.hilbert_partitioning(H,nt)
+@btime HMatrices._mul_hilbert!($y,$H,$x,1,0,$partition)
+
+# SUITE["Assembly"]["Laplace kernel $N"] = @benchmarkable $HMatrix(,$comp)
