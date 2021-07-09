@@ -247,13 +247,13 @@ function Base.summary(io::IO,hmat::HMatrix)
     @printf "\n\t compression ratio: %f\n" compression_ratio(hmat)
 end
 
-function _mul!(::CPU1,C::AbstractVector,A::HMatrix,B::AbstractVector,a::Number,b::Number)
+function _mul_CPU!(C::AbstractVector,A::HMatrix,B::AbstractVector,a::Number,b::Number)
     rmul!(C,b)
     _mul_recursive!(C,A,B,a,1)
     return C
 end
 
-function _mul!(::CPUThreads,C::AbstractVector,A::HMatrix,B::AbstractVector,a::Number,b::Number)
+function _mul_threads!(C::AbstractVector,A::HMatrix,B::AbstractVector,a::Number,b::Number)
     # multiply by b at root level
     rmul!(C,b)
     # make copies of C and run in parallel
@@ -273,14 +273,15 @@ function _mul!(::CPUThreads,C::AbstractVector,A::HMatrix,B::AbstractVector,a::Nu
     return C
 end
 
-function _mul_hilbert!(C::AbstractVector,A::HMatrix,B::AbstractVector,a::Number,b::Number)
+# multiply in parallel using a static partitioning of the leaves computed "by
+# hand" in partition
+function _mul_static!(C::AbstractVector,A::HMatrix,B::AbstractVector,a::Number,b::Number,partition)
     # multiply by b at root level
     rmul!(C,b)
     # create a lock for the reduction step
     mutex = ReentrantLock()
-    nt        = Threads.nthreads()
-    partition = hilbert_partitioning(A,nt)
-    Threads.@threads for n in 1:nt
+    np = length(partition)
+    Threads.@threads for n in 1:np
         t = @elapsed begin
             leaves = partition[n]
             Cloc   = zero(C)
@@ -300,7 +301,7 @@ function _mul_hilbert!(C::AbstractVector,A::HMatrix,B::AbstractVector,a::Number,
     return C
 end
 
-function LinearAlgebra.mul!(C::AbstractVector,A::HMatrix,B::AbstractVector,a::Number,b::Number,permute::Val{P}=Val(true)) where {P}
+function LinearAlgebra.mul!(C::AbstractVector,A::HMatrix,B::AbstractVector,a::Number,b::Number)
     # since the HMatrix represents A = Pr*H*Pc, where Pr and Pc are row and column
     # permutations, we need first to rewrite C <-- b*C + a*(Pc*H*Pb)*B as
     # C <-- Pr*(b*inv(Pr)*C + a*H*(Pc*B)). Following this rewrite, the
@@ -310,14 +311,16 @@ function LinearAlgebra.mul!(C::AbstractVector,A::HMatrix,B::AbstractVector,a::Nu
     # flat `P`
     ctree     = A.coltree
     rtree     = A.rowtree
-    if P
-        B         = B[ctree.loc2glob]
-        C         = permute!(C,rtree.loc2glob)
-    end
-    # _mul!(CPU1(),C,A,B,a,b)
-    # _mul!(CPUThreads(),C,A,B,a,b)
-    _mul_hilbert!(C,A,B,a,b)
-    P && permute!(C,rtree.glob2loc)
+    # permute input
+    B         = B[ctree.loc2glob]
+    C         = permute!(C,rtree.loc2glob)
+    # _mul_CPU!(C,A,B,a,b)
+    # _mul_threads!(C,A,B,a,b)
+    nt        = Threads.nthreads()
+    partition = hilbert_partitioning(A,nt)
+    _mul_static!(C,A,B,a,b,partition)
+    # permute output
+    permute!(C,rtree.glob2loc)
 end
 
 function _mul_recursive!(C::AbstractVector,A::HMatrix,B::AbstractVector,a,b)
@@ -326,10 +329,10 @@ function _mul_recursive!(C::AbstractVector,A::HMatrix,B::AbstractVector,a,b)
         irange = rowrange(A)
         jrange = colrange(A)
         data   = A.data
-        LinearAlgebra.mul!(view(C,irange),data,view(B,jrange),a,b)
+        LinearAlgebra.mul!(view(C,irange),data,view(B,jrange),a,1)
     else
         for block in A.children
-            _mul_recursive!(C,block,B,a,b)
+            _mul_recursive!(C,block,B,a,1)
         end
     end
     return C
@@ -354,7 +357,6 @@ function hilbert_partitioning(H::HMatrix,np=Threads.nthreads())
     hilbert_indices = map(leaves) do leaf
         # use the center of the leaf as a cartesian index
         i,j = pivot(leaf) .- 1 .+ size(leaf) .÷ 2
-        # i,j = pivot(leaf) .- 1
         hilbert_cartesian_to_linear(N,i,j)
     end
     p = sortperm(hilbert_indices)
