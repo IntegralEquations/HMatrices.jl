@@ -13,51 +13,6 @@ function debug(flag::Bool=true)
 end
 
 """
-    getblocks(filter,hmat,[isterminal=true])
-
-Return all the blocks of `hmat` satisfying `filter(block)::Bool`. If
-`isterminal`, do not consider childrens of a block for which
-`filter(block)==true`.
-"""
-function getblocks(f,tree,isterminal=true)
-    blocks = Vector{typeof(tree)}()
-    getblocks!(f,blocks,tree,isterminal)
-end
-
-"""
-    getblocks!(filter,blocks,hmat,[isterminal=true])
-
-Like [`getblocks`](@ref), but append valid blocks to `blocks`.
-"""
-function getblocks!(f,blocks,tree,isterminal)
-    if f(tree)
-        push!(blocks,tree)
-        # terminate the search along this path if terminal=true
-        isterminal || map(x->getblocks!(f,blocks,x,isterminal),getchildren(tree))
-    else
-        # continue on on children
-        map(x->getblocks!(f,blocks,x,isterminal),tree.children)
-    end
-    return blocks
-end
-
-"""
-    depth(node,acc=0)
-
-Recursive function to compute the depth of `node` in a a tree-like structure.
-Require the method `getparent(node)` to be implemented. Overload this function
-if your structure has a more efficient way to compute `depth` (e.g. if it stores
-it in a field).
-"""
-function depth(node,acc=0)
-    if isroot(node)
-        return acc
-    else
-        depth(node.parent,acc+1)
-    end
-end
-
-"""
     @hprofile
 
 A macro which
@@ -99,33 +54,8 @@ macro hassert(block)
             $(esc(block))
             end
         end
+        return out
     else
-       :(nothing)
+       return :(nothing)
     end
-end
-
-"""
-    svector(f,n)
-
-Like `ntuple` from `Base`, but convert result to `SVector`.
-"""
-function svector(f,n)
-    ntuple(f,n) |> SVector
-end
-
-"""
-    const Maybe{T}
-
-Type alias to Union{Tuple{},T}.
-"""
-const Maybe{T}  = Union{Tuple{},T}
-
-"""
-    abstractmethod
-
-A method of an `abstract type` for which concrete subtypes are expected
-to provide an implementation.
-"""
-function abstractmethod(T)
-    error("this method needs to be implemented by the concrete subtype $(typeof(T)).")
 end

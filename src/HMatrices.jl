@@ -9,19 +9,30 @@ using LoopVectorization
 using TimerOutputs
 using Printf
 using RecipesBase
+using WavePropBase
+
+WavePropBase.@import_interface
+using WavePropBase.Geometry
+using WavePropBase.Utils
 
 import AbstractTrees
 
 include("utils.jl")
 include("hilbertcurve.jl")
 include("kernelmatrix.jl")
-include("hyperrectangle.jl")
-include("clustertree.jl")
 include("lowrankmatrices.jl")
 include("compressor.jl")
 include("hmatrix.jl")
-include("plotrecipes.jl")
 
-export HMatrix
+export
+    # types (re-exported)
+    ClusterTree,
+    CardinalitySplitter,
+    DyadicSplitter,
+    GeometricSplitter,
+    GeometricMinimalSplitter,
+    HyperRectangle,
+    # types
+    HMatrix
 
 end

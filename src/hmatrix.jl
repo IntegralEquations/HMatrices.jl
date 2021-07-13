@@ -8,22 +8,27 @@ mutable struct HMatrix{R,T}
     rowtree::R
     coltree::R
     admissible::Bool
-    data::Maybe{Union{Matrix{T},RkMatrix{T}}}
-    children::Maybe{Matrix{HMatrix{R,T}}}
-    parent::Maybe{HMatrix{R,T}}
+    data::Union{Matrix{T},RkMatrix{T}}
+    children::Matrix{HMatrix{R,T}}
+    parent::HMatrix{R,T}
+    # incomplete constructor.
     function HMatrix{R,T}(rowtree,coltree,adm,data,children,parent) where {R,T}
-        if (data !== ())
+        hmat = new{R,T}(rowtree,coltree,adm)
+        if data !== nothing
             @assert (length(rowtree),length(coltree)) === size(data) "$(length(rowtree)),$(length(coltree)) != $(size(data))"
+            hmat.data = data
         end
-        new{R,T}(rowtree,coltree,adm,data,children,parent)
+        hmat.children = isnothing(children) ? Matrix{HMatrix{R,T}}(undef,0,0) : children
+        hmat.parent   = isnothing(parent) ? hmat : parent
+        return hmat
     end
 end
 
 # setters and getters
-isleaf(H::HMatrix)                   = H.children === ()
-isroot(H::HMatrix)                   = H.parent === ()
+isleaf(H::HMatrix)                   = isempty(H.children)
+isroot(H::HMatrix)                   = H === H.parent
 isadmissible(H::HMatrix)             = H.admissible
-hasdata(H::HMatrix)                  = H.data !== ()
+hasdata(H::HMatrix)                  = isdefined(H,:data)
 
 rowrange(H::HMatrix)         = range(H.rowtree)
 colrange(H::HMatrix)         = range(H.coltree)
@@ -60,7 +65,7 @@ num_stored_elements(M::Base.Matrix) = length(M)
 # NOTE: for performance critical parts of the code, it is often better to
 # recurse than to use this interface due to allocations incurred by the
 # iterators. Maybe this can be fixed...
-AbstractTrees.children(H::HMatrix) = H.children
+AbstractTrees.children(H::HMatrix) = isleaf(H) ? () : H.children
 AbstractTrees.nodetype(H::HMatrix) = typeof(H)
 
 function Base.show(io::IO,hmat::HMatrix)
@@ -114,7 +119,7 @@ admissibility condition `adm`.
 """
 function HMatrix{T}(rowtree::R, coltree::R, adm) where {R,T}
     #build root
-    root  = HMatrix{R,T}(rowtree,coltree,false,(),(),())
+    root  = HMatrix{R,T}(rowtree,coltree,false,nothing,nothing,nothing)
     # recurse
     _build_block_structure!(adm,root)
     # when a block has all of its children being non-admissible, aggreate them
@@ -138,7 +143,7 @@ function _build_block_structure!(adm, current_node::HMatrix{R,T}) where {R,T}
         if !(isleaf(X) || isleaf(Y))
             row_children = X.children
             col_children = Y.children
-            children     = [HMatrix{R,T}(r,c,false,(),(),current_node) for r in row_children, c in col_children]
+            children     = [HMatrix{R,T}(r,c,false,nothing,nothing,current_node) for r in row_children, c in col_children]
             current_node.children = children
             for child in children
                 _build_block_structure!(adm,child)
@@ -161,7 +166,7 @@ function coarsen_non_admissible_blocks(block)
         isleaf(child) && !isadmissible(child)
     end
     if isvalid
-        block.children = ()
+        block.children   = Matrix{typeof(block)}(undef,0,0)
         block.admissible = false
         isroot(block) || coarsen_non_admissible_blocks(block.parent)
     else
@@ -202,7 +207,7 @@ function assemble!(::CPUThreads,hmat,K,comp)
     # strategy in julia at the moment, we resort to manually limiting the size
     # of the tasks by directly calling the serial method for blocks which are
     # smaller than a given length (1000^2 here).
-    blocks  = getblocks(x -> isleaf(x) || length(x)<1000*1000,hmat)
+    blocks  = getnodes(x -> isleaf(x) || length(x)<1000*1000,hmat)
     sort!(blocks;lt=(x,y)->length(x)<length(y),rev=true)
     n = length(blocks)
     @sync begin
@@ -224,13 +229,41 @@ function _assemble_dense_block!(hmat,K)
     return hmat
 end
 
+"""
+    struct StrongAdmissibilityStd
+
+Two `ClusterTree`s are admissible under this condition if the minimum their
+`diameter` is smaller than `eta` times the `distance` between the
+them, where `eta::Float64` is a parameter.
+"""
+Base.@kwdef struct StrongAdmissibilityStd
+    eta::Float64=3.0
+end
+
+function (adm::StrongAdmissibilityStd)(left_node::ClusterTree, right_node::ClusterTree)
+    diam_min = minimum(diameter,(left_node,right_node))
+    dist     = distance(left_node,right_node)
+    return diam_min < adm.eta*dist
+end
+
+"""
+    struct WeakAdmissibilityStd
+
+Two `ClusterTree`s are admissible under this condition if the `distance`
+between them is positive.
+"""
+struct WeakAdmissibilityStd
+end
+
+(adm::WeakAdmissibilityStd)(left_node::ClusterTree, right_node::ClusterTree) = distance(left_node,right_node) > 0
+
 function Base.summary(io::IO,hmat::HMatrix)
     print("HMatrix{$(eltype(hmat))} spanning $(rowrange(hmat)) × $(colrange(hmat))")
     nodes = collect(AbstractTrees.PreOrderDFS(hmat))
     @printf "\n\t number of nodes in tree: %i" length(nodes)
     leaves = collect(AbstractTrees.Leaves(hmat))
     sparse_leaves = filter(isadmissible,leaves)
-    dense_leaves  = filter(x->!isadmissible(x),leaves)
+    dense_leaves  = filter(!isadmissible,leaves)
     @printf("\n\t number of leaves: %i (%i admissible + %i full)",length(leaves),length(sparse_leaves),
     length(dense_leaves))
     rmin,rmax = isempty(sparse_leaves) ? (-1,-1) : extrema(x->rank(x.data),sparse_leaves)
@@ -259,7 +292,7 @@ function _mul_threads!(C::AbstractVector,A::HMatrix,B::AbstractVector,a::Number,
     # make copies of C and run in parallel
     nt        = Threads.nthreads()
     Cthreads  = [zero(C) for _ in 1:nt]
-    blocks    = getblocks(x -> isleaf(x),A)
+    blocks    = getnodes(x -> isleaf(x),A)
     @sync for block in blocks
         Threads.@spawn begin
             id = Threads.threadid()
@@ -353,7 +386,7 @@ function hilbert_partitioning(H::HMatrix,np=Threads.nthreads())
     N   = max(m,n)
     N   = nextpow(2,N)
     # sort the leaves by their hilbert index
-    leaves = getblocks(x -> isleaf(x),H)
+    leaves = getnodes(x -> isleaf(x),H)
     hilbert_indices = map(leaves) do leaf
         # use the center of the leaf as a cartesian index
         i,j = pivot(leaf) .- 1 .+ size(leaf) .÷ 2
@@ -392,4 +425,31 @@ function cost_mv(M::Base.Matrix)
 end
 function cost_mv(H::HMatrix)
     cost_mv(H.data)
+end
+
+@recipe function f(hmat::HMatrix)
+    legend --> false
+    grid   --> false
+    aspect_ratio --> :equal
+    yflip  := true
+    seriestype := :shape
+    linecolor  --> :black
+    # all leaves
+    for block in AbstractTrees.Leaves(hmat)
+        @series begin
+            if block.admissible
+                fillcolor    --> :blue
+                seriesalpha  --> 1/compression_ratio(block.data)
+            else
+                fillcolor    --> :red
+                seriesalpha  --> 0.3
+            end
+            pt1 = pivot(block)
+            pt2 = pt1 .+ size(block) .- 1
+            y1, y2 = pt1[1],pt2[1]
+            x1, x2 = pt1[2],pt2[2]
+            # annotations := ((x1+x2)/2,(y1+y2)/2, rank(block.data))
+            [x1,x2,x2,x1,x1],[y1,y1,y2,y2,y1]
+        end
+    end
 end
