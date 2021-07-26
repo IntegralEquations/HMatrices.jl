@@ -77,7 +77,7 @@ function _aca_partial_initial_pivot(rowtree)
     # return range(rowtree).start
     # the method below is suggested in Bebendorf, but it does not seem to
     # improve the  error
-    xc        = center(rowtree)
+    xc        = center(rowtree.bounding_box)
     d         = Inf
     pts       = rowtree.points
     loc_idxs  = rowtree.loc_idxs
