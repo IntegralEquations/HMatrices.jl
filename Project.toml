@@ -17,6 +17,7 @@ TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 WavePropBase = "91c5bd54-65f5-4719-ae3b-9579edfc4a0b"
 
 [compat]
+TimerOutputs = "0.5"
 julia = "1"
 
 [extras]
