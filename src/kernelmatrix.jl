@@ -275,20 +275,66 @@ function Base.getindex(K::HelmholtzMatrixVec{Complex{T}},I::UnitRange,j::Int) wh
     return out
 end
 
-struct PermutedMatrix{K,T} <: AbstractMatrix{T}
-    orig::K # original matrix
-    rowperm::Vector{Int}
-    colperm::Vector{Int}
-    function PermutedMatrix(orig,rowperm,colperm)
-        K = typeof(orig)
-        T = eltype(orig)
-        new{K,T}(orig,rowperm,colperm)
-    end
-end
-Base.size(M::PermutedMatrix) = size(M.orig)
+"""
+    struct ElastostaticMatrix{T,Td,Tp} <: AbstractKernelMatrix{T}
 
-function Base.getindex(M::PermutedMatrix,i,j)
-    ip = M.rowperm[i]
-    jp = M.colperm[j]
-    M.orig[ip,jp]
+Freespace Greens function for elastostatic equation in three dimensions. The
+type parameter `T` is the return type. The wavenumber parameters `μ::Tp,λ::Tp`
+are stored in the struct, and `Td` is the type used to store the points `X` and
+`Y`.
+"""
+struct ElastostaticMatrix{T,Td,Tp} <: AbstractKernelMatrix{T}
+    X::Vector{SVector{3,Td}}
+    Y::Vector{SVector{3,Td}}
+    μ::Tp
+    λ::Tp
+end
+ElastostaticMatrix{T}(X::Vector{SVector{3,Td}},Y::Vector{SVector{3,Td}},λ::Tp,μ::Tp) where {T,Td,Tp} = ElastostaticMatrix{T,Td,Tp}(X,Y,λ,μ)
+ElastostaticMatrix(args...) = ElastostaticMatrix{SMatrix{3,3,Float64,9}}(args...)
+
+function Base.getindex(K::ElastostaticMatrix{T},i::Int,j::Int)::T where {T}
+    μ = K.μ
+    λ = K.λ
+    ν = λ/(2*(μ+λ))
+    x = K.X[i]
+    y = K.Y[j]
+    r = x - y
+    d = norm(r)
+    RRT = r*transpose(r) # r ⊗ rᵗ
+    ID = SMatrix{3,3,Float64,9}(1,0,0,0,1,0,0,0,1)
+    return 1/(16π*μ*(1-ν)*d)*((3-4*ν)*ID + RRT/d^2)
+end
+
+struct ElastodynamicMatrix{T,Td,Tp} <: AbstractKernelMatrix{T}
+    X::Vector{SVector{3,Td}}
+    Y::Vector{SVector{3,Td}}
+    μ::Tp
+    λ::Tp
+    ω::Tp
+    ρ::Tp
+end
+ElastodynamicMatrix{T}(X::Vector{SVector{3,Td}},Y::Vector{SVector{3,Td}},λ::Tp,μ::Tp,ω::Tp,ρ::Tp) where {T,Td,Tp} = ElastodynamicMatrix{T,Td,Tp}(X,Y,λ,μ,ω,ρ)
+ElastodynamicMatrix(args...) = ElastodynamicMatrix{SMatrix{3,3,ComplexF64,9}}(args...)
+
+function Base.getindex(K::ElastodynamicMatrix{T},i::Int,j::Int)::T where {T}
+    x = K.X[i]
+    y = K.Y[j]
+    μ = K.μ
+    λ = K.λ
+    ω = K.ω
+    ρ = K.ρ
+    c1 = sqrt((λ + 2μ)/ρ)
+    c2 = sqrt(μ/ρ)
+    r = x .- y
+    d = norm(r)
+    RRT = r*transpose(r) # r ⊗ rᵗ
+    s = -im*ω
+    z1 = s*d/c1
+    z2 = s*d/c2
+    α = 4
+    ID    = SMatrix{3,3,Float64,9}(1,0,0,0,1,0,0,0,1)
+    ψ     = exp(-z2)/d + (1+z2)/(z2^2)*exp(-z2)/d - c2^2/c1^2*(1+z1)/(z1^2)*exp(-z1)/d
+    chi   = 3*ψ - 2*exp(-z2)/d - c2^2/c1^2*exp(-z1)/d
+    return 1/(α*π*μ)*(ψ*ID - chi*RRT/d^2) + x*transpose(y)
+    # return 1/(α*π*μ)*(ψ*ID - chi*RRT/d^2)
 end

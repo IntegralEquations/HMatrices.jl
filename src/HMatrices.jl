@@ -10,7 +10,7 @@ using Printf
 using RecipesBase
 
 using WavePropBase
-using WavePropBase.Geometry
+using WavePropBase.Trees
 using WavePropBase.Utils
 
 WavePropBase.@import_interface

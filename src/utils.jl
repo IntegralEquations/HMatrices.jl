@@ -59,3 +59,21 @@ macro hassert(block)
        return :(nothing)
     end
 end
+
+struct PermutedMatrix{K,T} <: AbstractMatrix{T}
+    orig::K # original matrix
+    rowperm::Vector{Int}
+    colperm::Vector{Int}
+    function PermutedMatrix(orig,rowperm,colperm)
+        K = typeof(orig)
+        T = eltype(orig)
+        new{K,T}(orig,rowperm,colperm)
+    end
+end
+Base.size(M::PermutedMatrix) = size(M.orig)
+
+function Base.getindex(M::PermutedMatrix,i,j)
+    ip = M.rowperm[i]
+    jp = M.colperm[j]
+    M.orig[ip,jp]
+end

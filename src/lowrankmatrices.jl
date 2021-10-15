@@ -1,7 +1,7 @@
 """
     RkMatrix{T}
 
-Representation of a rank `r` matrix ``M`` in an outer product format `M =
+Representation of a rank `r` matrix `M` in an outer product format `M =
 A*adjoint(B)` where `A` has size `m × r` and `B` has size `n × r`.
 
 The internal representation stores `A` and `B`, but `R.Bt` or `R.At` can be used
@@ -10,16 +10,14 @@ to get the respective adjoints.
 struct RkMatrix{T}
     A::Matrix{T}
     B::Matrix{T}
-    buffer::Vector{T}
-    function RkMatrix(A::Matrix{T},B::Matrix{T}) where {T<:Number}
+    function RkMatrix(A::Matrix{T},B::Matrix{T}) where {T}
         @assert size(A,2) == size(B,2) "second dimension of `A` and `B` must match"
         m,r = size(A)
         n  = size(B,1)
         if  r*(m+n) >= m*n
             @debug "Inefficient RkMatrix:" size(A) size(B)
         end
-        buffer = Vector{T}(undef,r)
-        new{T}(A,B,buffer)
+        new{T}(A,B)
     end
 end
 RkMatrix(A,B) = RkMatrix(promote(A,B)...)
@@ -84,10 +82,9 @@ end
 
 """
     hcat(M1::RkMatrix,M2::RkMatrix)
-    vcat(M1::RkMatrix,M2::RkMatrix)
 
-`RkMatrix` can be concatenated horizontally or vertically to produce a new
-`RkMatrix` of rank `rank(M1)+rank(M2)`
+Concatenated `M1` and `M2` horizontally to produce a new `RkMatrix` of rank
+`rank(M1)+rank(M2)`
 """
 function Base.hcat(M1::RkMatrix{T},M2::RkMatrix{T}) where {T}
     m,n  = size(M1)
@@ -101,6 +98,13 @@ function Base.hcat(M1::RkMatrix{T},M2::RkMatrix{T}) where {T}
     B    = hcat(B1,B2)
     return RkMatrix(A,B)
 end
+
+"""
+    vcat(M1::RkMatrix,M2::RkMatrix)
+
+Concatenated `M1` and `M2` vertically to produce a new `RkMatrix` of rank
+`rank(M1)+rank(M2)`
+"""
 function Base.vcat(M1::RkMatrix{T},M2::RkMatrix{T}) where {T}
     m,n  = size(M1)
     s,t  = size(M2)
@@ -114,10 +118,45 @@ function Base.vcat(M1::RkMatrix{T},M2::RkMatrix{T}) where {T}
     return RkMatrix(A,B)
 end
 
-function LinearAlgebra.mul!(C::AbstractVector,Rk::RkMatrix,F::AbstractVector,a::Number,b::Number)
-    mul!(Rk.buffer,adjoint(Rk.B),F)
-    mul!(C,Rk.A,Rk.buffer,a,b)
+function LinearAlgebra.mul!(C::AbstractVector,Rk::RkMatrix{T},F::AbstractVector,a::Number,b::Number) where {T}
+    m,n = size(Rk)
+    r   = rank(Rk)
+    tmp = Rk.Bt*F
+    if T <: Number
+        mul!(C,Rk.A,tmp,a,b)
+    elseif T <: SMatrix
+        _C = Rk.A*tmp*a + C*b
+        # for i in 1:m
+        #     C[i] = C[i]*b
+        #     for k in 1:r
+        #         C[i] += Rk.A[i,k]*tmp[k]*a
+        #     end
+        # end
+        copy!(C,_C)
+    end
+    return C
 end
+
+# function LinearAlgebra.mul!(C::AbstractVector,Rk::RkMatrix{T},F::AbstractVector,a::Number,b::Number) where {T<:SMatrix}
+#     buf = buffer(Rk)
+#     m,n = size(Rk)
+#     r   = rank(Rk)
+#     # mul!(buf,Rk.Bt,F)
+#     for k in 1:r
+#         buf[k] = zero(T)
+#         for j in 1:n
+#             buf[k] += Rk.B[j,k]*F[j]
+#         end
+#     end
+#     # mul!(C,Rk.A,buf,a,b)
+#     for i in 1:m
+#         C[i] = b*C[i]
+#         for k in 1:r
+#             C[i] += Rk.A[i,k]*buf[k]
+#         end
+#     end
+#     return C[i]
+# end
 
 function Base.:(*)(R::RkMatrix{T},x::AbstractVector{S}) where {T,S}
     TS = promote_type(T,S)
@@ -130,10 +169,17 @@ Base.rand(::Type{RkMatrix},m::Int,n::Int,r::Int) = rand(RkMatrix{Float64},m,n,r)
 
 Base.copy(R::RkMatrix) = RkMatrix(copy(R.A),copy(R.B))
 
-Base.Matrix(R::RkMatrix)    = R.A*R.Bt
+function Base.Matrix(R::RkMatrix{<:Number})
+    R.A*R.Bt
+end
+function Base.Matrix(R::RkMatrix{<:SMatrix})
+    # collect must be used when we have a matrix of `SMatrix` because of this:
+    # https://github.com/JuliaArrays/StaticArrays.jl/issues/966#issuecomment-943679214
+    R.A*collect(R.Bt)
+end
 
 """
-    num_elements(R::RkMatrix)
+    num_stored_elements(R::RkMatrix)
 
 The number of entries stored in the representation. Note that this is *not*
 `size(R)`.

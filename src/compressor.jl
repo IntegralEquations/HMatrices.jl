@@ -16,8 +16,8 @@ of entire matrix to be compressed, but is guaranteed to work.
 end
 
 function (aca::ACA)(K,rowtree::ClusterTree,coltree::ClusterTree)
-    irange = range(rowtree)
-    jrange = range(coltree)
+    irange = index_range(rowtree)
+    jrange = index_range(coltree)
     aca(K,irange,jrange)
 end
 
@@ -27,6 +27,7 @@ function (aca::ACA)(K,irange::UnitRange,jrange::UnitRange)
 end
 
 function _aca_full!(M, atol, rmax, rtol)
+    Madj  = adjoint(M)
     T   = eltype(M)
     m,n = size(M)
     A   = Vector{Vector{T}}()
@@ -35,19 +36,28 @@ function _aca_full!(M, atol, rmax, rtol)
     exact_norm = norm(M,2) # exact norm
     r = 0 # current rank
     while er > max(atol,rtol*exact_norm) && r < rmax
-        (i,j) = argmax(abs.(M)).I
-        δ       = M[i,j]
-        if δ == 0
+        I = _aca_full_pivot(M)
+        i,j = Tuple(I)
+        δ   = M[I]
+        if svdvals(δ)[end] == 0
             return RkMatrix(A,B)
         else
-            a = M[:,j]
-            b = conj(M[i,:])
-            rdiv!(a,δ)
+            iδ = inv(δ)
+            col  = M[:,j]
+            row  = Madj[:,i]
+            for k in eachindex(row)
+                row[k] = row[k]*adjoint(iδ)
+            end
+            # for k in eachindex(col)
+            #     col[k] = col[k]*iδ
+            # end
             r += 1
-            push!(A,a)
-            push!(B,b)
-            axpy!(-1,a*adjoint(b),M) # M <-- M - col*row'
+            push!(A,col)
+            push!(B,row)
+            axpy!(-1,col*adjoint(row),M) # M <-- M - col*row'
+            # axpy!(-1,col*reshape(row,1,n),M) # M <-- M - col*row'
             er = norm(M,2) # exact error
+            # @show r,er
         end
     end
     return RkMatrix(A,B)
@@ -68,25 +78,25 @@ end
 function (paca::PartialACA)(K,rowtree::ClusterTree,coltree::ClusterTree)
     # find initial column pivot for partial ACA
     istart = _aca_partial_initial_pivot(rowtree)
-    irange = range(rowtree)
-    jrange = range(coltree)
+    irange = index_range(rowtree)
+    jrange = index_range(coltree)
     _aca_partial(K,irange,jrange,paca.atol,paca.rank,paca.rtol,istart-irange.start+1)
 end
 
 function _aca_partial_initial_pivot(rowtree)
-    # return range(rowtree).start
+    # return index_range(rowtree).start
     # the method below is suggested in Bebendorf, but it does not seem to
-    # improve the  error
-    xc        = center(rowtree.bounding_box)
+    # improve the  error. The idea is that the initial pivot is the closes point
+    # to the center of the container.
+    xc        = center(container(rowtree))
     d         = Inf
-    pts       = rowtree.points
-    loc_idxs  = rowtree.loc_idxs
+    els       = root_elements(rowtree)
+    loc_idxs  = index_range(rowtree)
     istart    = first(loc_idxs)
     for i in loc_idxs
-        iglob = rowtree.loc2glob[i]
-        x     = pts[iglob]
+        x     = els[i]
         if norm(x-xc) < d
-            d = norm(x-xc)
+            d      = norm(x-xc)
             istart = i
         end
     end
@@ -98,6 +108,7 @@ function (paca::PartialACA)(K,irange::UnitRange,jrange::UnitRange)
 end
 
 function _aca_partial(K,irange,jrange,atol,rmax,rtol,istart=1)
+    Kadj = adjoint(K)
     rmax = min(length(irange),length(jrange),rmax)
     ishift,jshift = irange.start-1, jrange.start-1 # maps global indices to local indices
     T   = Base.eltype(K)
@@ -113,32 +124,43 @@ function _aca_partial(K,irange,jrange,atol,rmax,rtol,istart=1)
     while er > max(atol,rtol*est_norm) && r < rmax
         # remove index i from allowed row
         I[i] = false
-        # compute next row by b <-- conj(K[i+ishift,jrange] - R[i,:])
-        b    = conj!(K[i+ishift,jrange])
+        # compute next row by row <-- K[i+ishift,jrange] - R[i,:]
+        row    = Kadj[jrange,i+ishift]
         for k = 1:r
-            axpy!(-conj(A[k][i]),B[k],b)
+            axpy!(-adjoint(A[k][i]),B[k],row)
+            # for j in eachindex(row)
+            #     row[j] = row[j] - B[k][j]*adjoint(A[k][i])
+            # end
         end
-        j    = _nextcol(b,J)
-        δ    = b[j]
-        if δ == 0
+        j    = _aca_partial_pivot(row,J)
+        δ    = row[j]
+        if svdvals(δ)[end] == 0
             i = findfirst(x->x==true,J)
         else # δ != 0
-            rdiv!(b,δ) # b <-- b/δ
+            iδ = inv(δ)
+            # rdiv!(b,δ) # b <-- b/δ
+            for k in eachindex(row)
+                row[k] = row[k]*iδ
+            end
             J[j] = false
-            # compute next col by a <-- K[irange,j+jshift] - R[:,j]
-            a    = K[irange,j+jshift]
+            # compute next col by col <-- K[irange,j+jshift] - R[:,j]
+            col    = K[irange,j+jshift]
             for k = 1:r
-                axpy!(-conj(B[k][j]),A[k],a)
+                axpy!(-adjoint(B[k][j]),A[k],col)
+                # for i in eachindex(col)
+                #     col[i] = col[i] - A[k][i]*adjoint(B[k][j])
+                # end
             end
             # push new cross and increase rank
             r += 1
-            push!(A,a)
-            push!(B,b)
+            push!(A,col)
+            push!(B,row)
             # estimate the error by || R_{k} - R_{k-1} || = ||a|| ||b||
-            er       = norm(a)*norm(b)
+            er       = norm(col)*norm(row)
             # estimate the norm by || K || ≈ || R_k ||
             est_norm = _update_frob_norm(est_norm,A,B)
-            i        = _nextrow(a,I)
+            i        = _aca_partial_pivot(col,I)
+            # @show r, er
         end
     end
     return RkMatrix(A,B)
@@ -157,31 +179,53 @@ Frobenius norm of `Rₖ₊₁ = A*adjoint(B)` efficiently.
         b = B[end]
         out = norm(a)^2 * norm(b)^2
         for l=1:k-1
-            out += 2*real(dot(A[l],a)*conj(dot(B[l],b)))
+            out += 2*real(dot(A[l],a)*(dot(b,B[l])))
         end
     end
     return sqrt(cur^2 + out)
 end
 
 """
-    _nextcol(col,J)
-    _nextrow(row,I)
-Find the entry in `col` (resp. `row`) with largest absolute value within the
-valid set `J` (resp `I`).
+    _aca_partial_pivot(v,I)
+
+Find the index of the element `x ∈ v` maximizing its smallest singular value.
+This is equivalent to minimizing the spectral norm of the inverse of `x`.
+
+When `x` is a scalar, this is simply the element with largest absolute value.
+
+See
+(https://www.sciencedirect.com/science/article/pii/S0021999117306721)[https://www.sciencedirect.com/science/article/pii/S0021999117306721]
+more details.
 """
-function _nextcol(col,J)
-    out = -1
+function _aca_partial_pivot(v,J)
+    idx = -1
     val = -Inf
     for n in 1:length(J)
         J[n] || continue
-        tmp = abs(col[n])
-        tmp < val && continue
-        out = n
-        val = tmp
+        x   = v[n]
+        σ   = svdvals(x)[end]
+        σ < val && continue
+        idx = n
+        val = σ
     end
-    return out
+    return idx
 end
-_nextrow(row,I) = _nextcol(row,I)
+
+function _aca_full_pivot(M)
+    idxs = CartesianIndices(M)
+    idx  = first(idxs)
+    val = -Inf
+    for I in idxs
+        x   = M[I]
+        σ   = svdvals(x)[end]
+        σ < val && continue
+        idx = I
+        val = σ
+    end
+    return idx
+end
+
+
 
 """
     struct TSVD
@@ -197,8 +241,8 @@ expensive and thus should be used mostly for "small" matrices.
 end
 
 function (tsvd::TSVD)(K,rowtree::ClusterTree,coltree::ClusterTree)
-    irange = range(rowtree)
-    jrange = range(coltree)
+    irange = index_range(rowtree)
+    jrange = index_range(coltree)
     tsvd(K,irange,jrange)
 end
 
@@ -218,7 +262,7 @@ function compress!(M::Matrix{T},tsvd::TSVD) where {T}
         B = F.V[:,1:r]
     else
         A = F.U[:,1:r]
-        B = @views F.V[:,1:r]*adjoint(Diagonal(F.S[1:r]))
+        B = @views (F.V[:,1:r])*Diagonal(F.S[1:r])
     end
     return RkMatrix(A,B)
 end
