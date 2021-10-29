@@ -1,23 +1,24 @@
-"""
-    mutable struct HMatrix{R,T}
+abstract type  AbstractHMatrix{T} <: AbstractMatrix{T} end
 
-A hierarchial matrix with constructure from a `rowtree` of type `R` and
-`coltree` of type `R` holding elements of type `T`.
 """
-mutable struct HMatrix{R,T}
+    mutable struct HMatrix{R,T} <: AbstractHMatrix{T}
+
+A hierarchial matrix constructed from a `rowtree` and `coltree` of type `R` and
+holding elements of type `T`.
+"""
+mutable struct HMatrix{R,T} <: AbstractHMatrix{T}
     rowtree::R
     coltree::R
     admissible::Bool
-    data::Union{Matrix{T},RkMatrix{T}}
+    data::Union{Matrix{T},RkMatrix{T},Nothing}
     children::Matrix{HMatrix{R,T}}
     parent::HMatrix{R,T}
-    # incomplete constructor.
+    # inner constructor which handles `nothing` fields.
     function HMatrix{R,T}(rowtree,coltree,adm,data,children,parent) where {R,T}
-        hmat = new{R,T}(rowtree,coltree,adm)
         if data !== nothing
             @assert (length(rowtree),length(coltree)) === size(data) "$(length(rowtree)),$(length(coltree)) != $(size(data))"
-            hmat.data = data
         end
+        hmat = new{R,T}(rowtree,coltree,adm,data)
         hmat.children = isnothing(children) ? Matrix{HMatrix{R,T}}(undef,0,0) : children
         hmat.parent   = isnothing(parent) ? hmat : parent
         return hmat
@@ -25,24 +26,61 @@ mutable struct HMatrix{R,T}
 end
 
 # setters and getters
-isleaf(H::HMatrix)                   = isempty(H.children)
-isroot(H::HMatrix)                   = H === H.parent
-isadmissible(H::HMatrix)             = H.admissible
-hasdata(H::HMatrix)                  = isdefined(H,:data)
+isadmissible(H::HMatrix)  = H.admissible
+hasdata(H::HMatrix)       = !isnothing(H.data)
+data(H::HMatrix)          = H.data
+setdata!(H::HMatrix,d) = setfield!(H,:data,d)
+rowtree(H::HMatrix) = H.rowtree
+coltree(H::HMatrix) = H.coltree
 
-rowrange(H::HMatrix)         = range(H.rowtree)
-colrange(H::HMatrix)         = range(H.coltree)
-rowperm(H::HMatrix)          =  H.rowtree.loc2glob
-colperm(H::HMatrix)          =  H.coltree.loc2glob
+function Base.getindex(H::HMatrix,i::Int,j::Int)
+    @debug "using `getindex(H::AbstractHMatrix,i::Int,j::Int)`."
+    # error("using `getindex(H::AbstractHMatrix,i::Int,j::Int)`.")
+    shift = pivot(H) .-1
+    _getindex(H,i+shift[1],j+shift[2])
+end
+
+function _getindex(H,i,j)
+    (i ∈ rowrange(H)) && (j ∈ colrange(H)) || throw(BoundsError(H,(i,j)))
+    out = zero(eltype(H))
+    if hasdata(H)
+        il,jl = idx_global_to_block(i,j,H)
+        out  += data(H)[il,jl]
+    end
+    for child in children(H)
+        if (i ∈ rowrange(child)) && (j ∈ colrange(child))
+            out += _getindex(child,i,j)
+        end
+    end
+    return out
+end
+
+# Trees interface
+Trees.children(H::HMatrix) = H.children
+Trees.children(H::HMatrix,idxs...) = H.children[idxs]
+Trees.parent(H::HMatrix)   = H.parent
+Trees.isleaf(H::HMatrix)   = isempty(children(H))
+Trees.isroot(H::HMatrix)   = parent(H) === H
+
+# interface to AbstractTrees. No children is determined by an empty tuple for
+# AbstractTrees.
+AbstractTrees.children(t::HMatrix) = isleaf(t) ? () : t.children
+AbstractTrees.nodetype(t::HMatrix) = typeof(t)
+
+rowrange(H::HMatrix)         = Trees.index_range(H.rowtree)
+colrange(H::HMatrix)         = Trees.index_range(H.coltree)
+rowperm(H::HMatrix)          =  H |> rowtree |> loc2glob
+colperm(H::HMatrix)          =  H |> coltree |> loc2glob
 pivot(H::HMatrix)            = (rowrange(H).start,colrange(H).start)
-
-Base.eltype(::HMatrix{R,T}) where {R,T} = T
 
 Base.size(H::HMatrix) = length(rowrange(H)), length(colrange(H))
 Base.size(H::HMatrix,i::Int) = size(H)[i]
-Base.length(H::HMatrix) = prod(size(H))
 
-idx_global_to_local(I,J,H::HMatrix) = (I,J) .- pivot(H) .+ 1
+function blocksize(H::HMatrix)
+    size(children(H))
+end
+
+idx_global_to_block(I,J,H::HMatrix) = (I,J) .- pivot(H) .+ 1
 
 """
     compression_ratio(H::HMatrix)
@@ -52,7 +90,7 @@ The ratio of the uncompressed size of `H` to its compressed size.
 function compression_ratio(H::HMatrix)
     ns = 0 # stored entries
     nr = length(H) # represented entries
-    for block in AbstractTrees.Leaves(H)
+    for block in Leaves(H)
         data = block.data
         ns  += num_stored_elements(data)
    end
@@ -61,55 +99,52 @@ end
 
 num_stored_elements(M::Base.Matrix) = length(M)
 
-# Interface to AbstractTrees.
-# NOTE: for performance critical parts of the code, it is often better to
-# recurse than to use this interface due to allocations incurred by the
-# iterators. Maybe this can be fixed...
-AbstractTrees.children(H::HMatrix) = isleaf(H) ? () : H.children
-AbstractTrees.nodetype(H::HMatrix) = typeof(H)
-
-function Base.show(io::IO,hmat::HMatrix)
+function Base.show(io::IO,::MIME"text/plain",hmat::HMatrix)
     adm_str = hmat.admissible ? "admissible " : "non-admissible "
     print(io,adm_str*"hmatrix with range ($(rowrange(hmat))) × ($(colrange(hmat)))")
 end
 
 """
-    HMatrix([resource=CPU1()],K,blocktree,comp)
+    HMatrix(K,rowtree,coltree,comp;threads=true,distributed=false,permute_kernel=true)
 
 Main constructor for hierarchical matrix, where `K` represents the matrix to be
 approximated, `blocktree` encondes the tree structure, and `comp` is a
 function/functor which can compress admissible blocks.
 
 It is assumed that `K` supports `getindex(K,i,j)`, that `blocktree` has methods
-`getchildren(blocktree)`, `isadmissible(blocktree)`,
+`children(blocktree)`, `isadmissible(blocktree)`,
 `rowrange(blocktree)->UnitRange`, and `colrange(blocktree)->UnitRange` , and
 that comp can be called as `comp(K,irange::UnitRange,jrange::UnitRange)` to
 produce a compressed version of `K[irange,jrange]`.
-
-An optional first argument can be passed to control how the assembling is done.
-The current options are:
-- `::CPU1`
-- `::CPUThreads`
 """
-function HMatrix(resource::Union{AbstractResource},
-                K,rowtree,coltree,adm,comp;
-                permute_kernel=true)
+function HMatrix(K,rowtree,coltree,
+                adm=StrongAdmissibilityStd(3),
+                comp=PartialACA(;rtol=1e-6);
+                permute_kernel=true,
+                threads=true,
+                distributed=false)
     T  = eltype(K)
-    # create first the structure
+    # create first the structure. No parellelism used as this should be light.
     @timeit_debug "initilizing block structure" begin
         hmat = HMatrix{T}(rowtree,coltree,adm)
     end
 
-    # if needed permute kernel entries
-    permute_kernel && (K = PermutedMatrix(K,rowtree.loc2glob,coltree.loc2glob))
+    # if needed permute kernel entries into indexing induced by trees
+    permute_kernel && (K = PermutedMatrix(K,loc2glob(rowtree),loc2glob(coltree)))
 
     # now assemble the data in the blocks
     @timeit_debug "assembling hmatrix" begin
-        assemble!(resource,hmat,K,comp) # recursive function
+        if distributed
+            error("distributed assembly not yet supported")
+        else
+            if threads
+                assemble_threads!(hmat,K,comp)
+            else
+                assemble_cpu!(hmat,K,comp)
+            end
+        end
     end
 end
-#default
-HMatrix(args...;kwargs...) = HMatrix(CPU1(),args...;kwargs...)
 
 """
     HMatrix{T}(rowtree,coltree,adm)
@@ -122,9 +157,11 @@ function HMatrix{T}(rowtree::R, coltree::R, adm) where {R,T}
     root  = HMatrix{R,T}(rowtree,coltree,false,nothing,nothing,nothing)
     # recurse
     _build_block_structure!(adm,root)
-    # when a block has all of its children being non-admissible, aggreate them
-    # into a bigger non-admissible block instead
-    coarsen_non_admissible_blocks(root)
+    # TODO: when a block has all of its children being non-admissible, aggregate them
+    # into a bigger non-admissible block instead? The issue is that this
+    # destroys some of the reasoning behind which of the 27 mul! methods are
+    # actually reachable in the "regular" case.
+    # coarsen_non_admissible_blocks(root)
     return root
 end
 
@@ -136,18 +173,18 @@ Recursive constructor for [`HMatrix`](@ref) block structure. Should not be calle
 function _build_block_structure!(adm, current_node::HMatrix{R,T}) where {R,T}
     X = current_node.rowtree
     Y = current_node.coltree
-    if adm(X,Y)
+    if (isleaf(X) || isleaf(Y))
+        current_node.admissible = false
+    elseif adm(X,Y)
         current_node.admissible = true
     else
         current_node.admissible = false
-        if !(isleaf(X) || isleaf(Y))
-            row_children = X.children
-            col_children = Y.children
-            children     = [HMatrix{R,T}(r,c,false,nothing,nothing,current_node) for r in row_children, c in col_children]
-            current_node.children = children
-            for child in children
-                _build_block_structure!(adm,child)
-            end
+        row_children = X.children
+        col_children = Y.children
+        children     = [HMatrix{R,T}(r,c,false,nothing,nothing,current_node) for r in row_children, c in col_children]
+        current_node.children = children
+        for child in children
+            _build_block_structure!(adm,child)
         end
     end
     return current_node
@@ -178,13 +215,14 @@ function coarsen_non_admissible_blocks(block)
 end
 
 """
-    assemble!(resource,hmat::HMatrix,K,comp)
+    assemble_cpu!(hmat::HMatrix,K,comp)
 
 Assemble data on the leaves of `hmat`. The admissible leaves are compressed
 using the compressor `comp`. This function assumes the structure of `hmat` has
-already been intialized, and therefore should rarely be called directly.
+already been intialized, and therefore should not be called directly. See
+[`HMatrix`](@ref) information on constructors.
 """
-function assemble!(resource::CPU1,hmat,K,comp)
+function assemble_cpu!(hmat,K,comp)
     # base case
     if isleaf(hmat)
         if isadmissible(hmat)
@@ -195,24 +233,30 @@ function assemble!(resource::CPU1,hmat,K,comp)
     else
     # recurse on children
         for child in hmat.children
-            assemble!(resource,child,K,comp)
+            assemble_cpu!(child,K,comp)
         end
     end
     return hmat
 end
 
-function assemble!(::CPUThreads,hmat,K,comp)
-    # NOTE: ideally something like omp for schedule(guided) should be used here
+"""
+    assemble_threads!(hmat::HMatrix,K,comp)
+
+Like [`assemble_cpu!`](@ref), but uses threads to assemble (independent) blocks.
+"""
+function assemble_threads!(hmat,K,comp)
+    # FIXME: ideally something like `omp for schedule(guided)` should be used here
     # to avoid spawning too many (small) tasks. In the absece of such scheduling
     # strategy in julia at the moment, we resort to manually limiting the size
     # of the tasks by directly calling the serial method for blocks which are
     # smaller than a given length (1000^2 here).
-    blocks  = getnodes(x -> isleaf(x) || length(x)<1000*1000,hmat)
+    filter = (x) -> !(isleaf(x) || length(x)<1000*1000)
+    blocks = PreOrderDFS(hmat,filter) |> collect
     sort!(blocks;lt=(x,y)->length(x)<length(y),rev=true)
     n = length(blocks)
     @sync begin
         for i in 1:n
-            Threads.@spawn assemble!(CPU1(),blocks[i],K,comp)
+            Threads.@spawn assemble_cpu!(blocks[i],K,comp)
         end
     end
     return hmat
@@ -229,10 +273,47 @@ function _assemble_dense_block!(hmat,K)
     return hmat
 end
 
+# LinearAlgebra.adjoint(H::HMatrix) = Adjoint(H)
+hasdata(adjH::Adjoint{<:Any,<:HMatrix}) = hasdata(adjH.parent)
+data(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(data(adjH.parent))
+Trees.children(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(children(adjH.parent))
+pivot(adjH::Adjoint{<:Any,<:HMatrix}) = reverse(pivot(adjH.parent))
+rowrange(adjH::Adjoint{<:Any,<:HMatrix}) = colrange(adjH.parent)
+colrange(adjH::Adjoint{<:Any,<:HMatrix}) = rowrange(adjH.parent)
+Trees.isleaf(adjH::Adjoint{<:Any,<:HMatrix}) = isleaf(adjH.parent)
+
+Base.size(adjH::Adjoint{<:Any,<:HMatrix}) = reverse(size(adjH.parent))
+
+# function Base.getindex(H::HMatrix,i::Int,j::Int)
+#     @debug "using `getindex(H::AbstractHMatrix,i::Int,j::Int)`."
+#     shift = pivot(H) .-1
+#     _getindex(H,i+shift[1],j+shift[2])
+# end
+
+# function _getindex(H,i,j)
+#     (i ∈ rowrange(H)) && (j ∈ colrange(H)) || throw(BoundsError(H,(i,j)))
+#     ishift,jshift = pivot(H) .- 1
+#     out = zero(eltype(H))
+#     if hasdata(H)
+#         il,jl = i-ishift, j-jshift # local indices
+#         out  += data(H)[il,jl]
+#     end
+#     for child in getchildren(H)
+#         if (i ∈ rowrange(child)) && (j ∈ colrange(child))
+#             out += _getindex(child,i,j)
+#         end
+#     end
+#     return out
+# end
+
+function Base.show(io::IO,::MIME"text/plain",hmat::Adjoint{Float64,<:HMatrix})
+    print(io,"adjoint hmatrix with range ($(rowrange(hmat))) × ($(colrange(hmat)))")
+end
+
 """
     struct StrongAdmissibilityStd
 
-Two `ClusterTree`s are admissible under this condition if the minimum their
+Two blocks are admissible under this condition if the minimum their
 `diameter` is smaller than `eta` times the `distance` between the
 them, where `eta::Float64` is a parameter.
 """
@@ -240,7 +321,7 @@ Base.@kwdef struct StrongAdmissibilityStd
     eta::Float64=3.0
 end
 
-function (adm::StrongAdmissibilityStd)(left_node::ClusterTree, right_node::ClusterTree)
+function (adm::StrongAdmissibilityStd)(left_node, right_node)
     diam_min = minimum(diameter,(left_node,right_node))
     dist     = distance(left_node,right_node)
     return diam_min < adm.eta*dist
@@ -249,19 +330,19 @@ end
 """
     struct WeakAdmissibilityStd
 
-Two `ClusterTree`s are admissible under this condition if the `distance`
+Two blocks are admissible under this condition if the `distance`
 between them is positive.
 """
 struct WeakAdmissibilityStd
 end
 
-(adm::WeakAdmissibilityStd)(left_node::ClusterTree, right_node::ClusterTree) = distance(left_node,right_node) > 0
+(adm::WeakAdmissibilityStd)(left_node, right_node) = distance(left_node,right_node) > 0
 
 function Base.summary(io::IO,hmat::HMatrix)
     print("HMatrix{$(eltype(hmat))} spanning $(rowrange(hmat)) × $(colrange(hmat))")
-    nodes = collect(AbstractTrees.PreOrderDFS(hmat))
+    nodes = collect(PreOrderDFS(hmat))
     @printf "\n\t number of nodes in tree: %i" length(nodes)
-    leaves = collect(AbstractTrees.Leaves(hmat))
+    leaves = collect(Leaves(hmat))
     sparse_leaves = filter(isadmissible,leaves)
     dense_leaves  = filter(!isadmissible,leaves)
     @printf("\n\t number of leaves: %i (%i admissible + %i full)",length(leaves),length(sparse_leaves),
@@ -280,6 +361,35 @@ function Base.summary(io::IO,hmat::HMatrix)
     @printf "\n\t compression ratio: %f\n" compression_ratio(hmat)
 end
 
+"""
+    isclean(H::HMatrix)
+
+Return `true` if `H` all leaves of `H` have data, and if the leaves are the only
+nodes containing data. This is the normal state of an ℋ-matrix, but during
+intermediate stages of a computat, `H` may be *dirty*.
+"""
+function isclean(H::HMatrix)
+    for node in PreOrderDFS(H)
+        if isleaf(node)
+            hasdata(node) || (return false)
+        else
+            hasdata(node) && (return false)
+        end
+    end
+    return true
+end
+
+function Base.zero(H::HMatrix)
+    H0 = deepcopy(H)
+    rmul!(H0,0)
+    return H0
+end
+
+
+############################################################################################
+# Recipes
+############################################################################################
+
 @recipe function f(hmat::HMatrix)
     legend --> false
     grid   --> false
@@ -288,7 +398,7 @@ end
     seriestype := :shape
     linecolor  --> :black
     # all leaves
-    for block in AbstractTrees.Leaves(hmat)
+    for block in Leaves(hmat)
         @series begin
             if block.admissible
                 fillcolor    --> :blue

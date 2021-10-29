@@ -67,7 +67,8 @@ end
     struct PartialACA
 
 Adaptive cross approximation algorithm with partial pivoting. Does not require
-evaluation of the entire matrix to be compressed, but is not guaranteed to converge either.
+evaluation of the entire matrix to be compressed, but is not guaranteed to
+converge either.
 """
 @Base.kwdef struct PartialACA
     atol::Float64 = 0
@@ -83,36 +84,29 @@ function (paca::PartialACA)(K,rowtree::ClusterTree,coltree::ClusterTree)
     _aca_partial(K,irange,jrange,paca.atol,paca.rank,paca.rtol,istart-irange.start+1)
 end
 
-function _aca_partial_initial_pivot(rowtree)
-    # return index_range(rowtree).start
-    # the method below is suggested in Bebendorf, but it does not seem to
-    # improve the  error. The idea is that the initial pivot is the closes point
-    # to the center of the container.
-    xc        = center(container(rowtree))
-    d         = Inf
-    els       = root_elements(rowtree)
-    loc_idxs  = index_range(rowtree)
-    istart    = first(loc_idxs)
-    for i in loc_idxs
-        x     = els[i]
-        if norm(x-xc) < d
-            d      = norm(x-xc)
-            istart = i
-        end
-    end
-    return istart
-end
-
 function (paca::PartialACA)(K,irange::UnitRange,jrange::UnitRange)
     _aca_partial(K,irange,jrange,paca.atol,paca.rank,paca.rtol)
 end
 
+function (paca::PartialACA)(R::RkMatrix)
+    _aca_partial(R,:,:,paca.atol,paca.rank,paca.rtol)
+end
+
 function _aca_partial(K,irange,jrange,atol,rmax,rtol,istart=1)
     Kadj = adjoint(K)
-    rmax = min(length(irange),length(jrange),rmax)
-    ishift,jshift = irange.start-1, jrange.start-1 # maps global indices to local indices
+    # if irange and jrange are Colon, extract the size from `K` directly. This
+    # allows for some code reuse with specializations on getindex(i,::Colon) and
+    # getindex(::Colon,j) for when `K` is a `RkMatrix`
+    if irange isa Colon && jrange isa Colon
+        m,n = size(K)
+        ishift,jshift = 0,0
+    else
+        m,n = length(irange), length(jrange)
+        ishift,jshift = irange.start-1, jrange.start-1
+        # maps global indices to local indices
+    end
+    rmax = min(m,n,rmax)
     T   = Base.eltype(K)
-    m,n = length(irange),length(jrange)
     A   = Vector{Vector{T}}()
     B   = Vector{Vector{T}}()
     I   = BitVector(true for i = 1:m)
@@ -225,7 +219,24 @@ function _aca_full_pivot(M)
     return idx
 end
 
-
+function _aca_partial_initial_pivot(rowtree)
+    # the method below is suggested in Bebendorf, but it does not seem to
+    # improve the  error. The idea is that the initial pivot is the closesest
+    # point to the center of the cluster
+    xc        = center(container(rowtree))
+    d         = Inf
+    els       = root_elements(rowtree)
+    loc_idxs  = index_range(rowtree)
+    istart    = first(loc_idxs)
+    for i in loc_idxs
+        x     = els[i]
+        if norm(x-xc) < d
+            d      = norm(x-xc)
+            istart = i
+        end
+    end
+    return istart
+end
 
 """
     struct TSVD
@@ -251,12 +262,12 @@ function (tsvd::TSVD)(K,irange::UnitRange,jrange::UnitRange)
     compress!(M,tsvd)
 end
 
-function compress!(M::Matrix{T},tsvd::TSVD) where {T}
-    F     = svd!(M)
-    enorm = F.S[1]
-    r     = findlast(x -> x>max(tsvd.atol,tsvd.rtol*enorm), F.S) + 1
-    r     = min(r,tsvd.rank)
-    m,n = size(M)
+function (tsvd::TSVD)(R::RkMatrix)
+    F       = svd(R)
+    sp_norm = F.S[1] # spectral norm
+    r       = findlast(x -> x>max(tsvd.atol,tsvd.rtol*sp_norm), F.S) + 1
+    r       = min(r,tsvd.rank)
+    m,n     = size(M)
     if m<n
         A = @views F.U[:,1:r]*Diagonal(F.S[1:r])
         B = F.V[:,1:r]
@@ -265,4 +276,41 @@ function compress!(M::Matrix{T},tsvd::TSVD) where {T}
         B = @views (F.V[:,1:r])*Diagonal(F.S[1:r])
     end
     return RkMatrix(A,B)
+end
+
+# function compress!(M::Base.Matrix,tsvd::TSVD)
+#     F     = svd!(M)
+#     enorm = F.S[1]
+#     r     = findlast(x -> x>max(tsvd.atol,tsvd.rtol*enorm), F.S) + 1
+#     r     = min(r,tsvd.rank)
+#     m,n = size(M)
+#     if m<n
+#         A = @views F.U[:,1:r]*Diagonal(F.S[1:r])
+#         B = F.V[:,1:r]
+#     else
+#         A = F.U[:,1:r]
+#         B = @views (F.V[:,1:r])*Diagonal(F.S[1:r])
+#     end
+#     return RkMatrix(A,B)
+# end
+
+function compress!(R::RkMatrix,tsvd::TSVD)
+    m,n   = size(R)
+    F     = svd(R)
+    sp_norm = F.S[1] # spectral norm
+    r     = findlast(x -> x>max(tsvd.atol,tsvd.rtol*sp_norm), F.S)
+    if isnothing(r)
+        r = min(rank(R),tsvd.rank,m,n)
+    else
+        r = min(r,rank(R),tsvd.rank,m,n)
+    end
+    if m<n
+        A = @views F.U[:,1:r]*Diagonal(F.S[1:r])
+        B = F.V[:,1:r]
+    else
+        A = F.U[:,1:r]
+        B = @views (F.V[:,1:r])*Diagonal(F.S[1:r])
+    end
+    R.A,R.B = A,B
+    return R
 end

@@ -8,24 +8,29 @@ using LoopVectorization
 using TimerOutputs
 using Printf
 using RecipesBase
-
 using WavePropBase
 using WavePropBase.Trees
 using WavePropBase.Utils
 
-WavePropBase.@import_interface
-
 import AbstractTrees
 
 include("utils.jl")
+include("blockarray.jl")
 include("hilbertcurve.jl")
 include("kernelmatrix.jl")
-include("lowrankmatrices.jl")
+include("rkmatrix.jl")
 include("compressor.jl")
 include("hmatrix.jl")
-include("hgemv.jl")
+include("conversions.jl")
+include("addition.jl")
+include("multiplication.jl")
+include("inverse.jl")
+include("triangular.jl")
+include("lu.jl")
 
 export
+    # modules (re-exported)
+    Utils,
     # types (re-exported)
     ClusterTree,
     CardinalitySplitter,
@@ -34,6 +39,14 @@ export
     GeometricMinimalSplitter,
     HyperRectangle,
     # types
-    HMatrix
+    HMatrix,
+    StrongAdmissibilityStd,
+    PartialACA,
+    ACA,
+    TSVD,
+    # functions
+    compression_ratio,
+    print_tree,
+    hmul!
 
 end

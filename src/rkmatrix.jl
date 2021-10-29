@@ -1,5 +1,5 @@
 """
-    RkMatrix{T}
+    mutable struct RkMatrix{T}
 
 Representation of a rank `r` matrix `M` in an outer product format `M =
 A*adjoint(B)` where `A` has size `m × r` and `B` has size `n × r`.
@@ -7,7 +7,7 @@ A*adjoint(B)` where `A` has size `m × r` and `B` has size `n × r`.
 The internal representation stores `A` and `B`, but `R.Bt` or `R.At` can be used
 to get the respective adjoints.
 """
-struct RkMatrix{T}
+mutable struct RkMatrix{T} <: AbstractMatrix{T}
     A::Matrix{T}
     B::Matrix{T}
     function RkMatrix(A::Matrix{T},B::Matrix{T}) where {T}
@@ -16,11 +16,44 @@ struct RkMatrix{T}
         n  = size(B,1)
         if  r*(m+n) >= m*n
             @debug "Inefficient RkMatrix:" size(A) size(B)
+            # error("Inefficient RkMatrix")
         end
         new{T}(A,B)
     end
 end
 RkMatrix(A,B) = RkMatrix(promote(A,B)...)
+
+function Base.getindex(rmat::RkMatrix,i::Int,j::Int)
+    @debug "calling slow `getindex` of an `RkMatrix`"
+    # error("calling slow `getindex` of an `RkMatrix`")
+    r = rank(rmat)
+    acc = zero(eltype(rmat))
+    for k in 1:r
+        acc += rmat.A[i,k] * conj(rmat.B[j,k])
+    end
+    return acc
+end
+
+# some "fast" ways of computing a row and column of R and ajoint(R)
+function Base.getindex(R::RkMatrix, ::Colon, j::Int)
+    R.A*conj(view(R.B,j,:))
+end
+
+# return the j-th column
+function Base.getindex(R::RkMatrix, i::Int, ::Colon)
+    # conj(R.B)*view(R.A,i,:)
+    R.B*conj(view(R.A,i,:)) |> conj!
+end
+
+function Base.getindex(Ra::Adjoint{<:Any,<:RkMatrix}, i::Int, ::Colon)
+    R = LinearAlgebra.parent(Ra)
+    R.A*conj(view(R.B,i,:)) |> conj!
+end
+
+function Base.getindex(Ra::Adjoint{<:Any,<:RkMatrix}, ::Colon, j::Int)
+    R = LinearAlgebra.parent(Ra)
+    R.B*conj(view(R.A,j,:))
+end
 
 """
     RkMatrix(A::Vector{<:Vector},B::Vector{<:Vector})
@@ -118,25 +151,6 @@ function Base.vcat(M1::RkMatrix{T},M2::RkMatrix{T}) where {T}
     return RkMatrix(A,B)
 end
 
-function LinearAlgebra.mul!(C::AbstractVector,Rk::RkMatrix{T},F::AbstractVector,a::Number,b::Number) where {T}
-    m,n = size(Rk)
-    r   = rank(Rk)
-    tmp = Rk.Bt*F
-    if T <: Number
-        mul!(C,Rk.A,tmp,a,b)
-    elseif T <: SMatrix
-        _C = Rk.A*tmp*a + C*b
-        # for i in 1:m
-        #     C[i] = C[i]*b
-        #     for k in 1:r
-        #         C[i] += Rk.A[i,k]*tmp[k]*a
-        #     end
-        # end
-        copy!(C,_C)
-    end
-    return C
-end
-
 # function LinearAlgebra.mul!(C::AbstractVector,Rk::RkMatrix{T},F::AbstractVector,a::Number,b::Number) where {T<:SMatrix}
 #     buf = buffer(Rk)
 #     m,n = size(Rk)
@@ -169,15 +183,6 @@ Base.rand(::Type{RkMatrix},m::Int,n::Int,r::Int) = rand(RkMatrix{Float64},m,n,r)
 
 Base.copy(R::RkMatrix) = RkMatrix(copy(R.A),copy(R.B))
 
-function Base.Matrix(R::RkMatrix{<:Number})
-    R.A*R.Bt
-end
-function Base.Matrix(R::RkMatrix{<:SMatrix})
-    # collect must be used when we have a matrix of `SMatrix` because of this:
-    # https://github.com/JuliaArrays/StaticArrays.jl/issues/966#issuecomment-943679214
-    R.A*collect(R.Bt)
-end
-
 """
     num_stored_elements(R::RkMatrix)
 
@@ -193,3 +198,73 @@ The ratio of the uncompressed size of `R` to its compressed size in outer
 product format.
 """
 compression_ratio(R::RkMatrix) = prod(size(R)) / num_stored_elements(R)
+
+function LinearAlgebra.mul!(C::AbstractVector,Rk::RkMatrix{T},F::AbstractVector,a::Number,b::Number) where {T<:SMatrix}
+    m,n = size(Rk)
+    r   = rank(Rk)
+    tmp = Rk.Bt*F
+    # FIXME: to support scalar and tensorial problems, we currently allow for T
+    # to be something other than a plain number. If that is the case, we
+    # implement a (slow) multiplication algorithm by hand to circumvent a
+    # problem in LinearAlgebra for the generic mulplication mul!(C,A,B,a,b) when
+    # C and B are a vectors of static matrices, and A is a matrix of static
+    # matrices. Should eventually be removed.
+    rmul!(C,b)
+    for k in 1:r
+        tmp[k] *= a
+        for i in 1:m
+            C[i] += Rk.A[i,k]*tmp[k]
+        end
+    end
+    return C
+end
+
+"""
+    svd(R::RkMatrix,[tol])
+
+Compute the singular value decomposition of an `RkMatrix` by first doing a `qr`
+of `R.A` and `R.B` followed by an `svd` of ``R_A*(R_{B})^T``. If passed `tol`,
+discard all singular values smaller than `tol`.
+"""
+function LinearAlgebra.svd(R::RkMatrix)
+    r      = rank(R)
+    # treat weird case where it would be most efficient to convert first to a full matrix
+    r > min(size(R)...) && return svd(Matrix(R))
+    # qr part
+    QA, RA = qr(R.A)
+    QB, RB = qr(R.B)
+    # svd part
+    F      = svd(RA*adjoint(RB))
+    # build U and Vt
+    U      = QA*F.U
+    Vt     = F.Vt*adjoint(QB)
+    return SVD(U,F.S,Vt) #create the SVD structure
+end
+function LinearAlgebra.svd(A::RkMatrix{T},tol) where {T}
+    F = svd(A)
+    r = findlast(x -> x>tol, F.S)
+    return SVD(F.U[:,1:r],F.S[1:r],F.V[:,1:r])
+end
+
+"""
+    svd!(R::RkMatrix,[tol])
+
+Like `svd`, but performs the intermediate `qr` in-place mutating the data in
+`R`. You should not reuse `R` after calling this method.
+"""
+function LinearAlgebra.svd!(M::RkMatrix)
+    r      = rank(M)
+    QA, RA = qr!(M.A)
+    QB, RB = qr!(M.B)
+    F      = svd!(RA*adjoint(RB)) # svd of an r×r problem
+    U      = QA*F.U
+    Vt     = F.Vt*adjoint(QB)
+    return SVD(U,F.S,Vt) #create the SVD structure
+end
+function LinearAlgebra.svd!(R::RkMatrix,tol)
+    tol <= 0 && return R
+    m,n    = size(R)
+    F      = svd!(R)
+    r      = findlast(x -> x>tol, F.S)
+    SVD(F.U[:,1:r],F.S[1:r],F.V[:,1:r])
+end

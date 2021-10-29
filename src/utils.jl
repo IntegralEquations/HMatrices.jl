@@ -77,3 +77,14 @@ function Base.getindex(M::PermutedMatrix,i,j)
     jp = M.colperm[j]
     M.orig[ip,jp]
 end
+
+function points_on_sphere(npts,R=1)
+    theta = π*rand(npts)
+    phi   = 2*π*rand(npts)
+    x     = @. sin(theta)*cos(phi)
+    y     = @. R*sin(theta)*sin(phi)
+    z     = @. R*cos(theta)
+    data  = vcat(x',y',z')
+    pts = reinterpret(SVector{3,Float64},vec(data)) |> collect
+    return pts
+end
