@@ -9,6 +9,7 @@ using RecipesBase
 using WavePropBase
 using WavePropBase.Trees
 using WavePropBase.Utils
+using WavePropBase.Geometry
 
 import AbstractTrees
 
@@ -26,6 +27,7 @@ include("lu.jl")
 export
     # modules (re-exported)
     Utils,
+    Geometry,
     # types (re-exported)
     ClusterTree,
     CardinalitySplitter,
