@@ -1,12 +1,36 @@
+"""
+    hmul!(C::HMatrix,A::HMatrix,B::HMatrix,a,b,compressor)
+
+Similar to `LinearAlgebra.mul!` : compute `C <-- A*B*a + B*b`, where `A,B,C` are
+hierarchical matrices and `compressor` is a function/functor used in the
+intermediate stages of the multiplication to avoid growring the rank of
+admissible blocks after addition is performed.
+"""
+function hmul!(C::HMatrix,A::HMatrix,B::HMatrix,a,b,compressor)
+    b == true || rmul!(C,b)
+    plan = plan_hmul(C,A,B,a,1)
+    execute!(plan,compressor)
+    # deprecated version of mul!
+    # _mul333!(C,A,B,a,compressor)
+    return C
+end
+# disable `mul` of hierarchial matrices
+function LinearAlgebra.mul!(C::HMatrix,A::HMatrix,B::HMatrix,a::Number,b::Number)
+    msg = "use `hmul` to multiply hierarchical matrices"
+    error(msg)
+end
+
 ##################################################################################
-#                   mul!(C,A,B,a,b) :  C <-- b*C + a*A*B
-# For the mul!(C,A,B,a,b) function, there are 3^3 = 27 cases to be considered
+# The methods below implement what is required to perform the mul! of
+# hierarchical matrices. There are 3^3 = 27 cases to be considered
 # depending on the types of C, A, and B. We will list these cases by by x.x.x
 # where 1 means a full matrix, 2 a sparse matrix, and 3 a hierarhical matrix.
 # E.g. case 1.2.1 means C is full, A is sparse, B is full.
-# Note 1: no re-compression is performed after mul!
-# Note 2: when `C isa HMatrix` (and therefore has children), the data is not
-# flushed to the children by the mul! method
+# Note: initially these were all methods of the `mul!` function, but it turned
+# out to be a mess to debug and profile 27 methods with the same name, so I
+# decided to name them differently. One downside is that some of the tasks that
+# could be automatically handled by the dynamic dispatch system have to be done
+# manually...
 ##################################################################################
 
 # ################################################################################
@@ -210,7 +234,7 @@ end
 function _mul231!(C::RkMatrix, H::HMatrix, M::Union{Matrix,SubArray,Adjoint}, a::Number,compressor=identity)
     @debug "2.3.1: this case should not arise"
     T = promote_type(eltype(H),eltype(M))
-    buffer = Matrix{T}(undef,size(H,1),size(M,2))
+    buffer = zeros(T,size(H,1),size(M,2))
     _mul131!(buffer,H,M,1)
     axpy!(a,buffer,C)
     compress!(C,compressor)
@@ -238,10 +262,9 @@ end
 # (b) convert one of the HMatrices to Matrix   (requires converting the sparse blocks to full using outer product)
 # (c) recurse down the  Hmatrices structure
 # TODO: benchmark and test
-# on some mock tests, option B seems to be faster
 
 # option b
-# function _mul233!(C::RkMatrix, A::HMatrix, B::HMatrix, a::Number)
+# function _mul233!(C::RkMatrix, A::HMatrix, B::HMatrix, a::Number,compressor=identity)
 #     if length(A) < length(B)
 #         return _mul213!(C,Matrix(A),B,a)
 #     else
@@ -331,7 +354,7 @@ end
 ################################################################################
 function _mul312!(C::HMatrix,M::Union{Matrix,SubArray,Adjoint},R::RkMatrix,a::Number,compressor=identity)
     buffer = a*M*R.A
-    tmp    = RkMatrix(buffer,R.B)
+    tmp    = RkMatrix(buffer,copy(R.B))
     if hasdata(C)
         axpy!(true,tmp,C.data)
     else
@@ -362,7 +385,7 @@ end
 ################################################################################
 function _mul321!(C::HMatrix,R::RkMatrix,M::Union{Matrix,SubArray,Adjoint},a::Number,compressor=identity)
     buff = conj(a)*adjoint(M)*R.B
-    tmp  = RkMatrix(R.A,buff)
+    tmp  = RkMatrix(copy(R.A),buff)
     if hasdata(C)
         axpy!(true,tmp,C.data)
     else
@@ -377,9 +400,9 @@ end
 ################################################################################
 function _mul322!(C::HMatrix,R::RkMatrix,S::RkMatrix,a::Number,compressor=identity)
     if rank(R) < rank(S)
-        tmp = RkMatrix(R.A, conj(a)*S.B*(S.At*R.B))
+        tmp = RkMatrix(copy(R.A), conj(a)*S.B*(S.At*R.B))
     else
-        tmp = RkMatrix(a*R.A*(R.Bt*S.A) , S.B)
+        tmp = RkMatrix(a*R.A*(R.Bt*S.A) , copy(S.B))
     end
     if hasdata(C)
         axpy!(true,tmp,C.data)
@@ -397,7 +420,7 @@ function _mul323!(C::HMatrix,R::RkMatrix,H::HMatrix,a::Number,compressor=identit
     T = promote_type(eltype(R.Bt),eltype(H))
     buffer = zeros(T,size(R.Bt,1),size(H,2))
     _mul113!(buffer,R.Bt,H,a)
-    tmp = RkMatrix(R.A,collect(adjoint(buffer)))
+    tmp = RkMatrix(copy(R.A),collect(adjoint(buffer)))
     if hasdata(C)
         axpy!(true,tmp,C.data)
     else
@@ -430,7 +453,7 @@ function _mul332!(C::HMatrix,H::HMatrix,R::RkMatrix,a::Number,compressor=identit
     T = promote_type(eltype(H),eltype(R))
     buffer = zeros(T,size(H,1),size(R.A,2))
     _mul131!(buffer,H,R.A,a)
-    tmp = RkMatrix(buffer,R.B)
+    tmp = RkMatrix(buffer,copy(R.B))
     if hasdata(C)
         axpy!(true,tmp,C.data)
     else
@@ -562,47 +585,9 @@ function _mul_leaf!(C::HMatrix,A::HMatrix,B::HMatrix,a::Number,compressor)
     return C
 end
 
-function hmul!(C::HMatrix,A::HMatrix,B::HMatrix,a,b,compressor)
-    b == true || rmul!(C,b)
-    _mul333!(C,A,B,a,compressor)
-    # plan = plan_hmul(C,A,B)
-    # execute(plan,a,posthook)
-end
-
 compress!(data::RkMatrix,::typeof(identity)) = data
 compress!(data::Matrix,::typeof(identity))   = data
 compress!(data::HMatrix,::typeof(identity))   = data
-
-"""
-    flush_to_children!(H::HMatrix,compressor)
-
-Transfer the blocks `data` to its children. At the end, set `H.data` to `nothing`.
-"""
-function flush_to_children!(H::HMatrix,compressor)
-    T = eltype(H)
-    isleaf(H)  && (return H)
-    hasdata(H) || (return H)
-    R::RkMatrix{T}   = data(H)
-    _add_to_children!(H,R,compressor)
-    H.data = nothing
-    return H
-end
-
-function _add_to_children!(H,R::RkMatrix,compressor)
-    shift = pivot(H) .- 1
-    for block in children(H)
-        irange   = rowrange(block) .- shift[1]
-        jrange   = colrange(block) .- shift[2]
-        bdata    = data(block)
-        tmp      = RkMatrix(R.A[irange,:],R.B[jrange,:])
-        if bdata === nothing
-            setdata!(block,tmp)
-        else
-            axpy!(true,tmp,bdata)
-            bdata isa RkMatrix && compress!(bdata,compressor)
-        end
-    end
-end
 
 """
     flush_to_leaves(H::HMatrix)
@@ -635,169 +620,189 @@ function _add_to_leaves!(H::HMatrix,R::RkMatrix,compressor)
     return H
 end
 
-# ############################################################################################
-# # Specializations on gemv
-# ############################################################################################
+############################################################################################
+# Specializations on gemv:
+# The routines below provide specialized version of mul!(C,A,B,a,b) when `A` and
+# `B` are vectors
+############################################################################################
 
-# # R*x
-# function LinearAlgebra.mul!(C::AbstractVector,Rk::RkMatrix,F::AbstractVector,a::Number,b::Number)
-#     tmp = Rk.Bt*F
-#     mul!(C,Rk.A,tmp,a,b)
-# end
+# 1.2.1
+function LinearAlgebra.mul!(y::AbstractVector,R::RkMatrix,x::AbstractVector,a::Number,b::Number)
+    tmp = R.Bt*x
+    mul!(y,R.A,tmp,a,b)
+end
 
-# # Rt*x
-# function LinearAlgebra.mul!(y::AbstractVector,Rt::Adjoint{<:Any,<:RkMatrix},x::AbstractVector,a::Number,b::Number)
-#     R  = Rt.parent
-#     At = adjoint(R.A)
-#     buffer = At*x
-#     mul!(y,R.B,buffer,a,b)
-#     return y
-# end
+# 1.2.1
+function LinearAlgebra.mul!(y::AbstractVector,adjR::Adjoint{<:Any,<:RkMatrix},x::AbstractVector,a::Number,b::Number)
+    R = parent(adjR)
+    tmp = R.At*x
+    mul!(y,R.B,tmp,a,b)
+end
 
-# # xt*R
-# const VecAdj{T} = Adjoint{T,Vector{T}}
-# function LinearAlgebra.mul!(yt::VecAdj,xt::VecAdj,R::RkMatrix,a::Number,b::Number)
-#     mul!(yt.parent,adjoint(R),xt.parent,a,b)
-#     return yt
-# end
+# 1.3.1
+function LinearAlgebra.mul!(y::AbstractVector,A::HMatrix,x::AbstractVector,a::Number,b::Number;
+                            global_index=true,threads=true,distributed=false)
+    # since the HMatrix represents A = Pr*H*Pc, where Pr and Pc are row and column
+    # permutations, we need first to rewrite C <-- b*C + a*(Pc*H*Pb)*B as
+    # C <-- Pr*(b*inv(Pr)*C + a*H*(Pc*B)). Following this rewrite, the
+    # multiplication is performed by first defining B <-- Pc*B, and C <--
+    # inv(Pr)*C, doing the multiplication with the permuted entries, and then
+    # permuting the result  C <-- Pr*C at the end.
+    ctree     = A.coltree
+    rtree     = A.rowtree
+    # permute input
+    if global_index
+        x         = x[ctree.loc2glob]
+        y         = permute!(y,rtree.loc2glob)
+        rmul!(x,a) # multiply in place since this is a new copy, so does not mutate exterior x
+    else
+        x = a*x # new copy of x
+    end
+    rmul!(y,b)
+    # offset in case A is not indexed starting at (1,1); e.g. A is not the root
+    # of and HMatrix
+    offset = pivot(A) .- 1
+    if threads
+        # TODO: test the various threaded implementations and chose one.
+        # Currently there are two main choices:
+        # 1. spawn a task per leaf, and let julia scheduler handle the tasks
+        # 2. create a static partition of the leaves and try to estimate the
+        #    cost, then spawn one task per block of the partition. In this case,
+        #    test if the hilbert partition is really faster than col_partition
+        #    or row_partition
+        # Right now the hilbert partition is chosen by default without proper testing.
+        nt        = Threads.nthreads()
+        partition = hilbert_partitioning(A,nt)
+        _hgemv_static_partition!(y,x,partition,offset)
+        # _hgemv_threads!(y,A,x,offset)  # threaded implementation
+    else
+        _hgemv_recursive!(y,A,x,offset) # serial implementation
+    end
+    # permute output
+    global_index && invpermute!(y,loc2glob(rtree))
+    return y
+end
 
-# # H*x
-# function LinearAlgebra.mul!(C::AbstractVector,A::HMatrix,B::AbstractVector,a::Number,b::Number)
-#     # since the HMatrix represents A = Pr*H*Pc, where Pr and Pc are row and column
-#     # permutations, we need first to rewrite C <-- b*C + a*(Pc*H*Pb)*B as
-#     # C <-- Pr*(b*inv(Pr)*C + a*H*(Pc*B)). Following this rewrite, the
-#     # multiplication is performed by first defining B <-- Pc*B, and C <--
-#     # inv(Pr)*C, doing the multiplication with the permuted entries, and then
-#     # permuting the result  C <-- Pr*C at the end. This is controlled by the
-#     # flat `P`
-#     ctree     = A.coltree
-#     rtree     = A.rowtree
-#     # permute input
-#     B         = B[ctree.loc2glob]
-#     C         = permute!(C,rtree.loc2glob)
-#     rmul!(B,a)
-#     rmul!(C,b)
-#     # _mul_recursive(C,A,B) # serial implementation
-#     # _mul_threads!(C,A,B)  # threaded implementation
-#     # nt        = Threads.nthreads()
-#     # partition = hilbert_partitioning(A,nt)
-#     # _mul_static!(C,A,B,partition) # threaded implementation, by hand partition
-#     # permute output
-#     invpermute!(C,loc2glob(rtree))
-# end
+"""
+    _hgemv_recursive!(C,A,B,offset)
+
+Internal function used to compute `C[I] <-- C[I] + A*B[J]` where `I =
+rowrange(A) - offset[1]` and `J = rowrange(B) - offset[2]`.
+
+The `offset` argument is used on the caller side to signal if the original
+hierarchical matrix had a `pivot` other than `(1,1)`.
+"""
+function _hgemv_recursive!(C::AbstractVector,A::Union{HMatrix,Adjoint{<:Any,<:HMatrix}},B::AbstractVector,offset)
+    T = eltype(A)
+    if isleaf(A)
+        irange = rowrange(A) .- offset[1]
+        jrange = colrange(A) .- offset[2]
+        d   = data(A)
+        if T <: Number
+            # C and B are the "global" vectors handled by the caller, so a view is needed.
+            LinearAlgebra.mul!(view(C,irange),d,view(B,jrange),1,1)
+        elseif T<: SMatrix
+            # FIXME: there is bug with gemv and static arrays, so we convert
+            # them to matrices of n × 1
+            if d isa Matrix
+                LinearAlgebra.mul!(view(C,irange,1:1),d,view(B,jrange,1:1),1,1)
+            else
+                LinearAlgebra.mul!(view(C,irange),d,view(B,jrange),1,1)
+            end
+        else
+            error("T=$T")
+        end
+    else
+        for block in children(A)
+            _hgemv_recursive!(C,block,B,offset)
+        end
+    end
+    return C
+end
+
+function _hgemv_threads!(C::AbstractVector,A::HMatrix,B::AbstractVector,offset)
+    # make copies of C and run in parallel
+    nt        = Threads.nthreads()
+    Cthreads  = [zero(C) for _ in 1:nt]
+    blocks    = Leaves(A)
+    @sync for block in blocks
+        Threads.@spawn begin
+            id = Threads.threadid()
+            _hgemv_recursive!(Cthreads[id],block,B,offset)
+        end
+    end
+    # reduce
+    for Ct in Cthreads
+        axpy!(1,Ct,C)
+    end
+    return C
+end
+
+function _hgemv_static_partition!(C::AbstractVector,B::AbstractVector,partition,offset)
+    # multiply by b at root level
+    # rmul!(C,b)
+    # create a lock for the reduction step
+    mutex = ReentrantLock()
+    nt    = length(partition)
+    times = zeros(nt)
+    Threads.@threads for n in 1:nt
+        id = Threads.threadid()
+        times[id] =
+        @elapsed begin
+            leaves = partition[n]
+            Cloc   = zero(C)
+            for leaf in leaves
+                irange = rowrange(leaf) .- offset[1]
+                jrange = colrange(leaf) .- offset[2]
+                data   = leaf.data
+                mul!(view(Cloc,irange),data,view(B,jrange),1,1)
+            end
+            # reduction
+            lock(mutex) do
+                axpy!(1,Cloc,C)
+            end
+        end
+        # @debug "Matrix vector product" Threads.threadid() times[id]
+    end
+    tmin,tmax = extrema(times)
+    if tmax/tmin > 1.1
+        @warn "gemv: ratio of tmax/tmin = $(tmax/tmin)"
+    end
+    # @debug "Gemv: tmin = $tmin, tmax = $tmax, ratio = $((tmax)/(tmin))"
+    return C
+end
 
 
-# ############################################################################################
-# ############################# auxiliary functions ##########################################
-# ############################################################################################
+"""
+    hilbert_partitioning(H::HMatrix,np,[cost=cost_mv])
 
-# function _mul_threads!(C::AbstractVector,A::HMatrix,B::AbstractVector)
-#     # make copies of C and run in parallel
-#     nt        = Threads.nthreads()
-#     Cthreads  = [zero(C) for _ in 1:nt]
-#     blocks    = filter(x -> isleaf(x),A)
-#     @sync for block in blocks
-#         Threads.@spawn begin
-#             id = Threads.threadid()
-#             _mul_recursive!(Cthreads[id],block,B)
-#         end
-#     end
-#     # reduce
-#     for Ct in Cthreads
-#         axpy!(1,Ct,C)
-#     end
-#     return C
-# end
+Partiotion the leaves of `H` into `np` sequences of approximate equal cost (as
+determined by the `cost` function) while also trying to maximize the locality of
+each partition.
+"""
+function hilbert_partitioning(H::HMatrix,np=Threads.nthreads(),cost=cost_mv)
+    # the hilbert curve will be indexed from (0,0) × (N-1,N-1), so set N to be
+    # the smallest power of two larger than max(m,n), where m,n = size(H)
+    m,n = size(H)
+    N   = max(m,n)
+    N   = nextpow(2,N)
+    # sort the leaves by their hilbert index
+    leaves = Leaves(H) |> collect
+    hilbert_indices = map(leaves) do leaf
+        # use the center of the leaf as a cartesian index
+        i,j = pivot(leaf) .- 1 .+ size(leaf) .÷ 2
+        hilbert_cartesian_to_linear(N,i,j)
+    end
+    p = sortperm(hilbert_indices)
+    permute!(leaves,p)
+    # now compute a quasi-optimal partition of leaves based `cost_mv`
+    cmax      = find_optimal_cost(leaves,np,cost,1)
+    partition = build_sequence_partition(leaves,np,cost,cmax)
+    return partition
+end
 
-# # multiply in parallel using a static partitioning of the leaves computed "by
-# # hand" in partition
-# function _mul_static!(C::AbstractVector,A::HMatrix,B::AbstractVector,partition)
-#     # multiply by b at root level
-#     # rmul!(C,b)
-#     # create a lock for the reduction step
-#     mutex = ReentrantLock()
-#     nt    = length(partition)
-#     times = Vector{Float64}(undef,nt)
-#     Threads.@threads for n in 1:nt
-#         id = Threads.threadid()
-#         times[id] =
-#         @elapsed begin
-#             leaves = partition[n]
-#             Cloc   = zero(C)
-#             for leaf in leaves
-#                 irange = rowrange(leaf)
-#                 jrange = colrange(leaf)
-#                 data   = leaf.data
-#                 mul!(view(Cloc,irange),data,view(B,jrange),1,1)
-#             end
-#             # reduction
-#             lock(mutex) do
-#                 axpy!(1,Cloc,C)
-#             end
-#         end
-#         # @debug "Matrix vector product" Threads.threadid() times[id]
-#     end
-#     tmin,tmax = extrema(times)
-#     if tmax/tmin > 1.1
-#         @warn "gemv: ratio of tmax/tmin = $(tmax/tmin)"
-#     end
-#     # @debug "Gemv: tmin = $tmin, tmax = $tmax, ratio = $((tmax)/(tmin))"
-#     return C
-# end
-
-# function _mul_recursive!(C::AbstractVector,A::HMatrix,B::AbstractVector)
-#     T = eltype(A)
-#     if isleaf(A)
-#         irange = rowrange(A)
-#         jrange = colrange(A)
-#         data   = A.data
-#         if T <: Number
-#             LinearAlgebra.mul!(view(C,irange),data,view(B,jrange),1,1)
-#         elseif T<: SMatrix
-#             # see this issue:
-#             if data isa Matrix
-#                 LinearAlgebra.mul!(view(C,irange,1:1),data,view(B,jrange,1:1),1,1)
-#             else
-#                 LinearAlgebra.mul!(view(C,irange),data,view(B,jrange),1,1)
-#             end
-#         else
-#             error("T=$T")
-#         end
-#     else
-#         for block in A.children
-#             _mul_recursive!(C,block,B)
-#         end
-#     end
-#     return C
-# end
-
-# """
-#     hilbert_partitioning(H::HMatrix,np,[cost=cost_mv])
-
-# Partiotion the leaves of `H` into `np` sequences of approximate equal cost (as
-# determined by the `cost` function) while also trying to maximize the locality of
-# each partition.
-# """
-# function hilbert_partitioning(H::HMatrix,np=Threads.nthreads(),cost=cost_mv)
-#     # the hilbert curve will be indexed from (0,0) × (N-1,N-1), so set N to be
-#     # the smallest power of two larger than max(m,n), where m,n = size(H)
-#     m,n = size(H)
-#     N   = max(m,n)
-#     N   = nextpow(2,N)
-#     # sort the leaves by their hilbert index
-#     leaves = filter(x -> isleaf(x),H)
-#     hilbert_indices = map(leaves) do leaf
-#         # use the center of the leaf as a cartesian index
-#         i,j = pivot(leaf) .- 1 .+ size(leaf) .÷ 2
-#         hilbert_cartesian_to_linear(N,i,j)
-#     end
-#     p = sortperm(hilbert_indices)
-#     permute!(leaves,p)
-#     # now compute a quasi-optimal partition of leaves based `cost_mv`
-#     cmax      = find_optimal_cost(leaves,np,cost,1)
-#     partition = build_sequence_partition(leaves,np,cost,cmax)
-#     return partition
-# end
+# TODO: benchmark the different partitioning strategies for gemv. Is the hilber
+# partition really faster than the simpler alternatives (row partition, col partition)?
 
 # function row_partitioning(H::HMatrix,np=Threads.nthreads())
 #     # sort the leaves by their row index
@@ -831,20 +836,20 @@ end
 #     return partition
 # end
 
-# """
-#     cost_mv(A::Union{Matrix,SubArray,Adjoint})
+"""
+    cost_mv(A::Union{Matrix,SubArray,Adjoint})
 
-# A proxy for the computational cost of a matrix/vector product.
-# """
-# function cost_mv(R::RkMatrix)
-#     rank(R)*sum(size(R))
-# end
-# function cost_mv(M::Base.Matrix)
-#     length(M)
-# end
-# function cost_mv(H::HMatrix)
-#     cost_mv(H.data)
-# end
+A proxy for the computational cost of a matrix/vector product.
+"""
+function cost_mv(R::RkMatrix)
+    rank(R)*sum(size(R))
+end
+function cost_mv(M::Base.Matrix)
+    length(M)
+end
+function cost_mv(H::HMatrix)
+    cost_mv(H.data)
+end
 
 ############################################################################################
 ####################################### rmul! ##############################################

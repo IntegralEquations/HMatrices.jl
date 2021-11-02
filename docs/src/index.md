@@ -4,7 +4,7 @@ CurrentModule = HMatrices
 
 # HMatrices
 
-Documentation for [HMatrices](https://github.com/maltezfaria/HMatrices.jl).
+Documentation for [HMatrices.jl](https://github.com/WaveProp/HMatrices.jl).
 
 ```@index
 ```

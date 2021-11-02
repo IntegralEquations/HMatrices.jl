@@ -2,7 +2,10 @@ using HMatrices
 using Test
 using StaticArrays
 using LinearAlgebra
-using HMatrices: ACA, PartialACA, TSVD, LaplaceMatrix, RkMatrix, HelmholtzMatrix, ElastodynamicMatrix, ElastostaticMatrix
+using HMatrices: ACA, PartialACA, TSVD, RkMatrix
+
+dir = @__DIR__
+include(joinpath(dir,"kernelmatrix.jl"))
 
 using Random
 Random.seed!(1)
@@ -81,13 +84,13 @@ end
 
 
 @testset "Tensorial" begin
-    # T = SMatrix{3,3,ComplexF64,9}
-    T = SMatrix{3,3,Float64,9}
+    T = SMatrix{3,3,ComplexF64,9}
+    # T = SMatrix{3,3,Float64,9}
     m,n = 100,100
     X = rand(SVector{3,Float64},m)
     Y = map(i->SVector(10,0,0) + rand(SVector{3,Float64}),1:n)
-    # K = ElastodynamicMatrix(X,Y,1.0,2.0,1.0,1.0)
-    K = ElastostaticMatrix(X,Y,1.0,2.0)
+    K = ElastodynamicMatrix(X,Y,1.0,2.0,1.0,1.0)
+    # K = ElastostaticMatrix(X,Y,1.0,2.0)
     M = Matrix(K)
     irange,jrange = 1:m,1:n
     @testset "aca_full" begin

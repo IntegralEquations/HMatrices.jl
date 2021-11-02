@@ -4,14 +4,12 @@ using LinearAlgebra
 using ComputationalResources
 using BenchmarkTools
 
-HMatrices.debug()
-
 # SUITE["Assembly"]         = BenchmarkGroup(["assembly","hmatrix"])
 
 # parameters
 
-N    = 300_000
-nmax = 200
+N    = 20_000
+nmax = 100
 eta  = 3
 radius = 1
 rtol   = 1e-5
@@ -55,24 +53,14 @@ end
 K         = LaplaceMatrix{Float64}(X,X)
 comp      = HMatrices.PartialACA(rtol=rtol)
 
-H = HMatrix(K,Xclt,Xclt,adm,comp)
+H = HMatrix(K,Xclt,Xclt,adm,comp;threads=false)
 
-x = rand(N)
-y = similar(x)
+##
 
-# @btime mul!($y,$H,$x);
+compressor = PartialACA(;atol=1e-6)
+lu(H,compressor)
 
-nt = Threads.nthreads()
-hilbert_partition = HMatrices.hilbert_partitioning(H,nt)
-row_partition = HMatrices.row_partitioning(H,nt)
-col_partition = HMatrices.col_partitioning(H,nt)
+# 15s for 10_000 dofs
+@elapsed lu(H,compressor)
 
-BLAS.set_num_threads(1)
-@benchmark HMatrices._mul_CPU!($y,$H,$x,1,0)
-@benchmark HMatrices._mul_threads!($y,$H,$x,1,0)
-@benchmark HMatrices._mul_static!($y,$H,$x,1,0,$hilbert_partition)
-@benchmark HMatrices._mul_static!($y,$H,$x,1,0,$row_partition)
-@benchmark HMatrices._mul_static!($y,$H,$x,1,0,$col_partition)
-
-
-# SUITE["Assembly"]["Laplace kernel $N"] = @benchmarkable $HMatrix(,$comp)
+# @profview lu(H,compressor)

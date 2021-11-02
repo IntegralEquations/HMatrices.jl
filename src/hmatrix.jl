@@ -35,24 +35,99 @@ coltree(H::HMatrix) = H.coltree
 
 function Base.getindex(H::HMatrix,i::Int,j::Int)
     @debug "using `getindex(H::AbstractHMatrix,i::Int,j::Int)`."
-    # error("using `getindex(H::AbstractHMatrix,i::Int,j::Int)`.")
     shift = pivot(H) .-1
     _getindex(H,i+shift[1],j+shift[2])
 end
 
 function _getindex(H,i,j)
     (i ∈ rowrange(H)) && (j ∈ colrange(H)) || throw(BoundsError(H,(i,j)))
-    out = zero(eltype(H))
+    acc = zero(eltype(H))
+    shift = pivot(H) .- 1
     if hasdata(H)
-        il,jl = idx_global_to_block(i,j,H)
-        out  += data(H)[il,jl]
+        il = i - shift[1]
+        jl = j - shift[2]
+        acc  += data(H)[il,jl]
     end
     for child in children(H)
         if (i ∈ rowrange(child)) && (j ∈ colrange(child))
-            out += _getindex(child,i,j)
+            acc += _getindex(child,i,j)
         end
     end
-    return out
+    return acc
+end
+
+Base.getindex(H::HMatrix,::Colon,j) = getcol(H,j)
+
+# getcol for regular matrices
+function getcol!(col,M::Matrix,j)
+    @assert length(col) == size(M,1)
+    copyto!(col,view(M,:,j))
+end
+function getcol!(col,adjM::Adjoint{<:Any,<:Matrix},j)
+    @assert length(col) == size(adjM,1)
+    copyto!(col,view(adjM,:,j))
+end
+
+getcol(M::Matrix,j) = M[:,j]
+getcol(adjM::Adjoint{<:Any,<:Matrix},j) = adjM[:,j]
+
+
+function getcol(H::HMatrix,j::Int)
+    m,n = size(H)
+    T   = eltype(H)
+    col = zeros(T,m)
+    getcol!(col,H,j)
+end
+
+function getcol!(col,H::HMatrix,j::Int)
+    (j ∈ colrange(H)) || throw(BoundsError())
+    piv = pivot(H)
+    _getcol!(col,H,j,piv)
+end
+
+function _getcol!(col,H::HMatrix,j,piv)
+    if hasdata(H)
+        shift        = pivot(H) .- 1
+        jl           = j - shift[2]
+        irange       = rowrange(H) .- (piv[1] - 1)
+        getcol!(view(col,irange),data(H),jl)
+    end
+    for child in children(H)
+        if j ∈ colrange(child)
+            _getcol!(col,child,j,piv)
+        end
+    end
+    return col
+end
+
+Base.getindex(adjH::Adjoint{<:Any,<:HMatrix},::Colon,j) = getcol(adjH,j)
+
+function getcol(adjH::Adjoint{<:Any,<:HMatrix},j::Int)
+    # (j ∈ colrange(adjH)) || throw(BoundsError())
+    m,n = size(adjH)
+    T   = eltype(adjH)
+    col = zeros(T,m)
+    getcol!(col,adjH,j)
+end
+
+function getcol!(col,adjH::Adjoint{<:Any,<:HMatrix},j::Int)
+    piv = pivot(adjH)
+    _getcol!(col,adjH,j,piv)
+end
+
+function _getcol!(col,adjH::Adjoint{<:Any,<:HMatrix},j,piv)
+    if hasdata(adjH)
+        shift        = pivot(adjH) .- 1
+        jl           = j - shift[2]
+        irange       = rowrange(adjH) .- (piv[1] - 1)
+        getcol!(view(col,irange),data(adjH),jl)
+    end
+    for child in children(adjH)
+        if j ∈ colrange(child)
+            _getcol!(col,child,j,piv)
+        end
+    end
+    return col
 end
 
 # Trees interface
@@ -72,15 +147,14 @@ colrange(H::HMatrix)         = Trees.index_range(H.coltree)
 rowperm(H::HMatrix)          =  H |> rowtree |> loc2glob
 colperm(H::HMatrix)          =  H |> coltree |> loc2glob
 pivot(H::HMatrix)            = (rowrange(H).start,colrange(H).start)
+offset(H::HMatrix)           = pivot(H) .- 1
 
+# Base.axes(H::HMatrix) = rowrange(H),colrange(H)
 Base.size(H::HMatrix) = length(rowrange(H)), length(colrange(H))
-Base.size(H::HMatrix,i::Int) = size(H)[i]
 
 function blocksize(H::HMatrix)
     size(children(H))
 end
-
-idx_global_to_block(I,J,H::HMatrix) = (I,J) .- pivot(H) .+ 1
 
 """
     compression_ratio(H::HMatrix)
@@ -105,17 +179,43 @@ function Base.show(io::IO,::MIME"text/plain",hmat::HMatrix)
 end
 
 """
-    HMatrix(K,rowtree,coltree,comp;threads=true,distributed=false,permute_kernel=true)
+    Matrix(H::HMatrix;global_index=false)
+
+Convert `H` to a `Matrix`. If `global_index=true`, the entries are given in the
+global indexing system (see [`HMatrix`](@ref) for more information); otherwise
+the *local* indexing system induced by the row and columns trees are used
+(default).
+"""
+Matrix(hmat::HMatrix;global_index=false) = Matrix{eltype(hmat)}(hmat;global_index)
+function Matrix{T}(hmat::HMatrix;global_index) where {T}
+    M = zeros(T,size(hmat)...)
+    piv = pivot(hmat)
+    for block in PreOrderDFS(hmat)
+        hasdata(block) || continue
+        irange = rowrange(block) .- piv[1] .+ 1
+        jrange = colrange(block) .- piv[2] .+ 1
+        M[irange,jrange] += Matrix(block.data)
+    end
+    if global_index
+        P = PermutedMatrix(M,invperm(rowperm(hmat)),invperm(colperm(hmat)))
+        return Matrix(P)
+    else
+        return M
+    end
+end
+
+"""
+    HMatrix(K,rowtree,coltree,adm,comp;threads=true,distributed=false,permute_kernel=true)
 
 Main constructor for hierarchical matrix, where `K` represents the matrix to be
-approximated, `blocktree` encondes the tree structure, and `comp` is a
+approximated, `rowtree` and `coltree` are tree structure partitioning the row
+and column indices, respectively, `adm` can be called on a node of `rowtree` and
+a node of `coltree` to determine if the block is compressible, and `comp` is a
 function/functor which can compress admissible blocks.
 
-It is assumed that `K` supports `getindex(K,i,j)`, that `blocktree` has methods
-`children(blocktree)`, `isadmissible(blocktree)`,
-`rowrange(blocktree)->UnitRange`, and `colrange(blocktree)->UnitRange` , and
-that comp can be called as `comp(K,irange::UnitRange,jrange::UnitRange)` to
-produce a compressed version of `K[irange,jrange]`.
+It is assumed that `K` supports `getindex(K,i,j)`, and that comp can be called
+as `comp(K,irange::UnitRange,jrange::UnitRange)` to produce a compressed version
+of `K[irange,jrange]`.
 """
 function HMatrix(K,rowtree,coltree,
                 adm=StrongAdmissibilityStd(3),
@@ -278,33 +378,12 @@ hasdata(adjH::Adjoint{<:Any,<:HMatrix}) = hasdata(adjH.parent)
 data(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(data(adjH.parent))
 Trees.children(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(children(adjH.parent))
 pivot(adjH::Adjoint{<:Any,<:HMatrix}) = reverse(pivot(adjH.parent))
+offset(adjH::Adjoint{<:Any,<:HMatrix}) = pivot(adjH) .- 1
 rowrange(adjH::Adjoint{<:Any,<:HMatrix}) = colrange(adjH.parent)
 colrange(adjH::Adjoint{<:Any,<:HMatrix}) = rowrange(adjH.parent)
 Trees.isleaf(adjH::Adjoint{<:Any,<:HMatrix}) = isleaf(adjH.parent)
 
 Base.size(adjH::Adjoint{<:Any,<:HMatrix}) = reverse(size(adjH.parent))
-
-# function Base.getindex(H::HMatrix,i::Int,j::Int)
-#     @debug "using `getindex(H::AbstractHMatrix,i::Int,j::Int)`."
-#     shift = pivot(H) .-1
-#     _getindex(H,i+shift[1],j+shift[2])
-# end
-
-# function _getindex(H,i,j)
-#     (i ∈ rowrange(H)) && (j ∈ colrange(H)) || throw(BoundsError(H,(i,j)))
-#     ishift,jshift = pivot(H) .- 1
-#     out = zero(eltype(H))
-#     if hasdata(H)
-#         il,jl = i-ishift, j-jshift # local indices
-#         out  += data(H)[il,jl]
-#     end
-#     for child in getchildren(H)
-#         if (i ∈ rowrange(child)) && (j ∈ colrange(child))
-#             out += _getindex(child,i,j)
-#         end
-#     end
-#     return out
-# end
 
 function Base.show(io::IO,::MIME"text/plain",hmat::Adjoint{Float64,<:HMatrix})
     print(io,"adjoint hmatrix with range ($(rowrange(hmat))) × ($(colrange(hmat)))")
@@ -366,23 +445,49 @@ end
 
 Return `true` if `H` all leaves of `H` have data, and if the leaves are the only
 nodes containing data. This is the normal state of an ℋ-matrix, but during
-intermediate stages of a computat, `H` may be *dirty*.
+intermediate stages of a computation data may be associated with non-leaf nodes
+for convenience.
 """
 function isclean(H::HMatrix)
     for node in PreOrderDFS(H)
         if isleaf(node)
-            hasdata(node) || (return false)
+            if !hasdata(node)
+                @warn "leaf node without data found"
+                return false
+            end
         else
-            hasdata(node) && (return false)
+            if hasdata(node)
+                @warn "data found on non-leaf node"
+                return false
+            end
         end
     end
     return true
+end
+
+function depth(tree::HMatrix,acc=0)
+    if isroot(tree)
+        return acc
+    else
+        depth(parent(tree),acc+1)
+    end
 end
 
 function Base.zero(H::HMatrix)
     H0 = deepcopy(H)
     rmul!(H0,0)
     return H0
+end
+
+function compress!(H::HMatrix,comp)
+    @assert isclean(H)
+    for leaf in Leaves(H)
+        d = data(leaf)
+        if d isa RkMatrix
+            compress!(d,comp)
+        end
+    end
+    return H
 end
 
 
@@ -400,7 +505,7 @@ end
     # all leaves
     for block in Leaves(hmat)
         @series begin
-            if block.admissible
+            if isadmissible(block)
                 fillcolor    --> :blue
                 seriesalpha  --> 1/compression_ratio(block.data)
             else

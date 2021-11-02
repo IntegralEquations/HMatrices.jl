@@ -1,13 +1,36 @@
 """
+    abstract type AbstractCompressor
+
+Used to compress matrices. Requires the following methods to be implemented:
+
+(::AbstractCompressor)(K,I,J)
+"""
+abstract type AbstractCompressor end
+
+"""
     struct ACA
 
-Adaptive cross approximation algorithm with full pivoting. Requires evaluation
-of entire matrix to be compressed, but is guaranteed to work.
+Adaptive cross approximation algorithm with full pivoting. This structure can be
+used to generate an [`RkMatrix`](@ref) from a matrix-like object `M` as follows:
 
-`ACA` objects are used as functors through the following syntax:
-  `aca(K,irange::UnitRange,jrange::UnitRange)`. This produces an approximation
-  of the matrix `K[irange,jrange]`, where `K` is a matrix-like object with
-  `getindex(K,i,j)` implemented.
+```jldoctest
+rtol = 1e-6
+comp = ACA(;rtol)
+A = rand(10,2)
+B = rand(10,2)
+M = A*adjoint(B) # a low-rank matrix
+R = comp(M,:,:) # compress the entire matrix `M`
+norm(Matrix(R) - M) < rtol*norm(M) # true
+
+# output
+
+true
+
+```
+
+The keywork arguments `rtol`, `atol`, and `rank` can be used to control the
+quality of the approximation. Because it uses full pivoting, the linear operator
+has to be evaluated at every `i,j`. See also: `[PartialACA](@ref)`.
 """
 @Base.kwdef struct ACA
     atol::Float64 = 0
@@ -21,11 +44,20 @@ function (aca::ACA)(K,rowtree::ClusterTree,coltree::ClusterTree)
     aca(K,irange,jrange)
 end
 
-function (aca::ACA)(K,irange::UnitRange,jrange::UnitRange)
+function (aca::ACA)(K,irange,jrange)
     M  = K[irange,jrange] # computes the entire matrix.
     _aca_full!(M,aca.atol,aca.rank,aca.rtol)
 end
 
+(comp::ACA)(K::Matrix) = comp(K,1:size(K,1),1:size(K,2))
+
+"""
+    _aca_full!(M,atol,rmax,rtol)
+
+Internal function implementing the adaptive cross-approximation algorithm with
+full pivoting. The matrix `M` is modified in place. The returned `RkMatrix` has
+rank at most `rmax`, and is expected to satisfy `|M - R| < max(atol,rtol*|M|)`.
+"""
 function _aca_full!(M, atol, rmax, rtol)
     Madj  = adjoint(M)
     T   = eltype(M)
@@ -44,20 +76,15 @@ function _aca_full!(M, atol, rmax, rtol)
         else
             iδ = inv(δ)
             col  = M[:,j]
-            row  = Madj[:,i]
-            for k in eachindex(row)
-                row[k] = row[k]*adjoint(iδ)
+            adjcol  = Madj[:,i]
+            for k in eachindex(adjcol)
+                adjcol[k] = adjcol[k]*adjoint(iδ)
             end
-            # for k in eachindex(col)
-            #     col[k] = col[k]*iδ
-            # end
             r += 1
             push!(A,col)
-            push!(B,row)
-            axpy!(-1,col*adjoint(row),M) # M <-- M - col*row'
-            # axpy!(-1,col*reshape(row,1,n),M) # M <-- M - col*row'
+            push!(B,adjcol)
+            axpy!(-1,col*adjoint(adjcol),M) # M <-- M - col*row'
             er = norm(M,2) # exact error
-            # @show r,er
         end
     end
     return RkMatrix(A,B)
@@ -66,9 +93,28 @@ end
 """
     struct PartialACA
 
-Adaptive cross approximation algorithm with partial pivoting. Does not require
-evaluation of the entire matrix to be compressed, but is not guaranteed to
-converge either.
+Adaptive cross approximation algorithm with partial pivoting. This structure can be
+used to generate an [`RkMatrix`](@ref) from a matrix-like object `M` as follows:
+
+```jldoctest
+rtol = 1e-6
+comp = Partial(;rtol)
+A = rand(10,2)
+B = rand(10,2)
+M = A*adjoint(B) # a low-rank matrix
+R = comp(M,:,:) # compress the entire matrix `M`
+norm(Matrix(R) - M) < rtol*norm(M) # true
+
+# output
+
+true
+
+```
+
+Because it uses partial pivoting, the linear operator does not have to be
+evaluated at every `i,j`. This is usually much faster than [`ACA`](@ref), but
+due to the pivoting strategy the algorithm may fail in special cases, even when
+the underlying linear operator is of low rank.
 """
 @Base.kwdef struct PartialACA
     atol::Float64 = 0
@@ -88,10 +134,18 @@ function (paca::PartialACA)(K,irange::UnitRange,jrange::UnitRange)
     _aca_partial(K,irange,jrange,paca.atol,paca.rank,paca.rtol)
 end
 
-function (paca::PartialACA)(R::RkMatrix)
-    _aca_partial(R,:,:,paca.atol,paca.rank,paca.rtol)
-end
+(paca::PartialACA)(K::Matrix) = paca(K,1:size(K,1),1:size(K,2))
 
+
+"""
+    _aca_partial(K,irange,jrange,atol,rmax,rtol,istart=1)
+
+Internal function implementing the adaptive cross-approximation algorithm with
+partial pivoting. The returned `R::RkMatrix` provides an approximation to
+`K[irange,jrange]` which has either rank `is expected to satisfy `|M - R| <
+max(atol,rtol*|M|)`, but this inequality may fail to hold due to the various
+errors involved in estimating the error and |M|.
+"""
 function _aca_partial(K,irange,jrange,atol,rmax,rtol,istart=1)
     Kadj = adjoint(K)
     # if irange and jrange are Colon, extract the size from `K` directly. This
@@ -119,22 +173,22 @@ function _aca_partial(K,irange,jrange,atol,rmax,rtol,istart=1)
         # remove index i from allowed row
         I[i] = false
         # compute next row by row <-- K[i+ishift,jrange] - R[i,:]
-        row    = Kadj[jrange,i+ishift]
+        adjcol = Kadj[jrange,i+ishift]
         for k = 1:r
-            axpy!(-adjoint(A[k][i]),B[k],row)
+            axpy!(-adjoint(A[k][i]),B[k],adjcol)
             # for j in eachindex(row)
             #     row[j] = row[j] - B[k][j]*adjoint(A[k][i])
             # end
         end
-        j    = _aca_partial_pivot(row,J)
-        δ    = row[j]
+        j    = _aca_partial_pivot(adjcol,J)
+        δ    = adjcol[j]
         if svdvals(δ)[end] == 0
             i = findfirst(x->x==true,J)
         else # δ != 0
             iδ = inv(δ)
             # rdiv!(b,δ) # b <-- b/δ
-            for k in eachindex(row)
-                row[k] = row[k]*iδ
+            for k in eachindex(adjcol)
+                adjcol[k] = adjcol[k]*iδ
             end
             J[j] = false
             # compute next col by col <-- K[irange,j+jshift] - R[:,j]
@@ -148,9 +202,9 @@ function _aca_partial(K,irange,jrange,atol,rmax,rtol,istart=1)
             # push new cross and increase rank
             r += 1
             push!(A,col)
-            push!(B,row)
+            push!(B,adjcol)
             # estimate the error by || R_{k} - R_{k-1} || = ||a|| ||b||
-            er       = norm(col)*norm(row)
+            er       = norm(col)*norm(adjcol)
             # estimate the norm by || K || ≈ || R_k ||
             est_norm = _update_frob_norm(est_norm,A,B)
             i        = _aca_partial_pivot(col,I)
@@ -163,8 +217,8 @@ end
 """
     _update_frob_norm(acc,A,B)
 
-Given the Frobenius norm of `Rₖ = A[1:end-1]*adjoint(B[1:end-1])` in `acc`, compute the
-Frobenius norm of `Rₖ₊₁ = A*adjoint(B)` efficiently.
+Given the Frobenius norm of `Rₖ = A[1:end-1]*adjoint(B[1:end-1])` in `acc`,
+compute the Frobenius norm of `Rₖ₊₁ = A*adjoint(B)` efficiently.
 """
 @inline function _update_frob_norm(cur,A,B)
     @timeit_debug "Update Frobenius norm" begin
@@ -182,14 +236,16 @@ end
 """
     _aca_partial_pivot(v,I)
 
-Find the index of the element `x ∈ v` maximizing its smallest singular value.
-This is equivalent to minimizing the spectral norm of the inverse of `x`.
+Find in the valid set `I` the index of the element `x ∈ v` maximizing its
+smallest singular value. This is equivalent to minimizing the spectral norm of
+the inverse of `x`.
 
 When `x` is a scalar, this is simply the element with largest absolute value.
 
-See
+This general implementation should work for both scalar as well as tensor-valued
+kernels; see
 (https://www.sciencedirect.com/science/article/pii/S0021999117306721)[https://www.sciencedirect.com/science/article/pii/S0021999117306721]
-more details.
+for more details.
 """
 function _aca_partial_pivot(v,J)
     idx = -1
@@ -205,6 +261,16 @@ function _aca_partial_pivot(v,J)
     return idx
 end
 
+"""
+    _aca_full_pivot(M)
+
+Find the index of the element `x ∈ M` maximizing its smallest singular value.
+This is equivalent to minimizing the spectral norm of the inverse of `x`.
+
+When `x` is a scalar, this is simply the element with largest absolute value.
+
+# See also: [`_aca_partial_pivot`](@ref).
+"""
 function _aca_full_pivot(M)
     idxs = CartesianIndices(M)
     idx  = first(idxs)
@@ -262,12 +328,51 @@ function (tsvd::TSVD)(K,irange::UnitRange,jrange::UnitRange)
     compress!(M,tsvd)
 end
 
-function (tsvd::TSVD)(R::RkMatrix)
-    F       = svd(R)
+(comp::TSVD)(K::Matrix) = comp(K,1:size(K,1),1:size(K,2))
+
+"""
+    compress!(M::RkMatrix,tsvd::TSVD)
+
+Recompress the matrix `R` using a truncated svd of `R`. The implementation uses
+the `qr-svd` strategy to efficiently compute `svd(R)` when `rank(R) ≪
+min(size(R))`.
+"""
+function compress!(R::RkMatrix,tsvd::TSVD)
+    m,n   = size(R)
+    QA, RA = qr!(R.A)
+    QB, RB = qr!(R.B)
+    F      = svd!(RA*adjoint(RB)) # svd of an r×r problem
+    U      = QA*F.U
+    Vt     = F.Vt*adjoint(QB)
+    V      = adjoint(Vt)
     sp_norm = F.S[1] # spectral norm
-    r       = findlast(x -> x>max(tsvd.atol,tsvd.rtol*sp_norm), F.S) + 1
-    r       = min(r,tsvd.rank)
-    m,n     = size(M)
+    r     = findlast(x -> x>max(tsvd.atol,tsvd.rtol*sp_norm), F.S)
+    isnothing(r) && (r = min(rank(R),m,n))
+    r = min(r,tsvd.rank)
+    if m<n
+        A = @views U[:,1:r]*Diagonal(F.S[1:r])
+        B = V[:,1:r]
+    else
+        A = U[:,1:r]
+        B = @views (V[:,1:r])*Diagonal(F.S[1:r])
+    end
+    R.A,R.B = A,B
+    return R
+end
+
+"""
+    compress!(M::Matrix,tsvd::TSVD)
+
+Recompress the matrix `M` using a truncated svd and output an `RkMatrix`. The
+data in `M` is invalidated in the process.
+"""
+function compress!(M::Matrix,tsvd::TSVD)
+    m,n = size(M)
+    F      = svd!(M)
+    sp_norm = F.S[1] # spectral norm
+    r     = findlast(x -> x>max(tsvd.atol,tsvd.rtol*sp_norm), F.S)
+    isnothing(r) && (r = min(m,n))
+    r = min(r,tsvd.rank)
     if m<n
         A = @views F.U[:,1:r]*Diagonal(F.S[1:r])
         B = F.V[:,1:r]
@@ -276,41 +381,4 @@ function (tsvd::TSVD)(R::RkMatrix)
         B = @views (F.V[:,1:r])*Diagonal(F.S[1:r])
     end
     return RkMatrix(A,B)
-end
-
-# function compress!(M::Base.Matrix,tsvd::TSVD)
-#     F     = svd!(M)
-#     enorm = F.S[1]
-#     r     = findlast(x -> x>max(tsvd.atol,tsvd.rtol*enorm), F.S) + 1
-#     r     = min(r,tsvd.rank)
-#     m,n = size(M)
-#     if m<n
-#         A = @views F.U[:,1:r]*Diagonal(F.S[1:r])
-#         B = F.V[:,1:r]
-#     else
-#         A = F.U[:,1:r]
-#         B = @views (F.V[:,1:r])*Diagonal(F.S[1:r])
-#     end
-#     return RkMatrix(A,B)
-# end
-
-function compress!(R::RkMatrix,tsvd::TSVD)
-    m,n   = size(R)
-    F     = svd(R)
-    sp_norm = F.S[1] # spectral norm
-    r     = findlast(x -> x>max(tsvd.atol,tsvd.rtol*sp_norm), F.S)
-    if isnothing(r)
-        r = min(rank(R),tsvd.rank,m,n)
-    else
-        r = min(r,rank(R),tsvd.rank,m,n)
-    end
-    if m<n
-        A = @views F.U[:,1:r]*Diagonal(F.S[1:r])
-        B = F.V[:,1:r]
-    else
-        A = F.U[:,1:r]
-        B = @views (F.V[:,1:r])*Diagonal(F.S[1:r])
-    end
-    R.A,R.B = A,B
-    return R
 end

@@ -19,7 +19,7 @@ function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, B::AbstractMatrix)
             for j = 1:(i - 1)# j<i
                 jrows  = colrange(chdH[i,j]) .- shift[2]
                 bj     = view(B, jrows, :)
-                mul!(bi, chdH[i,j], bj, -1, true)
+                _mul131!(bi, chdH[i,j], bj, -1)
             end
             # recursion stage
             ldiv!(UnitLowerTriangular(chdH[i,i]), bi)
@@ -34,12 +34,12 @@ function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, R::RkMatrix)
     return R
 end
 
-function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, X::HMatrix, posthook)
+function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor)
     H = parent(L)
     @assert isclean(H)
     if isleaf(X)
         d = data(X)
-        ldiv!(L, d)
+        @timeit_debug "dense ldiv!" ldiv!(L, d)
     elseif isleaf(H) # X not a leaf, but L is a leaf. This should not happen.
         error()
     else
@@ -50,9 +50,11 @@ function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, X::HMatrix, posthook)
         for k in 1:size(chdX, 2)
             for i = 1:m
                 for j = 1:(i - 1)# j<i
-                    hmul!(chdX[i,k], chdH[i,j], chdX[j,k], -1, true, posthook)
+                    @timeit_debug "hmul!" begin
+                        hmul!(chdX[i,k], chdH[i,j], chdX[j,k], -1, 1, compressor)
+                    end
                 end
-                ldiv!(UnitLowerTriangular(chdH[i,i]), chdX[i,k], posthook)
+                ldiv!(UnitLowerTriangular(chdH[i,i]), chdX[i,k], compressor)
             end
         end
     end
@@ -77,7 +79,7 @@ function LinearAlgebra.rdiv!(B::StridedMatrix, U::HUpperTriangular)
             for j = 1:(i - 1)
                 jcols  = rowrange(chdH[j,i]) .- shift[1]
                 bj     = view(B, :, jcols)
-                mul!(bi, bj, chdH[j,i], -1, true)
+                _mul113!(bi, bj, chdH[j,i], -1)
             end
             # recursion stage
             rdiv!(bi, UpperTriangular(chdH[i,i]))
@@ -94,11 +96,13 @@ function LinearAlgebra.rdiv!(R::RkMatrix, U::HUpperTriangular)
 end
 
 # 3.3
-function LinearAlgebra.rdiv!(X::AbstractHMatrix, U::HUpperTriangular, posthook)
+function LinearAlgebra.rdiv!(X::AbstractHMatrix, U::HUpperTriangular, compressor)
     H = parent(U)
     if isleaf(X)
         d = data(X)
-        rdiv!(d, U) # b <-- b/L
+        @timeit_debug "dense rdiv!" begin
+            rdiv!(d, U) # b <-- b/L
+        end
     elseif isleaf(H)
         error()
     else
@@ -109,9 +113,11 @@ function LinearAlgebra.rdiv!(X::AbstractHMatrix, U::HUpperTriangular, posthook)
         for k in 1:size(chdX, 1)
             for i = 1:m
                 for j = 1:(i - 1)
-                    hmul!(chdX[k,i], chdX[k,j], chdH[j,i], -1, true, posthook)
+                    @timeit_debug "hmul!" begin
+                        hmul!(chdX[k,i], chdX[k,j], chdH[j,i], -1, 1, compressor)
+                    end
                 end
-                rdiv!(chdX[k,i], UpperTriangular(chdH[i,i]), posthook)
+                rdiv!(chdX[k,i], UpperTriangular(chdH[i,i]), compressor)
             end
         end
     end

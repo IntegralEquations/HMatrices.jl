@@ -1,7 +1,7 @@
 """
     mutable struct RkMatrix{T}
 
-Representation of a rank `r` matrix `M` in an outer product format `M =
+Representation of a rank `r` matrix `M` in outer product format `M =
 A*adjoint(B)` where `A` has size `m × r` and `B` has size `n × r`.
 
 The internal representation stores `A` and `B`, but `R.Bt` or `R.At` can be used
@@ -34,26 +34,43 @@ function Base.getindex(rmat::RkMatrix,i::Int,j::Int)
     return acc
 end
 
-# some "fast" ways of computing a row and column of R and ajoint(R)
-function Base.getindex(R::RkMatrix, ::Colon, j::Int)
-    R.A*conj(view(R.B,j,:))
+# some "fast" ways of computing a column of R and row of ajoint(R)
+Base.getindex(R::RkMatrix, ::Colon, j::Int) = getcol(R,j)
+
+"""
+    getcol!(col,M::AbstractMatrix,j)
+
+Fill the entries of `col` with column `j` of `M`.
+"""
+function getcol!(col,R::RkMatrix,j::Int)
+    mul!(col,R.A,conj(view(R.B,j,:)))
 end
 
-# return the j-th column
-function Base.getindex(R::RkMatrix, i::Int, ::Colon)
-    # conj(R.B)*view(R.A,i,:)
-    R.B*conj(view(R.A,i,:)) |> conj!
+"""
+    getcol(M::AbstractMatrix,j)
+
+Return a vector containing the `j`-th column of `M`.
+"""
+function getcol(R::RkMatrix,j::Int)
+    m = size(R,1)
+    T = eltype(R)
+    col = zeros(T,m)
+    getcol!(col,R,j)
 end
 
-function Base.getindex(Ra::Adjoint{<:Any,<:RkMatrix}, i::Int, ::Colon)
+function getcol!(col,Ra::Adjoint{<:Any,<:RkMatrix},j::Int)
     R = LinearAlgebra.parent(Ra)
-    R.A*conj(view(R.B,i,:)) |> conj!
+    mul!(col,R.B,conj(view(R.A,j,:)))
 end
 
-function Base.getindex(Ra::Adjoint{<:Any,<:RkMatrix}, ::Colon, j::Int)
-    R = LinearAlgebra.parent(Ra)
-    R.B*conj(view(R.A,j,:))
+function getcol(Ra::Adjoint{<:Any,<:RkMatrix},j::Int)
+    m = size(Ra,1)
+    T = eltype(Ra)
+    col = zeros(T,m)
+    getcol!(col,Ra,j)
 end
+
+Base.getindex(Ra::Adjoint{<:Any,<:RkMatrix}, ::Colon, j::Int) = getcol(Ra,j)
 
 """
     RkMatrix(A::Vector{<:Vector},B::Vector{<:Vector})
@@ -77,27 +94,8 @@ function RkMatrix(_A::Vector{V},_B::Vector{V}) where {V<:AbstractVector}
     return RkMatrix(A,B)
 end
 
-"""
-    RkMatrix(F::LinearAlgebra.SVD)
-    RkMatrix!(F::LinearAlgebra.SVD)
-
-Construct an [`RkMatrix`](@ref) from an `SVD` factorization. The `!` version
-invalidates the data in `F`.
-"""
-function RkMatrix(F::LinearAlgebra.SVD)
-    A  = F.U*LinearAlgebra.Diagonal(F.S)
-    B  = copy(F.V)
-    return RkMatrix(A,B)
-end
-function RkMatrix!(F::LinearAlgebra.SVD)
-    A  = rmul!(F.U,LinearAlgebra.Diagonal(F.S))
-    B  = F.V
-    return RkMatrix(A,B)
-end
-
 Base.eltype(::RkMatrix{T}) where {T} = T
 Base.size(rmat::RkMatrix)                                        = (size(rmat.A,1), size(rmat.B,1))
-Base.size(rmat::RkMatrix,i)                                      = size(rmat)[i]
 Base.length(rmat::RkMatrix)                                      = prod(size(rmat))
 Base.isapprox(rmat::RkMatrix,B::AbstractArray,args...;kwargs...) = isapprox(Matrix(rmat),B,args...;kwargs...)
 
@@ -117,7 +115,7 @@ end
     hcat(M1::RkMatrix,M2::RkMatrix)
 
 Concatenated `M1` and `M2` horizontally to produce a new `RkMatrix` of rank
-`rank(M1)+rank(M2)`
+`rank(M1)+rank(M2)`.
 """
 function Base.hcat(M1::RkMatrix{T},M2::RkMatrix{T}) where {T}
     m,n  = size(M1)
@@ -151,43 +149,44 @@ function Base.vcat(M1::RkMatrix{T},M2::RkMatrix{T}) where {T}
     return RkMatrix(A,B)
 end
 
-# function LinearAlgebra.mul!(C::AbstractVector,Rk::RkMatrix{T},F::AbstractVector,a::Number,b::Number) where {T<:SMatrix}
-#     buf = buffer(Rk)
-#     m,n = size(Rk)
-#     r   = rank(Rk)
-#     # mul!(buf,Rk.Bt,F)
-#     for k in 1:r
-#         buf[k] = zero(T)
-#         for j in 1:n
-#             buf[k] += Rk.B[j,k]*F[j]
-#         end
-#     end
-#     # mul!(C,Rk.A,buf,a,b)
-#     for i in 1:m
-#         C[i] = b*C[i]
-#         for k in 1:r
-#             C[i] += Rk.A[i,k]*buf[k]
-#         end
-#     end
-#     return C[i]
-# end
+Base.copy(R::RkMatrix) = RkMatrix(copy(R.A),copy(R.B))
 
-function Base.:(*)(R::RkMatrix{T},x::AbstractVector{S}) where {T,S}
-    TS = promote_type(T,S)
-    y  = Vector{TS}(undef,size(R,1))
-    mul!(y,R,x)
+function Matrix(R::RkMatrix{<:Number})
+    Matrix(R.A*R.Bt)
+end
+function Matrix(R::RkMatrix{<:SMatrix})
+    # collect must be used when we have a matrix of `SMatrix` because of this issue:
+    # https://github.com/JuliaArrays/StaticArrays.jl/issues/966#issuecomment-943679214
+    R.A*collect(R.Bt)
 end
 
-Base.rand(::Type{RkMatrix{T}},m::Int,n::Int,r::Int) where {T} = RkMatrix(rand(T,m,r),rand(T,n,r)) #useful for testing
-Base.rand(::Type{RkMatrix},m::Int,n::Int,r::Int) = rand(RkMatrix{Float64},m,n,r)
+"""
+    RkMatrix(F::LinearAlgebra.SVD)
 
-Base.copy(R::RkMatrix) = RkMatrix(copy(R.A),copy(R.B))
+Construct an [`RkMatrix`](@ref) from an `SVD` factorization.
+"""
+function RkMatrix(F::LinearAlgebra.SVD)
+    A  = F.U*LinearAlgebra.Diagonal(F.S)
+    B  = copy(F.V)
+    return RkMatrix(A,B)
+end
+
+"""
+    RkMatrix(M::Matrix)
+
+Construct an [`RkMatrix`](@ref) from a `Matrix` by passing through the full
+`svd` of `M`.
+"""
+function RkMatrix(M::Matrix)
+    F = svd(M)
+    RkMatrix(F)
+end
 
 """
     num_stored_elements(R::RkMatrix)
 
 The number of entries stored in the representation. Note that this is *not*
-`size(R)`.
+`length(R)`.
 """
 num_stored_elements(R::RkMatrix)        = size(R.A,2)*(sum(size(R)))
 
@@ -199,16 +198,16 @@ product format.
 """
 compression_ratio(R::RkMatrix) = prod(size(R)) / num_stored_elements(R)
 
+# FIXME: to support scalar and tensorial problems, we currently allow for T
+# to be something other than a plain number. If that is the case, we
+# implement a (slow) multiplication algorithm by hand to circumvent a
+# problem in LinearAlgebra for the generic mulplication mul!(C,A,B,a,b) when
+# C and B are a vectors of static matrices, and A is a matrix of static
+# matrices. Should eventually be removed.
 function LinearAlgebra.mul!(C::AbstractVector,Rk::RkMatrix{T},F::AbstractVector,a::Number,b::Number) where {T<:SMatrix}
     m,n = size(Rk)
     r   = rank(Rk)
     tmp = Rk.Bt*F
-    # FIXME: to support scalar and tensorial problems, we currently allow for T
-    # to be something other than a plain number. If that is the case, we
-    # implement a (slow) multiplication algorithm by hand to circumvent a
-    # problem in LinearAlgebra for the generic mulplication mul!(C,A,B,a,b) when
-    # C and B are a vectors of static matrices, and A is a matrix of static
-    # matrices. Should eventually be removed.
     rmul!(C,b)
     for k in 1:r
         tmp[k] *= a
@@ -217,54 +216,4 @@ function LinearAlgebra.mul!(C::AbstractVector,Rk::RkMatrix{T},F::AbstractVector,
         end
     end
     return C
-end
-
-"""
-    svd(R::RkMatrix,[tol])
-
-Compute the singular value decomposition of an `RkMatrix` by first doing a `qr`
-of `R.A` and `R.B` followed by an `svd` of ``R_A*(R_{B})^T``. If passed `tol`,
-discard all singular values smaller than `tol`.
-"""
-function LinearAlgebra.svd(R::RkMatrix)
-    r      = rank(R)
-    # treat weird case where it would be most efficient to convert first to a full matrix
-    r > min(size(R)...) && return svd(Matrix(R))
-    # qr part
-    QA, RA = qr(R.A)
-    QB, RB = qr(R.B)
-    # svd part
-    F      = svd(RA*adjoint(RB))
-    # build U and Vt
-    U      = QA*F.U
-    Vt     = F.Vt*adjoint(QB)
-    return SVD(U,F.S,Vt) #create the SVD structure
-end
-function LinearAlgebra.svd(A::RkMatrix{T},tol) where {T}
-    F = svd(A)
-    r = findlast(x -> x>tol, F.S)
-    return SVD(F.U[:,1:r],F.S[1:r],F.V[:,1:r])
-end
-
-"""
-    svd!(R::RkMatrix,[tol])
-
-Like `svd`, but performs the intermediate `qr` in-place mutating the data in
-`R`. You should not reuse `R` after calling this method.
-"""
-function LinearAlgebra.svd!(M::RkMatrix)
-    r      = rank(M)
-    QA, RA = qr!(M.A)
-    QB, RB = qr!(M.B)
-    F      = svd!(RA*adjoint(RB)) # svd of an r×r problem
-    U      = QA*F.U
-    Vt     = F.Vt*adjoint(QB)
-    return SVD(U,F.S,Vt) #create the SVD structure
-end
-function LinearAlgebra.svd!(R::RkMatrix,tol)
-    tol <= 0 && return R
-    m,n    = size(R)
-    F      = svd!(R)
-    r      = findlast(x -> x>tol, F.S)
-    SVD(F.U[:,1:r],F.S[1:r],F.V[:,1:r])
 end
