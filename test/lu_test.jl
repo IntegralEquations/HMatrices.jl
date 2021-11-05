@@ -8,7 +8,7 @@ using HMatrices: RkMatrix, points_on_sphere
 
 Random.seed!(1)
 
-m = 2000
+m = 5000
 T = Float64
 X    = points_on_sphere(m)
 # X    = rand(SVector{3,Float64},m)
@@ -27,12 +27,15 @@ K = ExponentialKernel(X,X)
 splitter  = CardinalitySplitter(nmax=50)
 Xclt      = ClusterTree(X,splitter)
 Yclt      = ClusterTree(Y,splitter)
-H = HMatrix(K,Xclt,Yclt;threads=false,distributed=false)
+adm = StrongAdmissibilityStd(3)
+comp = PartialACA(;atol=1e-10);
+H = HMatrix(K,Xclt,Yclt,adm,comp;threads=false,distributed=false)
 H_full      = Matrix(H)
 
 ##
-exact = lu(H_full)
-comp = PartialACA(;atol=1e-8)
-approx   = lu(H,comp)
-@test norm(exact.L - Matrix(approx.L),Inf) < 1e-6
-@test norm(exact.U - Matrix(approx.U),Inf) < 1e-6
+hlu   = lu(H;atol=1e-10)
+y     = rand(m)
+M     = Matrix(K)
+exact = M\y
+approx = hlu\y
+@test norm(exact - approx,Inf) < 1e-6

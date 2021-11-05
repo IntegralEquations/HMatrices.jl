@@ -151,10 +151,10 @@ end
 
 Base.copy(R::RkMatrix) = RkMatrix(copy(R.A),copy(R.B))
 
-function Matrix(R::RkMatrix{<:Number})
+function Base.Matrix(R::RkMatrix{<:Number})
     Matrix(R.A*R.Bt)
 end
-function Matrix(R::RkMatrix{<:SMatrix})
+function Base.Matrix(R::RkMatrix{<:SMatrix})
     # collect must be used when we have a matrix of `SMatrix` because of this issue:
     # https://github.com/JuliaArrays/StaticArrays.jl/issues/966#issuecomment-943679214
     R.A*collect(R.Bt)

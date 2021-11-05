@@ -10,46 +10,305 @@ function hmul!(C::HMatrix,A::HMatrix,B::HMatrix,a,b,compressor)
     b == true || rmul!(C,b)
     plan = plan_hmul(C,A,B,a,1)
     execute!(plan,compressor)
-    # deprecated version of mul!
-    # _mul333!(C,A,B,a,compressor)
     return C
 end
+
 # disable `mul` of hierarchial matrices
 function LinearAlgebra.mul!(C::HMatrix,A::HMatrix,B::HMatrix,a::Number,b::Number)
     msg = "use `hmul` to multiply hierarchical matrices"
     error(msg)
 end
 
-##################################################################################
-# The methods below implement what is required to perform the mul! of
-# hierarchical matrices. There are 3^3 = 27 cases to be considered
-# depending on the types of C, A, and B. We will list these cases by by x.x.x
-# where 1 means a full matrix, 2 a sparse matrix, and 3 a hierarhical matrix.
-# E.g. case 1.2.1 means C is full, A is sparse, B is full.
-# Note: initially these were all methods of the `mul!` function, but it turned
-# out to be a mess to debug and profile 27 methods with the same name, so I
-# decided to name them differently. One downside is that some of the tasks that
-# could be automatically handled by the dynamic dispatch system have to be done
-# manually...
-##################################################################################
+"""
+    struct HMulNode{S,T} <: AbstractTree
 
-# ################################################################################
-# ## 1.1.1
-# ################################################################################
+Tree data structure representing the following computation:
+```
+    C <-- C + a * ∑ᵢ Aᵢ * Bᵢ
+```
+where `C = target(node)`, and `Aᵢ,Bᵢ` are pairs stored in `sources(node)`.
+
+This structure is used to group the operations required when multiplying
+hierarchical matrices so that they can later be executed in a way that minimizes
+recompression of intermediate computations.
+"""
+mutable struct HMulNode{T} <: AbstractTree
+    target::T
+    children::Matrix{HMulNode{T}}
+    sources::Vector{Tuple{T,T}}
+    multiplier::Float64
+end
+
+function HMulNode(C::HMatrix,a::Number)
+    T    = typeof(C)
+    chdC = children(C)
+    m,n  = size(chdC)
+    HMulNode{T}(C,Matrix{HMulNode{T}}(undef,m,n),T[],a)
+end
+
+function build_HMulNode_structure(C::HMatrix,a)
+    node = HMulNode(C,a)
+    chdC = children(C)
+    m,n  = size(chdC)
+    for i in 1:m
+        for j in 1:n
+            child = build_HMulNode_structure(chdC[i,j],a)
+            node.children[i,j] = child
+        end
+    end
+    node
+end
+
+function plan_hmul(C::T,A::T,B::T,a,b) where {T<:HMatrix}
+    @assert b == 1
+    # root = HMulNode(C)
+    root = build_HMulNode_structure(C,a)
+    # recurse
+    _build_hmul_tree!(root,A,B)
+    return root
+end
+
+function _build_hmul_tree!(tree::HMulNode,A::HMatrix,B::HMatrix)
+    C = tree.target
+    if isleaf(A) || isleaf(B) || isleaf(C)
+        push!(tree.sources,(A,B))
+    else
+        ni,nj = blocksize(C)
+        _ ,nk = blocksize(A)
+        A_children = children(A)
+        B_children = children(B)
+        C_children = children(C)
+        for i=1:ni
+            for j=1:nj
+                child = tree.children[i,j]
+                for k=1:nk
+                    _build_hmul_tree!(child,A_children[i,k],B_children[k,j])
+                end
+            end
+        end
+    end
+    return tree
+end
+
+function Base.show(io::IO,::MIME"text/plain",tree::HMulNode)
+    print(io,"HMulNode with $(size(children(tree))) children and $(length(sources(tree))) pairs")
+end
+
+function Base.show(io::IO,tree::HMulNode)
+    print(io,"HMulNode with $(size(children(tree))) children and $(length(sources(tree))) pairs")
+end
+
+function Base.show(io::IO,::MIME"text/plain",tree::Adjoint{<:Any,<:HMulNode})
+    p = parent(tree)
+    print(io,"adjoint HMulNode with $(size(children(p))) children and $(length(sources(p))) pairs")
+end
+
+function Base.show(io::IO,tree::Adjoint{<:Any,<:HMulNode})
+    p = parent(tree)
+    print(io,"adjoint HMulNode with $(size(children(p))) children and $(length(sources(p))) pairs")
+end
+
+# compress the operator L = C + ∑ a*Aᵢ*Bᵢ
+function (paca::PartialACA)(plan::HMulNode)
+    _aca_partial(plan,:,:,paca.atol,paca.rank,paca.rtol)
+end
+
+# getters
+target(node::HMulNode) = node.target
+sources(node::HMulNode) = node.sources
+multiplier(node::HMulNode) = node.multiplier
+
+# Trees interface
+Trees.children(node::HMulNode) = node.children
+Trees.children(node::HMulNode,idxs...) = node.children[idxs]
+Trees.parent(node::HMulNode)   = node.parent
+Trees.isleaf(node::HMulNode)   = isempty(children(node))
+Trees.isroot(node::HMulNode)   = parent(node) === node
+
+# AbstractMatrix interface
+Base.size(node::HMulNode) = size(target(node))
+Base.eltype(node::HMulNode) = eltype(target(node))
+
+Base.getindex(node::HMulNode,::Colon,j::Int) = getcol(node,j)
+
+function getcol(node::HMulNode,j)
+    m,n = size(node)
+    T   = eltype(node)
+    col = zeros(T,m)
+    getcol!(col,node,j)
+    return col
+end
+
+function getcol!(col,node::HMulNode,j)
+    a = multiplier(node)
+    C = target(node)
+    m,n = size(C)
+    T  = eltype(C)
+    ej = zeros(T,n)
+    ej[j] = 1
+    # compute j-th column of ∑ Aᵢ Bᵢ
+    for (A,B) in sources(node)
+        m,k = size(A)
+        k,n = size(B)
+        tmp = zeros(T,k)
+        jg   = j + offset(B)[2] # global index on hierarchila matrix B
+        getcol!(tmp,B,jg)
+        _hgemv_recursive!(col,A,tmp,offset(A))
+    end
+    # multiply by a
+    rmul!(col,a)
+    # add the j-th column of C if C has data
+    # jg  = j + offset(C)[2] # global index on hierarchila matrix B
+    # cj  = getcol(C,jg)
+    # axpy!(1,cj,col)
+    if hasdata(C)
+        d  = data(C)
+        cj = getcol(d,j)
+        axpy!(1,cj,col)
+    end
+    return col
+end
+
+LinearAlgebra.adjoint(node::HMulNode) = Adjoint(node)
+Base.size(adjnode::Adjoint{<:Any,<:HMulNode}) = reverse(size(adjnode.parent))
+Trees.children(adjnode::Adjoint{<:Any,<:HMulNode}) = adjoint(children(adjnode.parent))
+
+Base.getindex(adjnode::Adjoint{<:Any,<:HMulNode},::Colon,j::Int) = getcol(adjnode,j)
+
+function getcol(adjnode::Adjoint{<:Any,<:HMulNode},j)
+    m,n = size(adjnode)
+    T   = eltype(adjnode)
+    col = zeros(T,m)
+    getcol!(col,adjnode,j)
+    return col
+end
+
+function getcol!(col,adjnode::Adjoint{<:Any,<:HMulNode},j)
+    node  = parent(adjnode)
+    a     = multiplier(node)
+    C     = target(node)
+    T     = eltype(C)
+    Ct    = adjoint(C)
+    m,n   = size(Ct)
+    ej    = zeros(T,n)
+    ej[j] = 1
+    # compute j-th column of ∑ adjoint(Bᵢ)*adjoint(Aᵢ)
+    for (A,B) in sources(node)
+        At,Bt = adjoint(A), adjoint(B)
+        tmp = zeros(T,size(At,1))
+        # _hgemv_recursive!(tmp,At,ej,offset(At))
+        jg  = j + offset(At)[2] # global index on hierarchila matrix B
+        getcol!(tmp,At,jg)
+        _hgemv_recursive!(col,Bt,tmp,offset(Bt))
+    end
+    # multiply by a
+    rmul!(col,conj(a))
+    # add the j-th column of Ct if it has data
+    # jg  = j + offset(Ct)[2] # global index on hierarchila matrix B
+    # cj  = getcol(Ct,jg)
+    # axpy!(1,cj,col)
+    if hasdata(Ct)
+        d  = data(Ct)
+        cj = getcol(d,j)
+        axpy!(1,cj,col)
+    end
+    return col
+end
+
+function execute!(node::HMulNode,compressor)
+    execute_node!(node,compressor)
+    C = target(node)
+    flush_to_children!(C)
+    for chd in children(node)
+        execute!(chd,compressor)
+    end
+    return node
+end
+
+# non-recursive execution
+function execute_node!(node::HMulNode,compressor)
+    C = target(node)
+    isempty(sources(node)) && (return node)
+    a = multiplier(node)
+    if isleaf(C) && !isadmissible(C)
+        d = data(C)
+        for (A,B) in sources(node)
+            # _mul_leaf!(C,A,B,a,compressor)
+            _mul_dense!(d,A,B,a)
+        end
+    else
+        R = compressor(node)
+        setdata!(C,R)
+    end
+    return node
+end
+
+function _mul_dense!(C::Matrix,A,B,a)
+    Adata = isleaf(A) ? A.data : A
+    Bdata = isleaf(B) ? B.data : B
+    if Adata isa HMatrix
+        if Bdata isa Matrix
+            _mul131!(C, Adata, Bdata, a)
+        elseif Bdata isa RkMatrix
+            _mul132!(C, Adata, Bdata, a)
+        end
+    elseif Adata isa Matrix
+        if Bdata isa Matrix
+            _mul111!(C, Adata, Bdata, a)
+        elseif Bdata isa RkMatrix
+            _mul112!(C, Adata, Bdata, a)
+        elseif Bdata isa HMatrix
+            _mul113!(C, Adata, Bdata, a)
+        end
+    elseif Adata isa RkMatrix
+        if Bdata isa Matrix
+            _mul121!(C, Adata, Bdata, a)
+        elseif Bdata isa RkMatrix
+            _mul122!(C, Adata, Bdata, a)
+        elseif Bdata isa HMatrix
+            _mul123!(C, Adata, Bdata, a)
+        end
+    end
+end
+
+"""
+    flush_to_children!(H::HMatrix,compressor)
+
+Transfer the blocks `data` to its children. At the end, set `H.data` to `nothing`.
+"""
+function flush_to_children!(H::HMatrix)
+    T = eltype(H)
+    isleaf(H)  && (return H)
+    hasdata(H) || (return H)
+    R::RkMatrix{T}   = data(H)
+    _add_to_children!(H,R)
+    setdata!(H,nothing)
+    return H
+end
+
+function _add_to_children!(H,R::RkMatrix)
+    shift = pivot(H) .- 1
+    for block in children(H)
+        irange   = rowrange(block) .- shift[1]
+        jrange   = colrange(block) .- shift[2]
+        bdata    = data(block)
+        tmp      = RkMatrix(R.A[irange,:],R.B[jrange,:])
+        if bdata === nothing
+            setdata!(block,tmp)
+        else
+            axpy!(true,tmp,bdata)
+        end
+    end
+end
+
 _mul111!(C::Union{Matrix,SubArray,Adjoint},A::Union{Matrix,SubArray,Adjoint},B::Union{Matrix,SubArray,Adjoint},a::Number) = mul!(C,A,B,a,true)
 
-################################################################################
-## 1.1.2
-################################################################################
 function _mul112!(C::Union{Matrix,SubArray,Adjoint}, M::Union{Matrix,SubArray,Adjoint}, R::RkMatrix, a::Number)
     buffer = M * R.A
     _mul111!(C, buffer, R.Bt, a)
     return C
 end
 
-################################################################################
-## 1.1.3
-################################################################################x
 function _mul113!(C::Union{Matrix,SubArray,Adjoint}, M::Union{Matrix,SubArray,Adjoint}, H::HMatrix, a::Number)
     T = eltype(C)
     if hasdata(H)
@@ -73,22 +332,10 @@ function _mul113!(C::Union{Matrix,SubArray,Adjoint}, M::Union{Matrix,SubArray,Ad
     return C
 end
 
-################################################################################
-## 1.2.1
-################################################################################
 function _mul121!(C::Union{Matrix,SubArray,Adjoint}, R::RkMatrix, M::Union{Matrix,SubArray,Adjoint}, a::Number)
     _mul111!(C, R.A, R.Bt * M, a)
 end
-function _mul121!(C::Union{Matrix,SubArray,Adjoint}, adjR::Adjoint{<:Any,<:RkMatrix}, M::Union{Matrix,SubArray,Adjoint}, a::Number)
-    R   = LinearAlgebra.parent(adjR)
-    tmp = adjoint(R.A) * M
-    _mul111!(C, R.B, tmp, a)
-    return C
-end
 
-################################################################################
-## 1.2.2
-################################################################################
 function _mul122!(C::Union{Matrix,SubArray,Adjoint}, R::RkMatrix, S::RkMatrix, a::Number)
     if rank(R) < rank(S)
         _mul111!(C, R.A, (R.Bt * S.A) * S.Bt, a)
@@ -98,9 +345,6 @@ function _mul122!(C::Union{Matrix,SubArray,Adjoint}, R::RkMatrix, S::RkMatrix, a
     return C
 end
 
-################################################################################
-## 1.2.3
-################################################################################
 function _mul123!(C::Union{Matrix,SubArray,Adjoint}, R::RkMatrix, H::HMatrix, a::Number)
     T = promote_type(eltype(R), eltype(H))
     tmp = zeros(T, size(R.Bt, 1), size(H, 2))
@@ -109,11 +353,8 @@ function _mul123!(C::Union{Matrix,SubArray,Adjoint}, R::RkMatrix, H::HMatrix, a:
     return C
 end
 
-################################################################################
-## 1.3.1
-################################################################################
 function _mul131!(C::Union{Matrix,SubArray,Adjoint}, H::HMatrix, M::Union{Matrix,SubArray,Adjoint}, a::Number)
-    if hasdata(H)
+    if isleaf(H)
         mat = data(H)
         if mat isa Matrix
             _mul111!(C, mat, M, a)
@@ -134,490 +375,12 @@ function _mul131!(C::Union{Matrix,SubArray,Adjoint}, H::HMatrix, M::Union{Matrix
     return C
 end
 
-################################################################################
-## 1.3.2
-################################################################################
 function _mul132!(C::Union{Matrix,SubArray,Adjoint}, H::HMatrix, R::RkMatrix, a::Number)
     T = promote_type(eltype(H),eltype(R))
     buffer = zeros(T, size(H, 1), size(R.A, 2))
     _mul131!(buffer,H,R.A,1)
     _mul111!(C, buffer, R.Bt, a,)
     return C
-end
-
-################################################################################
-## 1.3.3 (should never arise in practice, thus sloppy implementation)
-################################################################################
-function _mul133!(C::Union{Matrix,SubArray,Adjoint}, H::HMatrix, S::HMatrix, a::Number)
-    @debug "1.3.3: this case should not arise"
-    _mul131!(C,H,Matrix(S),a)
-    return C
-end
-
-################################################################################
-## 2.1.1
-################################################################################
-function _mul211!(C::RkMatrix, M::Union{Matrix,SubArray,Adjoint}, F::Union{Matrix,SubArray,Adjoint}, a::Number,compressor=identity)
-    @debug "2.1.1: this case should not arise"
-    T = promote_type(eltype(M),eltype(F))
-    buffer = zeros(T,size(M,1),size(F,2))
-    _mul111!(buffer,M,F,1)
-    axpy!(a,buffer,C)
-    compress!(C,compressor)
-    return C
-end
-
-################################################################################
-## 2.1.2
-################################################################################
-function _mul212!(C::RkMatrix, M::Union{Matrix,SubArray,Adjoint}, R::RkMatrix, a::Number,compressor=identity)
-    tmp = RkMatrix(M * R.A, R.B)
-    axpy!(a, tmp, C)
-    compress!(C,compressor)
-end
-
-################################################################################
-## 2.1.3
-################################################################################
-function _mul213!(C::RkMatrix, M::Union{Matrix,SubArray,Adjoint}, H::HMatrix, a::Number,compressor=identity)
-    @debug "2.1.3: this case should not arise"
-    T = promote_type(eltype(M),eltype(H))
-    buffer = zeros(T,size(M,1),size(H,2))
-    _mul113!(buffer,M,H,1)
-    axpy!(a,buffer,C)
-    compress!(C,compressor)
-    return C
-end
-
-################################################################################
-## 2.2.1
-################################################################################
-function _mul221!(C::RkMatrix, R::RkMatrix, M::Union{Matrix,SubArray,Adjoint}, a::Number,compressor=identity)
-    tmp = RkMatrix(R.A, adjoint(M) * R.B)
-    axpy!(a, tmp,C)
-    compress!(C,compressor)
-    return C
-end
-
-################################################################################
-## 2.2.2
-################################################################################
-function _mul222!(C::RkMatrix, R::RkMatrix, S::RkMatrix, a::Number,compressor=identity)
-    if rank(R) < rank(S)
-        tmp = RkMatrix(R.A, S.B*(S.At*R.B))
-    else
-        tmp = RkMatrix(R.A*(R.Bt*S.A) , S.B)
-    end
-    axpy!(a, tmp,C)
-    compress!(C,compressor)
-    return C
-end
-
-################################################################################
-## 2.2.3
-################################################################################
-function _mul223!(C::RkMatrix, R::RkMatrix, H::HMatrix, a::Number,compressor=identity)
-    T      = promote_type(eltype(R), eltype(H))
-    buffer = zeros(T, size(R.Bt, 1), size(H, 2))
-    _mul113!(buffer, R.Bt, H, 1)
-    # TODO: implement method to do mul!(buffer,adjoint(H),R.B) instead of the
-    # above
-    tmp = RkMatrix(R.A, collect(adjoint(buffer)))
-    axpy!(a, tmp, C)
-    compress!(C,compressor)
-    return C
-end
-
-################################################################################
-## 2.3.1
-################################################################################
-function _mul231!(C::RkMatrix, H::HMatrix, M::Union{Matrix,SubArray,Adjoint}, a::Number,compressor=identity)
-    @debug "2.3.1: this case should not arise"
-    T = promote_type(eltype(H),eltype(M))
-    buffer = zeros(T,size(H,1),size(M,2))
-    _mul131!(buffer,H,M,1)
-    axpy!(a,buffer,C)
-    compress!(C,compressor)
-    return C
-end
-
-################################################################################
-## 2.3.2
-################################################################################
-function _mul232!(C::RkMatrix, H::HMatrix, R::RkMatrix, a::Number,compressor=identity)
-    T = promote_type(eltype(H), eltype(R))
-    buffer = zeros(T, size(H, 1), size(R.A, 2))
-    _mul131!(buffer, H, R.A,1)
-    tmp = RkMatrix(buffer, R.B)
-    axpy!(a, tmp, C)
-    compress!(C,compressor)
-    return C
-end
-
-################################################################################
-## 2.3.3
-################################################################################
-# This case should be studied further. A few easy solutions are possible:
-# (a) convert one of the HMatrices to RkMatrix (requires converting the full blocks to rkmatrix using say svd)
-# (b) convert one of the HMatrices to Matrix   (requires converting the sparse blocks to full using outer product)
-# (c) recurse down the  Hmatrices structure
-# TODO: benchmark and test
-
-# option b
-# function _mul233!(C::RkMatrix, A::HMatrix, B::HMatrix, a::Number,compressor=identity)
-#     if length(A) < length(B)
-#         return _mul213!(C,Matrix(A),B,a)
-#     else
-#         return _mul231!(C,A,Matrix(B),a)
-#     end
-# end
-
-# option c
-function _mul233!(C::RkMatrix, A::HMatrix, B::HMatrix, a::Number,compressor=identity)
-    T = promote_type(eltype(A), eltype(B))
-    chdA = children(A)
-    chdB = children(B)
-    # if neither A nor B is a leaf, recurse on their children creating an
-    # RkMatrix on each step, then aggregate this matrix of RkMatrices.
-    if !isleaf(A) && !isleaf(B)
-        m, n    = size(chdA, 1), size(chdB,2)
-        k       = size(chdA,2)
-        block  = Matrix{typeof(C)}(undef, m, n) # block of RkMatrices
-        for i = 1:m
-            for j = 1:n
-                p = size(chdA[i, 1], 1)
-                q = size(chdB[1, j], 2)
-                block[i,j] = RkMatrix(zeros(T,p,0),zeros(T,q,0))
-                for l = 1:k
-                    _mul233!(block[i,j], chdA[i, l], chdB[l, j], true, compressor)
-                end
-            end
-        end
-        R = aggregate(block,compressor)
-        axpy!(a, R, C)
-        compress!(R,compressor)
-    else
-        # terminal case. Sort the data and dispatch to other method
-        Adata = isleaf(A) ? A.data : A
-        Bdata = isleaf(B) ? B.data : B
-        if Adata isa HMatrix
-            if Bdata isa Matrix
-                _mul231!(C, Adata, Bdata, a,compressor)
-            elseif Bdata isa RkMatrix
-                _mul232!(C, Adata, Bdata, a,compressor)
-            end
-        elseif Adata isa Matrix
-            if Bdata isa Matrix
-                _mul211!(C, Adata, Bdata, a,compressor)
-            elseif Bdata isa RkMatrix
-                _mul212!(C, Adata, Bdata, a,compressor)
-            elseif Bdata isa HMatrix
-                _mul213!(C, Adata, Bdata, a,compressor)
-            end
-        elseif Adata isa RkMatrix
-            if Bdata isa Matrix
-                _mul221!(C, Adata, Bdata, a,compressor)
-            elseif Bdata isa RkMatrix
-                _mul222!(C, Adata, Bdata, a,compressor)
-            elseif Bdata isa HMatrix
-                _mul223!(C, Adata, Bdata, a,compressor)
-            end
-        end
-    end
-    return C
-end
-
-function aggregate(B::Matrix{<:RkMatrix},compressor)
-    @assert size(B) == (2,2)
-    B1 = hcat(B[1,1],B[1,2])
-    compress!(B1,compressor)
-    B2 = hcat(B[2,1],B[2,2])
-    compress!(B2,compressor)
-    return compress!(vcat(B1,B2),compressor)
-end
-
-################################################################################
-## 3.1.1
-################################################################################
-function _mul311!(C::HMatrix,M::Union{Matrix,SubArray,Adjoint},F::Union{Matrix,SubArray,Adjoint},a::Number)
-    tmp = a*M*F
-    if hasdata(C)
-        axpy!(true,tmp,data(C))
-    else
-        C.data = tmp
-    end
-    return C
-end
-
-################################################################################
-## 3.1.2
-################################################################################
-function _mul312!(C::HMatrix,M::Union{Matrix,SubArray,Adjoint},R::RkMatrix,a::Number,compressor=identity)
-    buffer = a*M*R.A
-    tmp    = RkMatrix(buffer,copy(R.B))
-    if hasdata(C)
-        axpy!(true,tmp,C.data)
-    else
-        C.data = tmp
-    end
-    compress!(C.data,compressor)
-    return C
-end
-
-################################################################################
-## 3.1.3
-################################################################################
-function _mul313!(C::HMatrix,M::Union{Matrix,SubArray,Adjoint},H::HMatrix,a::Number)
-    @debug "3.1.3: this case should not arise"
-    T = promote_type(eltype(M),eltype(H))
-    buffer = zeros(T,size(M,1),size(H,2))
-    _mul113!(buffer,M,H,a)
-    if hasdata(C)
-        axpy!(true,buffer,C.data)
-    else
-        C.data = buffer
-    end
-    return C
-end
-
-################################################################################
-## 3.2.1
-################################################################################
-function _mul321!(C::HMatrix,R::RkMatrix,M::Union{Matrix,SubArray,Adjoint},a::Number,compressor=identity)
-    buff = conj(a)*adjoint(M)*R.B
-    tmp  = RkMatrix(copy(R.A),buff)
-    if hasdata(C)
-        axpy!(true,tmp,C.data)
-    else
-        C.data = tmp
-    end
-    compress!(C.data,compressor)
-    return C
-end
-
-################################################################################
-## 3.2.2
-################################################################################
-function _mul322!(C::HMatrix,R::RkMatrix,S::RkMatrix,a::Number,compressor=identity)
-    if rank(R) < rank(S)
-        tmp = RkMatrix(copy(R.A), conj(a)*S.B*(S.At*R.B))
-    else
-        tmp = RkMatrix(a*R.A*(R.Bt*S.A) , copy(S.B))
-    end
-    if hasdata(C)
-        axpy!(true,tmp,C.data)
-    else
-        C.data = tmp
-    end
-    compress!(C.data,compressor)
-    return C
-end
-
-################################################################################
-## 3.2.3
-################################################################################
-function _mul323!(C::HMatrix,R::RkMatrix,H::HMatrix,a::Number,compressor=identity)
-    T = promote_type(eltype(R.Bt),eltype(H))
-    buffer = zeros(T,size(R.Bt,1),size(H,2))
-    _mul113!(buffer,R.Bt,H,a)
-    tmp = RkMatrix(copy(R.A),collect(adjoint(buffer)))
-    if hasdata(C)
-        axpy!(true,tmp,C.data)
-    else
-        C.data = tmp
-    end
-    compress!(C.data,compressor)
-    return C
-end
-
-################################################################################
-## 3.3.1
-################################################################################
-function _mul331!(C::HMatrix,H::HMatrix,M::Matrix,a::Number)
-    @debug "3.3.1: this case should not arise"
-    T = promote_type(eltype(H),eltype(M))
-    buffer = zeros(T,size(H,1),size(M,2))
-    _mul131!(buffer,H,M,a)
-    if hasdata(C)
-        axpy!(true,buffer,C.data)
-    else
-        C.data = buffer
-    end
-    return C
-end
-
-################################################################################
-## 3.3.2
-################################################################################
-function _mul332!(C::HMatrix,H::HMatrix,R::RkMatrix,a::Number,compressor=identity)
-    T = promote_type(eltype(H),eltype(R))
-    buffer = zeros(T,size(H,1),size(R.A,2))
-    _mul131!(buffer,H,R.A,a)
-    tmp = RkMatrix(buffer,copy(R.B))
-    if hasdata(C)
-        axpy!(true,tmp,C.data)
-    else
-        C.data = tmp
-    end
-    compress!(C.data,compressor)
-    return C
-end
-
-################################################################################
-## 3.3.3 (the recursive case)
-################################################################################
-function _mul333!(C::HMatrix,A::HMatrix,B::HMatrix,a::Number,compressor=identity)
-    # when either A, B, or C is a leaf, extract the data and dispatch to one of the other
-    # mul! methods above. Otherwise recurse on children.
-    if isleaf(A) || isleaf(B) || isleaf(C)
-        @timeit_debug "leaf multiplication" begin
-            _mul_leaf!(C,A,B,a,compressor)
-        end
-    else
-        ni,nj = blocksize(C)
-        _ ,nk = blocksize(A)
-        A_children = children(A)
-        B_children = children(B)
-        C_children = children(C)
-        for i=1:ni
-            for j=1:nj
-                for k=1:nk
-                    _mul333!(C_children[i,j],A_children[i,k],B_children[k,j],a,compressor)
-                end
-            end
-        end
-    end
-    return C
-end
-
-# terminal case of the multiplication when at least one of the arguments is a leaf
-function _mul_leaf!(C::HMatrix,A::HMatrix,B::HMatrix,a::Number,compressor)
-    # possible types of arguments after extracting data
-    T = eltype(C)
-    Mat = Matrix{T}
-    RkMat = RkMatrix{T}
-    HMat = typeof(C)
-
-    @assert isleaf(A) || isleaf(B) || isleaf(C)
-    Cdata  = hasdata(C) ? data(C) : C
-    Adata  = hasdata(A) ? data(A) : A
-    Bdata  = hasdata(B) ? data(B) : B
-
-    # no compression needed
-    if Cdata isa Matrix
-        if Adata isa Matrix
-            if Bdata isa Matrix
-                _mul111!(Cdata::Mat,Adata::Mat,Bdata::Mat,a)
-            elseif Bdata isa RkMatrix
-                _mul112!(Cdata::Mat,Adata::Mat,Bdata::RkMat,a)
-            elseif Bdata isa HMatrix
-                _mul113!(Cdata::Mat,Adata::Mat,Bdata::HMat,a)
-            end
-        elseif Adata isa RkMatrix
-            if Bdata isa Matrix
-                _mul121!(Cdata::Mat,Adata::RkMat,Bdata::Mat,a)
-            elseif Bdata isa RkMatrix
-                _mul122!(Cdata::Mat,Adata::RkMat,Bdata::RkMat,a)
-            elseif Bdata isa HMatrix
-                _mul123!(Cdata::Mat,Adata::RkMat,Bdata::RkMat,a)
-            end
-        elseif Adata isa HMatrix
-            if Bdata isa Matrix
-                _mul131!(Cdata::Mat,Adata::HMat,Bdata::Mat,a)
-            elseif Bdata isa RkMatrix
-                _mul132!(Cdata::Mat,Adata::HMat,Bdata::RkMat,a)
-            elseif Bdata isa HMatrix
-                _mul133!(Cdata::Mat,Adata::HMat,Bdata::HMat,a)
-            end
-        end
-    elseif Cdata isa RkMatrix # compress after multiplication
-        if Adata isa Matrix
-            if Bdata isa Matrix
-                _mul211!(Cdata::RkMat,Adata::Mat,Bdata::Mat,a,compressor)
-            elseif Bdata isa RkMatrix
-                _mul212!(Cdata::RkMat,Adata::Mat,Bdata::RkMat,a,compressor)
-            elseif Bdata isa HMatrix
-                _mul213!(Cdata::RkMat,Adata::Mat,Bdata::HMat,a,compressor)
-            end
-        elseif Adata isa RkMatrix
-            if Bdata isa Matrix
-                _mul221!(Cdata::RkMat,Adata::RkMat,Bdata::Mat,a,compressor)
-            elseif Bdata isa RkMatrix
-                _mul222!(Cdata::RkMat,Adata::RkMat,Bdata::RkMat,a,compressor)
-            elseif Bdata isa HMatrix
-                _mul223!(Cdata::RkMat,Adata::RkMat,Bdata::HMat,a,compressor)
-            end
-        elseif Adata isa HMatrix
-            if Bdata isa Matrix
-                _mul231!(Cdata::RkMat,Adata::HMat,Bdata::Mat,a,compressor)
-            elseif Bdata isa RkMatrix
-                _mul232!(Cdata::RkMat,Adata::HMat,Bdata::RkMat,a,compressor)
-            elseif Bdata isa HMatrix
-                _mul233!(Cdata::RkMat,Adata::HMat,Bdata::HMat,a,compressor)
-            end
-        end
-    elseif Cdata isa HMatrix # compress and flush to leaves
-        if Adata isa Matrix
-            if Bdata isa Matrix
-                _mul311!(Cdata::HMat,Adata::Mat,Bdata::Mat,a)
-            elseif Bdata isa RkMatrix
-                _mul312!(Cdata::HMat,Adata::Mat,Bdata::RkMat,a,compressor)
-            elseif Bdata isa HMatrix
-                _mul313!(Cdata::HMat,Adata::Mat,Bdata::HMat,a)
-            end
-        elseif Adata isa RkMatrix
-            if Bdata isa Matrix
-                _mul321!(Cdata::HMat,Adata::RkMat,Bdata::Mat,a,compressor)
-            elseif Bdata isa RkMatrix
-                _mul322!(Cdata::HMat,Adata::RkMat,Bdata::RkMat,a,compressor)
-            elseif Bdata isa HMatrix
-                _mul323!(Cdata::HMat,Adata::RkMat,Bdata::HMat,a,compressor)
-            end
-        elseif Adata isa HMatrix
-            if Bdata isa Matrix
-                _mul331!(Cdata::HMat,Adata::HMat,Bdata::Mat,a)
-            elseif Bdata isa RkMatrix
-                _mul332!(Cdata::HMat,Adata::HMat,Bdata::RkMat,a,compressor)
-            end
-        end
-        flush_to_leaves!(C,compressor)
-    end
-    return C
-end
-
-compress!(data::RkMatrix,::typeof(identity)) = data
-compress!(data::Matrix,::typeof(identity))   = data
-compress!(data::HMatrix,::typeof(identity))   = data
-
-"""
-    flush_to_leaves(H::HMatrix)
-
-Similar to [`transfer_to_children`](@ref), but transfer the data from `H` all
-the way down to its leaves.
-"""
-function flush_to_leaves!(H::HMatrix,compressor)
-    hasdata(H) && !isleaf(H) || (return H)
-    R = data(H)
-    _add_to_leaves!(H,R,compressor)
-    H.data = nothing
-    return H
-end
-
-function _add_to_leaves!(H::HMatrix,R::RkMatrix,compressor)
-    shift = pivot(H) .- 1
-    for block in Leaves(H)
-        irange     = rowrange(block) .- shift[1]
-        jrange     = colrange(block) .- shift[2]
-        bdata      = data(block)
-        tmp        = RkMatrix(R.A[irange,:],R.B[jrange,:])
-        if bdata === nothing
-            setdata!(block,tmp)
-        else
-            axpy!(true,tmp,bdata)
-            bdata isa RkMatrix && compress!(bdata,compressor)
-        end
-    end
-    return H
 end
 
 ############################################################################################
@@ -648,8 +411,8 @@ function LinearAlgebra.mul!(y::AbstractVector,A::HMatrix,x::AbstractVector,a::Nu
     # multiplication is performed by first defining B <-- Pc*B, and C <--
     # inv(Pr)*C, doing the multiplication with the permuted entries, and then
     # permuting the result  C <-- Pr*C at the end.
-    ctree     = A.coltree
-    rtree     = A.rowtree
+    ctree     = coltree(A)
+    rtree     = rowtree(A)
     # permute input
     if global_index
         x         = x[ctree.loc2glob]
@@ -766,7 +529,7 @@ function _hgemv_static_partition!(C::AbstractVector,B::AbstractVector,partition,
     end
     tmin,tmax = extrema(times)
     if tmax/tmin > 1.1
-        @warn "gemv: ratio of tmax/tmin = $(tmax/tmin)"
+        @debug "gemv: ratio of tmax/tmin = $(tmax/tmin)"
     end
     # @debug "Gemv: tmin = $tmin, tmax = $tmax, ratio = $((tmax)/(tmin))"
     return C
@@ -803,38 +566,37 @@ end
 
 # TODO: benchmark the different partitioning strategies for gemv. Is the hilber
 # partition really faster than the simpler alternatives (row partition, col partition)?
+function row_partitioning(H::HMatrix,np=Threads.nthreads())
+    # sort the leaves by their row index
+    leaves = filter(x -> isleaf(x),H)
+    row_indices = map(leaves) do leaf
+        # use the center of the leaf as a cartesian index
+        i,j = pivot(leaf)
+        return i
+    end
+    p = sortperm(row_indices)
+    permute!(leaves,p)
+    # now compute a quasi-optimal partition of leaves based `cost_mv`
+    cmax = find_optimal_cost(leaves,np,cost_mv,1)
+    partition = build_sequence_partition(leaves,np,cost_mv,cmax)
+    return partition
+end
 
-# function row_partitioning(H::HMatrix,np=Threads.nthreads())
-#     # sort the leaves by their row index
-#     leaves = filter(x -> isleaf(x),H)
-#     row_indices = map(leaves) do leaf
-#         # use the center of the leaf as a cartesian index
-#         i,j = pivot(leaf)
-#         return i
-#     end
-#     p = sortperm(row_indices)
-#     permute!(leaves,p)
-#     # now compute a quasi-optimal partition of leaves based `cost_mv`
-#     cmax = find_optimal_cost(leaves,np,cost_mv,1)
-#     partition = build_sequence_partition(leaves,np,cost_mv,cmax)
-#     return partition
-# end
-
-# function col_partitioning(H::HMatrix,np=Threads.nthreads())
-#     # sort the leaves by their row index
-#     leaves = filter(x -> isleaf(x),H)
-#     row_indices = map(leaves) do leaf
-#         # use the center of the leaf as a cartesian index
-#         i,j = pivot(leaf)
-#         return j
-#     end
-#     p = sortperm(row_indices)
-#     permute!(leaves,p)
-#     # now compute a quasi-optimal partition of leaves based `cost_mv`
-#     cmax = find_optimal_cost(leaves,np,cost_mv,1)
-#     partition = build_sequence_partition(leaves,np,cost_mv,cmax)
-#     return partition
-# end
+function col_partitioning(H::HMatrix,np=Threads.nthreads())
+    # sort the leaves by their row index
+    leaves = filter(x -> isleaf(x),H)
+    row_indices = map(leaves) do leaf
+        # use the center of the leaf as a cartesian index
+        i,j = pivot(leaf)
+        return j
+    end
+    p = sortperm(row_indices)
+    permute!(leaves,p)
+    # now compute a quasi-optimal partition of leaves based `cost_mv`
+    cmax = find_optimal_cost(leaves,np,cost_mv,1)
+    partition = build_sequence_partition(leaves,np,cost_mv,cmax)
+    return partition
+end
 
 """
     cost_mv(A::Union{Matrix,SubArray,Adjoint})
@@ -851,9 +613,6 @@ function cost_mv(H::HMatrix)
     cost_mv(H.data)
 end
 
-############################################################################################
-####################################### rmul! ##############################################
-############################################################################################
 function LinearAlgebra.rmul!(R::RkMatrix, b::Number)
     m, n = size(R)
     if m > n

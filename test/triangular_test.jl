@@ -30,47 +30,49 @@ Yclt      = ClusterTree(Y,splitter)
 H = HMatrix(K,Xclt,Yclt;threads=false,distributed=false)
 H_full      = Matrix(H)
 
-################################################################################
-## ldiv! tests
-################################################################################
-B = rand(m,2)
-R = RkMatrix(rand(m,3),rand(m,3))
-R_full = Matrix(R)
+@testset "ldiv!" begin
+    B = rand(m,2)
+    R = RkMatrix(rand(m,3),rand(m,3))
+    R_full = Matrix(R)
 
-## 3.1
-exact  = ldiv!(UnitLowerTriangular(H_full),copy(B))
-approx = ldiv!(UnitLowerTriangular(H),copy(B))
-@test exact ≈ approx
+    ## 3.1
+    exact  = ldiv!(UnitLowerTriangular(H_full),copy(B))
+    approx = ldiv!(UnitLowerTriangular(H),copy(B))
+    @test exact ≈ approx
 
-## 3.2
-exact  = ldiv!(UnitLowerTriangular(H_full),copy(R_full))
-approx = ldiv!(UnitLowerTriangular(H),copy(R))
-@test exact ≈ Matrix(approx)
+    exact  = ldiv!(UpperTriangular(H_full),copy(B))
+    approx = ldiv!(UpperTriangular(H),copy(B))
+    @test exact ≈ approx
 
-## 3.3
-posthook = HMatrices.MulPostHook(identity)
-exact  = ldiv!(UnitLowerTriangular(H_full),copy(H_full))
-approx = ldiv!(UnitLowerTriangular(H),deepcopy(H),posthook)
-@test exact ≈ Matrix(approx)
+    ## 3.2
+    exact  = ldiv!(UnitLowerTriangular(H_full),copy(R_full))
+    approx = ldiv!(UnitLowerTriangular(H),copy(R))
+    @test exact ≈ Matrix(approx)
 
-################################################################################
-## rdiv! tests
-################################################################################
-B = rand(2,m)
-R = RkMatrix(rand(m,3),rand(m,3))
-R_full = Matrix(R)
-# 3.1
-exact  = rdiv!(copy(B),UpperTriangular(H_full))
-approx = rdiv!(copy(B),UpperTriangular(H))
-@test exact ≈ approx
+    ## 3.3
+    compressor = PartialACA(;atol=1e-8)
+    exact      = ldiv!(UnitLowerTriangular(H_full),copy(H_full))
+    approx     = ldiv!(UnitLowerTriangular(H),deepcopy(H),compressor)
+    @test exact ≈ Matrix(approx)
+end
 
-## 3.2
-exact  = rdiv!(copy(R_full),UpperTriangular(H_full))
-approx = rdiv!(copy(R),UpperTriangular(H))
-@test exact ≈ approx
+@testset "rdiv!" begin
+    B = rand(2,m)
+    R = RkMatrix(rand(m,3),rand(m,3))
+    R_full = Matrix(R)
+    # 3.1
+    exact  = rdiv!(copy(B),UpperTriangular(H_full))
+    approx = rdiv!(copy(B),UpperTriangular(H))
+    @test exact ≈ approx
 
-## 3.3
-posthook = HMatrices.MulPostHook(identity)
-exact  = rdiv!(copy(H_full),UpperTriangular(H_full))
-approx = rdiv!(deepcopy(H),UpperTriangular(H),posthook)
-@test exact ≈ Matrix(approx)
+    ## 3.2
+    exact  = rdiv!(copy(R_full),UpperTriangular(H_full))
+    approx = rdiv!(copy(R),UpperTriangular(H))
+    @test exact ≈ approx
+
+    ## 3.3
+    compressor = PartialACA(;atol=1e-10)
+    exact  = rdiv!(deepcopy(H_full),UpperTriangular(H_full))
+    approx = rdiv!(deepcopy(H),UpperTriangular(H),compressor)
+    @test exact ≈ Matrix(approx)
+end

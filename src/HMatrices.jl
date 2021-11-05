@@ -19,8 +19,6 @@ include("compressor.jl")
 include("hmatrix.jl")
 include("addition.jl")
 include("multiplication.jl")
-include("hmultree.jl")
-include("inverse.jl")
 include("triangular.jl")
 include("lu.jl")
 
@@ -38,6 +36,7 @@ export
     # types
     HMatrix,
     StrongAdmissibilityStd,
+    WeakAdmissibilityStd,
     PartialACA,
     ACA,
     TSVD,

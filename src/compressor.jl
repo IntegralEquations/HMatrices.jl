@@ -1,9 +1,7 @@
 """
     abstract type AbstractCompressor
 
-Used to compress matrices. Requires the following methods to be implemented:
-
-(::AbstractCompressor)(K,I,J)
+Types used to compress matrices.
 """
 abstract type AbstractCompressor end
 
@@ -14,6 +12,7 @@ Adaptive cross approximation algorithm with full pivoting. This structure can be
 used to generate an [`RkMatrix`](@ref) from a matrix-like object `M` as follows:
 
 ```jldoctest
+using LinearAlgebra
 rtol = 1e-6
 comp = ACA(;rtol)
 A = rand(10,2)
@@ -97,12 +96,13 @@ Adaptive cross approximation algorithm with partial pivoting. This structure can
 used to generate an [`RkMatrix`](@ref) from a matrix-like object `M` as follows:
 
 ```jldoctest
+using LinearAlgebra
 rtol = 1e-6
-comp = Partial(;rtol)
+comp = PartialACA(;rtol)
 A = rand(10,2)
 B = rand(10,2)
 M = A*adjoint(B) # a low-rank matrix
-R = comp(M,:,:) # compress the entire matrix `M`
+R = comp(M) # compress the entire matrix `M`
 norm(Matrix(R) - M) < rtol*norm(M) # true
 
 # output
@@ -183,7 +183,8 @@ function _aca_partial(K,irange,jrange,atol,rmax,rtol,istart=1)
         j    = _aca_partial_pivot(adjcol,J)
         δ    = adjcol[j]
         if svdvals(δ)[end] == 0
-            i = findfirst(x->x==true,J)
+            @debug "zero pivot found during partial aca"
+            i = findfirst(x->x==true,I)
         else # δ != 0
             iδ = inv(δ)
             # rdiv!(b,δ) # b <-- b/δ

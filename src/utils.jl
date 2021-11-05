@@ -19,8 +19,15 @@ macro hprofile(block)
     end
 end
 
+"""
+    PermutedMatrix{K,T} <: AbstractMatrix{T}
+
+Structured used to reprensent the permutation of a matrix-like object. The
+original matrix is stored in the `data::K` field, and the permutations are
+stored in `rowperm` and `colperm`.
+"""
 struct PermutedMatrix{K,T} <: AbstractMatrix{T}
-    orig::K # original matrix
+    data::K # original matrix
     rowperm::Vector{Int}
     colperm::Vector{Int}
     function PermutedMatrix(orig,rowperm,colperm)
@@ -29,12 +36,12 @@ struct PermutedMatrix{K,T} <: AbstractMatrix{T}
         new{K,T}(orig,rowperm,colperm)
     end
 end
-Base.size(M::PermutedMatrix) = size(M.orig)
+Base.size(M::PermutedMatrix) = size(M.data)
 
 function Base.getindex(M::PermutedMatrix,i,j)
     ip = M.rowperm[i]
     jp = M.colperm[j]
-    M.orig[ip,jp]
+    M.data[ip,jp]
 end
 
 function points_on_sphere(npts,R=1)

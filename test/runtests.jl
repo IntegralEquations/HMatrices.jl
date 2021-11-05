@@ -10,6 +10,8 @@ using SafeTestsets
 
 @safetestset "Addition" begin include("addition_test.jl") end
 
-@safetestset "Multiplication" begin
-    include("multiplication_unit_test.jl")
-end
+@safetestset "Multiplication" begin include("multiplication_test.jl") end
+
+@safetestset "Triangular" begin include("triangular_test.jl") end
+
+@safetestset "LU" begin include("lu_test.jl") end

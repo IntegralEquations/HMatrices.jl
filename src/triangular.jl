@@ -1,7 +1,6 @@
 const HUnitLowerTriangular = UnitLowerTriangular{<:Any,<:HMatrix}
 const HUpperTriangular     = UpperTriangular{<:Any,<:HMatrix}
 
-# 3.1
 function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, B::AbstractMatrix)
     H = parent(L)
     if isleaf(H)
@@ -28,7 +27,6 @@ function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, B::AbstractMatrix)
     return B
 end
 
-# 3.2
 function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, R::RkMatrix)
     ldiv!(L, R.A) # change R.A in-place
     return R
@@ -59,6 +57,32 @@ function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor)
         end
     end
     return X
+end
+
+function LinearAlgebra.ldiv!(U::HUpperTriangular, B::AbstractMatrix)
+    H = parent(U)
+    if isleaf(H)
+        d = data(H)
+        ldiv!(UpperTriangular(d), B) # B <-- L\B
+    else
+        @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
+        shift = pivot(H) .- 1
+        chdH  = children(H)
+        m, n   = size(chdH)
+        @assert m === n
+        for i = m:-1:1
+            irows  = colrange(chdH[i,i]) .- shift[2]
+            bi     = view(B, irows, :)
+            for j = i+1:n # j>i
+                jrows  = colrange(chdH[i,j]) .- shift[2]
+                bj     = view(B, jrows, :)
+                _mul131!(bi, chdH[i,j], bj, -1)
+            end
+            # recursion stage
+            ldiv!(UpperTriangular(chdH[i,i]), bi)
+        end
+    end
+    return B
 end
 
 # 1.3

@@ -22,7 +22,12 @@ function LinearAlgebra.lu!(M::HMatrix,compressor)
     return LU(M)
 end
 
-LinearAlgebra.lu(M::HMatrix,compressor) = lu!(deepcopy(M),compressor)
+function LinearAlgebra.lu!(M::HMatrix;atol=0,rank=typemax(Int),rtol=atol>0 || rank<typemax(Int) ? 0 : sqrt(eps(Float64)))
+    compressor = PartialACA(atol,rank,rtol)
+    lu!(M,compressor)
+end
+
+LinearAlgebra.lu(M::HMatrix,args...;kwargs...) = lu!(deepcopy(M),args...;kwargs...)
 
 function _lu!(M::HMatrix,compressor)
     if isleaf(M)
@@ -51,4 +56,72 @@ function _lu!(M::HMatrix,compressor)
         end
     end
     return M
+end
+
+function LinearAlgebra.ldiv!(A::HLU,y::AbstractVector;global_index=true)
+    p         = A.factors # underlying data
+    ctree     = coltree(p)
+    rtree     = rowtree(p)
+    # permute input
+    global_index && permute!(y,loc2glob(ctree))
+    L,U = A.L, A.U
+    # solve LUx = y through:
+    # (a) L(z) = y
+    # (b) Ux   = z
+    ldiv!(L,y)
+    ldiv!(U,y)
+    global_index && invpermute!(y,loc2glob(rtree))
+    return y
+end
+
+function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, y::AbstractVector)
+    H = parent(L)
+    if isleaf(H)
+        d = data(H)
+        ldiv!(UnitLowerTriangular(d), y) # B <-- L\B
+    else
+        @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
+        shift = pivot(H) .- 1
+        chdH  = children(H)
+        m, n   = size(chdH)
+        @assert m === n
+        for i = 1:m
+            irows  = colrange(chdH[i,i]) .- shift[2]
+            bi     = view(y, irows)
+            for j = 1:(i - 1)# j<i
+                jrows  = colrange(chdH[i,j]) .- shift[2]
+                bj     = view(y, jrows)
+                _mul131!(bi, chdH[i,j], bj, -1)
+            end
+            # recursion stage
+            ldiv!(UnitLowerTriangular(chdH[i,i]), bi)
+        end
+    end
+    return y
+end
+
+function LinearAlgebra.ldiv!(U::HUpperTriangular, y::AbstractVector)
+    H = parent(U)
+    if isleaf(H)
+        d = data(H)
+        ldiv!(UpperTriangular(d), y) # B <-- L\B
+    else
+        @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
+        shift = pivot(H) .- 1
+        chdH  = children(H)
+        m, n   = size(chdH)
+        @assert m === n
+        for i = m:-1:1
+            irows  = colrange(chdH[i,i]) .- shift[2]
+            bi     = view(y, irows)
+            for j = i+1:n # j>i
+                jrows  = colrange(chdH[i,j]) .- shift[2]
+                bj     = view(y, jrows)
+                _mul131!(bi, chdH[i,j], bj, -1)
+            end
+            # recursion stage
+            ldiv!(UpperTriangular(chdH[i,i]), bi)
+        end
+    end
+    return y
 end

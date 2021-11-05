@@ -186,8 +186,8 @@ global indexing system (see [`HMatrix`](@ref) for more information); otherwise
 the *local* indexing system induced by the row and columns trees are used
 (default).
 """
-Matrix(hmat::HMatrix;global_index=false) = Matrix{eltype(hmat)}(hmat;global_index)
-function Matrix{T}(hmat::HMatrix;global_index) where {T}
+Base.Matrix(hmat::HMatrix;global_index=false) = Matrix{eltype(hmat)}(hmat;global_index)
+function Base.Matrix{T}(hmat::HMatrix;global_index) where {T}
     M = zeros(T,size(hmat)...)
     piv = pivot(hmat)
     for block in PreOrderDFS(hmat)
@@ -257,11 +257,6 @@ function HMatrix{T}(rowtree::R, coltree::R, adm) where {R,T}
     root  = HMatrix{R,T}(rowtree,coltree,false,nothing,nothing,nothing)
     # recurse
     _build_block_structure!(adm,root)
-    # TODO: when a block has all of its children being non-admissible, aggregate them
-    # into a bigger non-admissible block instead? The issue is that this
-    # destroys some of the reasoning behind which of the 27 mul! methods are
-    # actually reachable in the "regular" case.
-    # coarsen_non_admissible_blocks(root)
     return root
 end
 
@@ -291,30 +286,6 @@ function _build_block_structure!(adm, current_node::HMatrix{R,T}) where {R,T}
 end
 
 """
-    coarsen_non_admissible_blocks(H::HMatrix)
-
-Can be called after initializing the structure of an `HMatrix` to eliminate all
-non-admissible leaves for which all siblings are also non-admissible leaves.
-This has the effect of aggregating small dense blocks into larger ones.
-"""
-function coarsen_non_admissible_blocks(block)
-    isleaf(block) && (return block)
-    isvalid = all(block.children) do child
-        isleaf(child) && !isadmissible(child)
-    end
-    if isvalid
-        block.children   = Matrix{typeof(block)}(undef,0,0)
-        block.admissible = false
-        isroot(block) || coarsen_non_admissible_blocks(block.parent)
-    else
-        for  child in block.children
-            coarsen_non_admissible_blocks(child)
-        end
-    end
-    return block
-end
-
-"""
     assemble_cpu!(hmat::HMatrix,K,comp)
 
 Assemble data on the leaves of `hmat`. The admissible leaves are compressed
@@ -323,15 +294,14 @@ already been intialized, and therefore should not be called directly. See
 [`HMatrix`](@ref) information on constructors.
 """
 function assemble_cpu!(hmat,K,comp)
-    # base case
-    if isleaf(hmat)
+    if isleaf(hmat) # base case
         if isadmissible(hmat)
             _assemble_sparse_block!(hmat,K,comp)
         else
             _assemble_dense_block!(hmat,K)
         end
     else
-    # recurse on children
+        # recurse on children
         for child in hmat.children
             assemble_cpu!(child,K,comp)
         end
@@ -350,8 +320,9 @@ function assemble_threads!(hmat,K,comp)
     # strategy in julia at the moment, we resort to manually limiting the size
     # of the tasks by directly calling the serial method for blocks which are
     # smaller than a given length (1000^2 here).
-    filter = (x) -> !(isleaf(x) || length(x)<1000*1000)
-    blocks = PreOrderDFS(hmat,filter) |> collect
+    blocks = filter_tree(hmat,true) do x
+        (isleaf(x) || length(x)<10000*10000)
+    end
     sort!(blocks;lt=(x,y)->length(x)<length(y),rev=true)
     n = length(blocks)
     @sync begin
@@ -392,9 +363,15 @@ end
 """
     struct StrongAdmissibilityStd
 
-Two blocks are admissible under this condition if the minimum their
-`diameter` is smaller than `eta` times the `distance` between the
-them, where `eta::Float64` is a parameter.
+Two blocks are admissible under this condition if the minimum of their
+`diameter` is smaller than `eta` times the `distance` between them, where
+`eta::Float64` is a parameter.
+
+## Usage:
+```julia
+adm = StrongAdmissibilityStd(;eta=2.0)
+adm(Xnode,Ynode)
+```
 """
 Base.@kwdef struct StrongAdmissibilityStd
     eta::Float64=3.0

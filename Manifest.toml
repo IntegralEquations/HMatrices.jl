@@ -100,6 +100,8 @@ uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 
 [[WavePropBase]]
 deps = ["AbstractTrees", "LinearAlgebra", "OrderedCollections", "Printf", "RecipesBase", "Requires", "StaticArrays", "Statistics"]
-path = "/Users/lfaria/Projects/WaveProp/WavePropBase"
+git-tree-sha1 = "8707ff7b1e3675e47f1050ca668bc9d3db07bb96"
+repo-rev = "main"
+repo-url = "https://github.com/WaveProp/WavePropBase.jl.git"
 uuid = "91c5bd54-65f5-4719-ae3b-9579edfc4a0b"
 version = "0.1.2"
