@@ -20,4 +20,5 @@ makedocs(;
 
 deploydocs(;
     repo="github.com/WaveProp/HMatrices.jl",
+    devbranch="main"
 )
