@@ -3,29 +3,29 @@ module HMatrices
 using StaticArrays
 using LinearAlgebra
 using Statistics: median
-using ComputationalResources
-using LoopVectorization
 using TimerOutputs
 using Printf
 using RecipesBase
-
 using WavePropBase
-using WavePropBase.Geometry
+using WavePropBase.Trees
 using WavePropBase.Utils
-
-WavePropBase.@import_interface
+using WavePropBase.Geometry
 
 import AbstractTrees
 
 include("utils.jl")
-include("hilbertcurve.jl")
-include("kernelmatrix.jl")
-include("lowrankmatrices.jl")
+include("rkmatrix.jl")
 include("compressor.jl")
 include("hmatrix.jl")
-include("hgemv.jl")
+include("addition.jl")
+include("multiplication.jl")
+include("triangular.jl")
+include("lu.jl")
 
 export
+    # modules (re-exported)
+    Utils,
+    Geometry,
     # types (re-exported)
     ClusterTree,
     CardinalitySplitter,
@@ -34,6 +34,16 @@ export
     GeometricMinimalSplitter,
     HyperRectangle,
     # types
-    HMatrix
+    HMatrix,
+    StrongAdmissibilityStd,
+    WeakAdmissibilityStd,
+    PartialACA,
+    ACA,
+    TSVD,
+    # functions
+    compression_ratio,
+    print_tree,
+    # macros
+    @hprofile
 
 end
