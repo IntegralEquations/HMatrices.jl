@@ -8,8 +8,12 @@ admissible blocks after addition is performed.
 """
 function hmul!(C::HMatrix,A::HMatrix,B::HMatrix,a,b,compressor)
     b == true || rmul!(C,b)
-    plan = plan_hmul(C,A,B,a,1)
-    execute!(plan,compressor)
+    @timeit_debug "constructing plan" begin
+        plan = plan_hmul(C,A,B,a,1)
+    end
+    @timeit_debug "executing plan" begin
+        execute!(plan,compressor)
+    end
     return C
 end
 
