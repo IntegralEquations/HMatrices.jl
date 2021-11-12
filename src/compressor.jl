@@ -9,8 +9,14 @@ abstract type AbstractCompressor end
     struct ACA
 
 Adaptive cross approximation algorithm with full pivoting. This structure can be
-used to generate an [`RkMatrix`](@ref) from a matrix-like object `M` as follows:
+used to generate an [`RkMatrix`](@ref) from a matrix-like object `M`. The
+keywork arguments `rtol`, `atol`, and `rank` can be used to control the quality
+of the approximation. Note that because `ACA` uses full pivoting, the linear
+operator `M` has to be evaluated at every `i,j`.
 
+# See also: `[PartialACA](@ref)`
+
+# Examples
 ```jldoctest
 using LinearAlgebra
 rtol = 1e-6
@@ -26,10 +32,6 @@ norm(Matrix(R) - M) < rtol*norm(M) # true
 true
 
 ```
-
-The keywork arguments `rtol`, `atol`, and `rank` can be used to control the
-quality of the approximation. Because it uses full pivoting, the linear operator
-has to be evaluated at every `i,j`. See also: `[PartialACA](@ref)`.
 """
 @Base.kwdef struct ACA
     atol::Float64 = 0

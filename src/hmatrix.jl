@@ -25,16 +25,18 @@ mutable struct HMatrix{R,T} <: AbstractHMatrix{T}
     end
 end
 
-# setters and getters
-isadmissible(H::HMatrix)  = H.admissible
-hasdata(H::HMatrix)       = !isnothing(H.data)
-data(H::HMatrix)          = H.data
-setdata!(H::HMatrix,d) = setfield!(H,:data,d)
-rowtree(H::HMatrix) = H.rowtree
-coltree(H::HMatrix) = H.coltree
+# setters and getters (defined for AbstractHMatrix)
+isadmissible(H::AbstractHMatrix)  = H.admissible
+hasdata(H::AbstractHMatrix)       = !isnothing(H.data)
+data(H::AbstractHMatrix)          = H.data
+setdata!(H::AbstractHMatrix,d) = setfield!(H,:data,d)
+rowtree(H::AbstractHMatrix) = H.rowtree
+coltree(H::AbstractHMatrix) = H.coltree
+
+cluster_type(::HMatrix{R,T}) where {R,T} = R
 
 function Base.getindex(H::HMatrix,i::Int,j::Int)
-    @debug "using `getindex(H::AbstractHMatrix,i::Int,j::Int)`."
+    @warn "using `getindex(H::AbstractHMatrix,i::Int,j::Int)`."
     shift = pivot(H) .-1
     _getindex(H,i+shift[1],j+shift[2])
 end
@@ -131,28 +133,28 @@ function _getcol!(col,adjH::Adjoint{<:Any,<:HMatrix},j,piv)
 end
 
 # Trees interface
-Trees.children(H::HMatrix) = H.children
-Trees.children(H::HMatrix,idxs...) = H.children[idxs]
-Trees.parent(H::HMatrix)   = H.parent
-Trees.isleaf(H::HMatrix)   = isempty(children(H))
-Trees.isroot(H::HMatrix)   = parent(H) === H
+Trees.children(H::AbstractHMatrix) = H.children
+Trees.children(H::AbstractHMatrix,idxs...) = H.children[idxs]
+Trees.parent(H::AbstractHMatrix)   = H.parent
+Trees.isleaf(H::AbstractHMatrix)   = isempty(children(H))
+Trees.isroot(H::AbstractHMatrix)   = parent(H) === H
 
 # interface to AbstractTrees. No children is determined by an empty tuple for
 # AbstractTrees.
-AbstractTrees.children(t::HMatrix) = isleaf(t) ? () : t.children
-AbstractTrees.nodetype(t::HMatrix) = typeof(t)
+AbstractTrees.children(t::AbstractHMatrix) = isleaf(t) ? () : t.children
+AbstractTrees.nodetype(t::AbstractHMatrix) = typeof(t)
 
-rowrange(H::HMatrix)         = Trees.index_range(H.rowtree)
-colrange(H::HMatrix)         = Trees.index_range(H.coltree)
-rowperm(H::HMatrix)          =  H |> rowtree |> loc2glob
-colperm(H::HMatrix)          =  H |> coltree |> loc2glob
-pivot(H::HMatrix)            = (rowrange(H).start,colrange(H).start)
-offset(H::HMatrix)           = pivot(H) .- 1
+rowrange(H::AbstractHMatrix)         = Trees.index_range(H.rowtree)
+colrange(H::AbstractHMatrix)         = Trees.index_range(H.coltree)
+rowperm(H::AbstractHMatrix)          =  H |> rowtree |> loc2glob
+colperm(H::AbstractHMatrix)          =  H |> coltree |> loc2glob
+pivot(H::AbstractHMatrix)            = (rowrange(H).start,colrange(H).start)
+offset(H::AbstractHMatrix)           = pivot(H) .- 1
 
 # Base.axes(H::HMatrix) = rowrange(H),colrange(H)
-Base.size(H::HMatrix) = length(rowrange(H)), length(colrange(H))
+Base.size(H::AbstractHMatrix) = length(rowrange(H)), length(colrange(H))
 
-function blocksize(H::HMatrix)
+function blocksize(H::AbstractHMatrix)
     size(children(H))
 end
 
@@ -171,11 +173,30 @@ function compression_ratio(H::HMatrix)
    return nr/ns
 end
 
-num_stored_elements(M::Base.Matrix) = length(M)
+num_stored_elements(M::Matrix) = length(M)
 
 function Base.show(io::IO,::MIME"text/plain",hmat::HMatrix)
-    adm_str = hmat.admissible ? "admissible " : "non-admissible "
-    print(io,adm_str*"hmatrix with range ($(rowrange(hmat))) × ($(colrange(hmat)))")
+    isclean(hmat) || return print(io,"Dirty HMatrix")
+    print(io,"HMatrix of $(eltype(hmat)) with range $(rowrange(hmat)) × $(colrange(hmat))")
+    nodes = collect(PreOrderDFS(hmat))
+    @printf io "\n\t number of nodes in tree: %i" length(nodes)
+    leaves = collect(Leaves(hmat))
+    sparse_leaves = filter(isadmissible,leaves)
+    dense_leaves  = filter(!isadmissible,leaves)
+    @printf(io,"\n\t number of leaves: %i (%i admissible + %i full)",length(leaves),length(sparse_leaves),
+    length(dense_leaves))
+    rmin,rmax = isempty(sparse_leaves) ? (-1,-1) : extrema(x->rank(x.data),sparse_leaves)
+    @printf(io,"\n\t min rank of sparse blocks : %i",rmin)
+    @printf(io,"\n\t max rank of sparse blocks : %i",rmax)
+    dense_min,dense_max = isempty(dense_leaves) ? (-1,-1) : extrema(x->length(x.data),dense_leaves)
+    @printf(io,"\n\t min length of dense blocks : %i",dense_min)
+    @printf(io,"\n\t max length of dense blocks : %i",dense_max)
+    points_per_leaf = map(length,leaves)
+    @printf(io,"\n\t min number of elements per leaf: %i",minimum(points_per_leaf))
+    @printf(io,"\n\t max number of elements per leaf: %i",maximum(points_per_leaf))
+    depth_per_leaf = map(depth,leaves)
+    @printf(io,"\n\t depth of tree: %i",maximum(depth_per_leaf))
+    @printf(io,"\n\t compression ratio: %f\n",compression_ratio(hmat))
 end
 
 """
@@ -186,7 +207,7 @@ global indexing system (see [`HMatrix`](@ref) for more information); otherwise
 the *local* indexing system induced by the row and columns trees are used
 (default).
 """
-Base.Matrix(hmat::HMatrix;global_index=false) = Matrix{eltype(hmat)}(hmat;global_index)
+Matrix(hmat::HMatrix;global_index=true) = Matrix{eltype(hmat)}(hmat;global_index)
 function Base.Matrix{T}(hmat::HMatrix;global_index) where {T}
     M = zeros(T,size(hmat)...)
     piv = pivot(hmat)
@@ -205,52 +226,62 @@ function Base.Matrix{T}(hmat::HMatrix;global_index) where {T}
 end
 
 """
-    HMatrix(K,rowtree,coltree,adm,comp;threads=true,distributed=false,permute_kernel=true)
+    assemble_hmat(K,rowtree,coltree;adm=StrongAdmissibilityStd(),comp=PartialACA(),threads=true,distributed=false,global_index=true)
+    assemble_hmat(K::KernelMatrix;threads=true,distributed=false,global_index=true,[rtol],[atol],[rank])
 
-Main constructor for hierarchical matrix, where `K` represents the matrix to be
-approximated, `rowtree` and `coltree` are tree structure partitioning the row
-and column indices, respectively, `adm` can be called on a node of `rowtree` and
-a node of `coltree` to determine if the block is compressible, and `comp` is a
-function/functor which can compress admissible blocks.
+Main routine for assembling a hierarchical matrix. The argument `K` represents
+the matrix to be approximated, `rowtree` and `coltree` are tree structure
+partitioning the row and column indices, respectively, `adm` can be called on a
+node of `rowtree` and a node of `coltree` to determine if the block is
+compressible, and `comp` is a function/functor which can compress admissible
+blocks.
 
 It is assumed that `K` supports `getindex(K,i,j)`, and that comp can be called
 as `comp(K,irange::UnitRange,jrange::UnitRange)` to produce a compressed version
-of `K[irange,jrange]`.
+of `K[irange,jrange]` in the form of an [`RkMatrix`](@ref).
 """
-function HMatrix(K,rowtree,coltree,
-                adm=StrongAdmissibilityStd(3),
-                comp=PartialACA(;rtol=1e-6);
-                permute_kernel=true,
-                threads=true,
-                distributed=false)
+function assemble_hmat(K,rowtree,coltree;adm=StrongAdmissibilityStd(3),comp=PartialACA(),
+                       global_index=true,threads=true,distributed=false)
     T  = eltype(K)
-    # create first the structure. No parellelism used as this should be light.
-    @timeit_debug "initilizing block structure" begin
-        hmat = HMatrix{T}(rowtree,coltree,adm)
-    end
-
-    # if needed permute kernel entries into indexing induced by trees
-    permute_kernel && (K = PermutedMatrix(K,loc2glob(rowtree),loc2glob(coltree)))
-
-    # now assemble the data in the blocks
-    @timeit_debug "assembling hmatrix" begin
-        if distributed
-            error("distributed assembly not yet supported")
-        else
+    if distributed
+        _assemble_hmat_distributed(K,rowtree,coltree;adm,comp,global_index,threads)
+    else
+        # create first the structure. No parellelism used as this should be light.
+        @timeit_debug "initilizing block structure" begin
+            hmat = HMatrix{T}(rowtree,coltree,adm)
+        end
+        # if needed permute kernel entries into indexing induced by trees
+        global_index && (K = PermutedMatrix(K,loc2glob(rowtree),loc2glob(coltree)))
+        # now assemble the data in the blocks
+        @timeit_debug "assembling hmatrix" begin
             if threads
-                assemble_threads!(hmat,K,comp)
+                @info "Assembling HMatrix on $(Threads.nthreads()) threads"
+                _assemble_threads!(hmat,K,comp)
             else
-                assemble_cpu!(hmat,K,comp)
+                @info "Assembling HMatrix on 1 thread"
+                _assemble_cpu!(hmat,K,comp)
             end
         end
     end
+end
+
+function assemble_hmat(K::AbstractKernelMatrix;atol=0,rank=typemax(Int),rtol=atol>0 || rank<typemax(Int) ? 0 : sqrt(eps(Float64)),kwargs...)
+    comp = PartialACA(;rtol,atol,rank)
+    adm  = StrongAdmissibilityStd(3)
+    X    = rowelements(K)
+    Y    = colelements(K)
+    Xclt = ClusterTree(X)
+    Yclt = ClusterTree(Y)
+    assemble_hmat(K,Xclt,Yclt;adm,comp,kwargs...)
 end
 
 """
     HMatrix{T}(rowtree,coltree,adm)
 
 Construct an empty `HMatrix` with `rowtree` and `coltree` using the
-admissibility condition `adm`.
+admissibility condition `adm`. This function builds the skeleton for the
+hierarchical matrix, but **does not compute `data`** field in the blocks. See
+[`assemble_hmat`](@ref) for assembling a hierarhical matrix.
 """
 function HMatrix{T}(rowtree::R, coltree::R, adm) where {R,T}
     #build root
@@ -286,14 +317,14 @@ function _build_block_structure!(adm, current_node::HMatrix{R,T}) where {R,T}
 end
 
 """
-    assemble_cpu!(hmat::HMatrix,K,comp)
+    _assemble_cpu!(hmat::HMatrix,K,comp)
 
 Assemble data on the leaves of `hmat`. The admissible leaves are compressed
 using the compressor `comp`. This function assumes the structure of `hmat` has
 already been intialized, and therefore should not be called directly. See
 [`HMatrix`](@ref) information on constructors.
 """
-function assemble_cpu!(hmat,K,comp)
+function _assemble_cpu!(hmat,K,comp)
     if isleaf(hmat) # base case
         if isadmissible(hmat)
             _assemble_sparse_block!(hmat,K,comp)
@@ -303,32 +334,32 @@ function assemble_cpu!(hmat,K,comp)
     else
         # recurse on children
         for child in hmat.children
-            assemble_cpu!(child,K,comp)
+            _assemble_cpu!(child,K,comp)
         end
     end
     return hmat
 end
 
 """
-    assemble_threads!(hmat::HMatrix,K,comp)
+    _assemble_threads!(hmat::HMatrix,K,comp)
 
-Like [`assemble_cpu!`](@ref), but uses threads to assemble (independent) blocks.
+Like [`_assemble_cpu!`](@ref), but uses threads to assemble the leaves. Note
+that the threads are spanwned using `Threads.@spawn`, which means they are
+spawned on the same worker as the caller.
 """
-function assemble_threads!(hmat,K,comp)
+function _assemble_threads!(hmat,K,comp)
     # FIXME: ideally something like `omp for schedule(guided)` should be used here
     # to avoid spawning too many (small) tasks. In the absece of such scheduling
-    # strategy in julia at the moment, we resort to manually limiting the size
+    # strategy in julia at the moment (v1.6), we resort to manually limiting the size
     # of the tasks by directly calling the serial method for blocks which are
     # smaller than a given length (1000^2 here).
     blocks = filter_tree(hmat,true) do x
-        (isleaf(x) || length(x)<10000*10000)
+        (isleaf(x) || length(x)<1000*1000)
     end
     sort!(blocks;lt=(x,y)->length(x)<length(y),rev=true)
     n = length(blocks)
-    @sync begin
-        for i in 1:n
-            Threads.@spawn assemble_cpu!(blocks[i],K,comp)
-        end
+    @sync for i in 1:n
+        Threads.@spawn _assemble_cpu!(blocks[i],K,comp)
     end
     return hmat
 end
@@ -344,7 +375,6 @@ function _assemble_dense_block!(hmat,K)
     return hmat
 end
 
-# LinearAlgebra.adjoint(H::HMatrix) = Adjoint(H)
 hasdata(adjH::Adjoint{<:Any,<:HMatrix}) = hasdata(adjH.parent)
 data(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(data(adjH.parent))
 Trees.children(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(children(adjH.parent))
@@ -394,33 +424,10 @@ end
 
 (adm::WeakAdmissibilityStd)(left_node, right_node) = distance(left_node,right_node) > 0
 
-function Base.summary(io::IO,hmat::HMatrix)
-    print("HMatrix{$(eltype(hmat))} spanning $(rowrange(hmat)) × $(colrange(hmat))")
-    nodes = collect(PreOrderDFS(hmat))
-    @printf "\n\t number of nodes in tree: %i" length(nodes)
-    leaves = collect(Leaves(hmat))
-    sparse_leaves = filter(isadmissible,leaves)
-    dense_leaves  = filter(!isadmissible,leaves)
-    @printf("\n\t number of leaves: %i (%i admissible + %i full)",length(leaves),length(sparse_leaves),
-    length(dense_leaves))
-    rmin,rmax = isempty(sparse_leaves) ? (-1,-1) : extrema(x->rank(x.data),sparse_leaves)
-    @printf("\n\t minimum rank of sparse blocks : %i",rmin)
-    @printf("\n\t maximum rank of sparse blocks : %i",rmax)
-    dense_min,dense_max = isempty(dense_leaves) ? (-1,-1) : extrema(x->length(x.data),dense_leaves)
-    @printf("\n\t minimum length of dense blocks : %i",dense_min)
-    @printf("\n\t maximum length of dense blocks : %i",dense_max)
-    points_per_leaf = map(length,leaves)
-    @printf "\n\t min number of elements per leaf: %i" minimum(points_per_leaf)
-    @printf "\n\t max number of elements per leaf: %i" maximum(points_per_leaf)
-    depth_per_leaf = map(depth,leaves)
-    @printf "\n\t depth of tree: %i" maximum(depth_per_leaf)
-    @printf "\n\t compression ratio: %f\n" compression_ratio(hmat)
-end
-
 """
     isclean(H::HMatrix)
 
-Return `true` if `H` all leaves of `H` have data, and if the leaves are the only
+Return `true` if all leaves of `H` have data, and if the leaves are the only
 nodes containing data. This is the normal state of an ℋ-matrix, but during
 intermediate stages of a computation data may be associated with non-leaf nodes
 for convenience.

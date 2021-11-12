@@ -6,10 +6,7 @@ using StaticArrays
 
 using HMatrices: RkMatrix
 
-dir = @__DIR__
-include(joinpath(dir,"kernelmatrix.jl"))
-
-ENV["JULIA_DEBUG"] = ""
+include(joinpath(HMatrices.PROJECT_ROOT,"test","testutils.jl"))
 
 Random.seed!(1)
 
@@ -24,10 +21,10 @@ Yclt      = ClusterTree(Y,splitter)
 adm       = StrongAdmissibilityStd(eta=3)
 rtol      = 1e-5
 comp      = PartialACA(rtol=rtol)
-K         = LaplaceMatrix(X,Y)
-H         = HMatrix(K,Xclt,Yclt,adm,comp;threads=false,distributed=false)
+K         = laplace_matrix(X,Y)
+H         = assemble_hmat(K,Xclt,Yclt;adm,comp,threads=false,distributed=false)
 
-H_full = Matrix(H)
+H_full = Matrix(H;global_index=false)
 
 α = rand() - 0.5
 β = rand() - 0.5
@@ -35,7 +32,7 @@ H_full = Matrix(H)
     C  = deepcopy(H);
     tmp = β*H_full + α*H_full*H_full
     HMatrices.hmul!(C,H,H,α,β,PartialACA(;atol=1e-6))
-    @test Matrix(C) ≈ tmp
+    @test Matrix(C;global_index=false) ≈ tmp
 end
 
 @testset "gemv" begin

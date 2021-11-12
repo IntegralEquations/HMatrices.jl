@@ -15,6 +15,11 @@ makedocs(;
     ),
     pages=[
         "Getting started" => "index.md",
+        "Kernel matrices" => "kernelmatrix.md",
+        "Distributed HMatrix" => "dhmatrix.md",
+        "Notebooks" => "notebooks.md",
+        "Benchmarks" => "benchs.md",
+        "References" => "references.md"
     ],
 )
 

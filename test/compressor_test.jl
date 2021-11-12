@@ -4,8 +4,7 @@ using StaticArrays
 using LinearAlgebra
 using HMatrices: ACA, PartialACA, TSVD, RkMatrix
 
-dir = @__DIR__
-include(joinpath(dir,"kernelmatrix.jl"))
+include(joinpath(HMatrices.PROJECT_ROOT,"test","testutils.jl"))
 
 using Random
 Random.seed!(1)
@@ -15,7 +14,7 @@ Random.seed!(1)
     m,n = 100,100
     X = rand(SVector{3,Float64},m)
     Y = map(i->SVector(10,0,0) + rand(SVector{3,Float64}),1:n)
-    K = HelmholtzMatrix(X,Y,1.0)
+    K = helmholtz_matrix(X,Y,1.0)
     M = Matrix(K)
     irange,jrange = 1:m,1:n
     @testset "aca_full" begin
@@ -89,7 +88,7 @@ end
     m,n = 100,100
     X = rand(SVector{3,Float64},m)
     Y = map(i->SVector(10,0,0) + rand(SVector{3,Float64}),1:n)
-    K = ElastodynamicMatrix(X,Y,1.0,2.0,1.0,1.0)
+    K = elastosdynamic_matrix(X,Y,1.0,2.0,1.0,1.0)
     # K = ElastostaticMatrix(X,Y,1.0,2.0)
     M = Matrix(K)
     irange,jrange = 1:m,1:n

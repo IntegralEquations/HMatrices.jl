@@ -44,17 +44,6 @@ function Base.getindex(M::PermutedMatrix,i,j)
     M.data[ip,jp]
 end
 
-function points_on_sphere(npts,R=1)
-    theta = π*rand(npts)
-    phi   = 2*π*rand(npts)
-    x     = @. sin(theta)*cos(phi)
-    y     = @. R*sin(theta)*sin(phi)
-    z     = @. R*cos(theta)
-    data  = vcat(x',y',z')
-    pts = reinterpret(SVector{3,Float64},vec(data)) |> collect
-    return pts
-end
-
 """
     hilbert_cartesian_to_linear(n,x,y)
 
@@ -162,7 +151,7 @@ end
     find_optimal_cost(seq,nq,cost,tol)
 
 Find an approximation to the cost of an optimal partitioning of `seq` into `nq`
-contiguous subsequent. The optimal cost is the smallest number `cmax` such that
+contiguous segments. The optimal cost is the smallest number `cmax` such that
 `has_partition(seq,nq,cost,cmax)` returns `true`.
 """
 function find_optimal_cost(seq,np,cost=identity,tol=1)
@@ -178,6 +167,23 @@ function find_optimal_cost(seq,np,cost=identity,tol=1)
         guess  = (lbound+ubound)/2
     end
     return ubound
+end
+
+"""
+    find_optimal_partition(seq,nq,cost,tol=1)
+
+Find an approximation to the optimal partition `seq` into `nq` contiguous
+segments according to the `cost` function. The optimal partition is the one
+which minimizes the maximum `cost` over all possible partitions of `seq` into
+`nq` segments.
+
+The generated partition is optimal up to a tolerance `tol`; for integer valued
+`cost`, setting `tol=1` means the partition is optimal.
+"""
+function find_optimal_partition(seq,np,cost=(x)->1,tol=1)
+    cmax = find_optimal_cost(seq,np,cost,tol)
+    p = build_sequence_partition(seq,np,cost,cmax)
+    return p
 end
 
 

@@ -162,6 +162,6 @@ uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 
 [[WavePropBase]]
 deps = ["AbstractTrees", "LinearAlgebra", "OrderedCollections", "Printf", "RecipesBase", "Requires", "StaticArrays", "Statistics"]
-git-tree-sha1 = "2fa25bd9c095d63ab789cedc7907cd919b457cc1"
+path = "../../WavePropBase"
 uuid = "91c5bd54-65f5-4719-ae3b-9579edfc4a0b"
 version = "0.1.2"

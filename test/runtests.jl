@@ -15,3 +15,5 @@ using SafeTestsets
 @safetestset "Triangular" begin include("triangular_test.jl") end
 
 @safetestset "LU" begin include("lu_test.jl") end
+
+# @safetestset "DHMatrix" begin include("dhmatrix_test.jl") end

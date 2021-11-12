@@ -4,14 +4,15 @@ using LinearAlgebra
 using Random
 using StaticArrays
 
-using HMatrices: RkMatrix, points_on_sphere
+using HMatrices: RkMatrix
+
+include(joinpath(HMatrices.PROJECT_ROOT,"test","testutils.jl"))
 
 Random.seed!(1)
 
 m = 1000
 T = Float64
 X    = points_on_sphere(m)
-# X    = rand(SVector{3,Float64},m)
 Y    = X
 struct ExponentialKernel <: AbstractMatrix{Float64}
     X::Vector{SVector{3,Float64}}
@@ -27,8 +28,8 @@ K = ExponentialKernel(X,X)
 splitter  = CardinalitySplitter(nmax=50)
 Xclt      = ClusterTree(X,splitter)
 Yclt      = ClusterTree(Y,splitter)
-H = HMatrix(K,Xclt,Yclt;threads=false,distributed=false)
-H_full      = Matrix(H)
+H = assemble_hmat(K,Xclt,Yclt;threads=false,distributed=false)
+H_full      = Matrix(H;global_index=false)
 
 @testset "ldiv!" begin
     B = rand(m,2)
@@ -53,7 +54,7 @@ H_full      = Matrix(H)
     compressor = PartialACA(;atol=1e-8)
     exact      = ldiv!(UnitLowerTriangular(H_full),copy(H_full))
     approx     = ldiv!(UnitLowerTriangular(H),deepcopy(H),compressor)
-    @test exact ≈ Matrix(approx)
+    @test exact ≈ Matrix(approx;global_index=false)
 end
 
 @testset "rdiv!" begin
@@ -74,5 +75,5 @@ end
     compressor = PartialACA(;atol=1e-10)
     exact  = rdiv!(deepcopy(H_full),UpperTriangular(H_full))
     approx = rdiv!(deepcopy(H),UpperTriangular(H),compressor)
-    @test exact ≈ Matrix(approx)
+    @test exact ≈ Matrix(approx;global_index=false)
 end

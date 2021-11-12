@@ -1,4 +1,4 @@
-LinearAlgebra.LU(H::HMatrix) = LU(H,Int[],0)
+LU(H::HMatrix) = LU(H,Int[],0)
 
 const HLU = LU{<:Any,<:HMatrix}
 
@@ -13,23 +13,40 @@ function Base.getproperty(LU::HLU,s::Symbol)
     end
 end
 
-function LinearAlgebra.lu!(M::HMatrix,compressor)
+"""
+    lu!(M::HMatrix,comp)
+
+Hierarhical LU facotrization of `M`, using `comp` to generate the compressed
+blocks during the multiplication routines.
+"""
+function lu!(M::HMatrix,compressor;threads=false)
     #perform the lu decomposition of M in place
     @timeit_debug "lu factorization" begin
-        _lu!(M,compressor)
+        _lu!(M,compressor,threads)
     end
     #wrap the result in the LU structure
     return LU(M)
 end
 
-function LinearAlgebra.lu!(M::HMatrix;atol=0,rank=typemax(Int),rtol=atol>0 || rank<typemax(Int) ? 0 : sqrt(eps(Float64)))
+"""
+    lu!(M::HMatrix;atol=0,rank=typemax(Int),rtol=atol>0 ||
+    rank<typemax(Int) ? 0 : sqrt(eps(Float64)))
+
+Hierarhical LU facotrization of `M`, using the `PartialACA(;atol,rtol;rank)` compressor.
+"""
+function lu!(M::HMatrix;atol=0,rank=typemax(Int),rtol=atol>0 || rank<typemax(Int) ? 0 : sqrt(eps(Float64)),kwargs...)
     compressor = PartialACA(atol,rank,rtol)
     lu!(M,compressor)
 end
 
-LinearAlgebra.lu(M::HMatrix,args...;kwargs...) = lu!(deepcopy(M),args...;kwargs...)
+"""
+    lu(M::HMatrix,args...;kwargs...)
 
-function _lu!(M::HMatrix,compressor)
+Hierarchical LU factorization. See [`lu!`](@ref) for the available options.
+"""
+lu(M::HMatrix,args...;kwargs...) = lu!(deepcopy(M),args...;kwargs...)
+
+function _lu!(M::HMatrix,compressor,threads)
     if isleaf(M)
         d = data(M)
         @assert d isa Matrix
@@ -41,13 +58,23 @@ function _lu!(M::HMatrix,compressor)
         chdM = children(M)
         m,n = size(chdM)
         for i=1:m
-            _lu!(chdM[i,i],compressor)
+            _lu!(chdM[i,i],compressor,threads)
             for j=i+1:n
-                @timeit_debug "ldiv! solution" begin
-                    ldiv!(UnitLowerTriangular(chdM[i,i]),chdM[i,j],compressor)
-                end
-                @timeit_debug "rdiv! solution" begin
-                    rdiv!(chdM[j,i],UpperTriangular(chdM[i,i]),compressor)
+                @sync begin
+                    @timeit_debug "ldiv! solution" begin
+                        if threads
+                            Threads.@spawn ldiv!(UnitLowerTriangular(chdM[i,i]),chdM[i,j],compressor)
+                        else
+                            ldiv!(UnitLowerTriangular(chdM[i,i]),chdM[i,j],compressor)
+                        end
+                    end
+                    @timeit_debug "rdiv! solution" begin
+                        if threads
+                            Threads.@spawn rdiv!(chdM[j,i],UpperTriangular(chdM[i,i]),compressor)
+                        else
+                            rdiv!(chdM[j,i],UpperTriangular(chdM[i,i]),compressor)
+                        end
+                    end
                 end
                 @timeit_debug "hmul!" begin
                     hmul!(chdM[j,j],chdM[j,i],chdM[i,j],-1,1,compressor)
@@ -58,7 +85,7 @@ function _lu!(M::HMatrix,compressor)
     return M
 end
 
-function LinearAlgebra.ldiv!(A::HLU,y::AbstractVector;global_index=true)
+function ldiv!(A::HLU,y::AbstractVector;global_index=true)
     p         = A.factors # underlying data
     ctree     = coltree(p)
     rtree     = rowtree(p)
@@ -74,7 +101,7 @@ function LinearAlgebra.ldiv!(A::HLU,y::AbstractVector;global_index=true)
     return y
 end
 
-function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, y::AbstractVector)
+function ldiv!(L::HUnitLowerTriangular, y::AbstractVector)
     H = parent(L)
     if isleaf(H)
         d = data(H)
@@ -100,7 +127,7 @@ function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, y::AbstractVector)
     return y
 end
 
-function LinearAlgebra.ldiv!(U::HUpperTriangular, y::AbstractVector)
+function ldiv!(U::HUpperTriangular, y::AbstractVector)
     H = parent(U)
     if isleaf(H)
         d = data(H)

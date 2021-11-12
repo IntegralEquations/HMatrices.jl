@@ -1,7 +1,7 @@
 const HUnitLowerTriangular = UnitLowerTriangular{<:Any,<:HMatrix}
 const HUpperTriangular     = UpperTriangular{<:Any,<:HMatrix}
 
-function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, B::AbstractMatrix)
+function ldiv!(L::HUnitLowerTriangular, B::AbstractMatrix)
     H = parent(L)
     if isleaf(H)
         d = data(H)
@@ -27,12 +27,12 @@ function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, B::AbstractMatrix)
     return B
 end
 
-function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, R::RkMatrix)
+function ldiv!(L::HUnitLowerTriangular, R::RkMatrix)
     ldiv!(L, R.A) # change R.A in-place
     return R
 end
 
-function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor)
+function ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor)
     H = parent(L)
     @assert isclean(H)
     if isleaf(X)
@@ -59,7 +59,7 @@ function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor)
     return X
 end
 
-function LinearAlgebra.ldiv!(U::HUpperTriangular, B::AbstractMatrix)
+function ldiv!(U::HUpperTriangular, B::AbstractMatrix)
     H = parent(U)
     if isleaf(H)
         d = data(H)
@@ -86,7 +86,7 @@ function LinearAlgebra.ldiv!(U::HUpperTriangular, B::AbstractMatrix)
 end
 
 # 1.3
-function LinearAlgebra.rdiv!(B::StridedMatrix, U::HUpperTriangular)
+function rdiv!(B::StridedMatrix, U::HUpperTriangular)
     H = parent(U)
     if isleaf(H)
         d = data(H)
@@ -113,14 +113,14 @@ function LinearAlgebra.rdiv!(B::StridedMatrix, U::HUpperTriangular)
 end
 
 # 2.3
-function LinearAlgebra.rdiv!(R::RkMatrix, U::HUpperTriangular)
+function rdiv!(R::RkMatrix, U::HUpperTriangular)
     Bt = rdiv!(Matrix(R.Bt), U)
     adjoint!(R.B, Bt)
     return R
 end
 
 # 3.3
-function LinearAlgebra.rdiv!(X::AbstractHMatrix, U::HUpperTriangular, compressor)
+function rdiv!(X::AbstractHMatrix, U::HUpperTriangular, compressor)
     H = parent(U)
     if isleaf(X)
         d = data(X)

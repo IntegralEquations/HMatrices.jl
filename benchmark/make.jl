@@ -1,6 +1,4 @@
 using PkgBenchmark
-using HMatrices
-using LinearAlgebra
 
 function postprocess(results,fname="benchs")
     # writeresults(joinpath(path,fname),results)
@@ -9,11 +7,11 @@ function postprocess(results,fname="benchs")
     export_markdown(joinpath(path,fname*".md"),results)
 end
 
-env = Dict("JULIA_NUM_THREADS" =>1,
+env = Dict("JULIA_NUM_THREADS" =>4,
            "OPEN_BLAS_NUM_THREADS" => 1
            )
 
-config = BenchmarkConfig(;juliacmd=`/Applications/Julia-1.6.app/Contents/Resources/julia/bin/julia -O3`,env)
+config = BenchmarkConfig(;juliacmd=`julia -O3`,env)
 
 dir       = @__DIR__
 retune    = false

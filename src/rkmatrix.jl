@@ -59,7 +59,7 @@ function getcol(R::RkMatrix,j::Int)
 end
 
 function getcol!(col,Ra::Adjoint{<:Any,<:RkMatrix},j::Int)
-    R = LinearAlgebra.parent(Ra)
+    R = parent(Ra)
     mul!(col,R.B,conj(view(R.A,j,:)))
 end
 
@@ -99,7 +99,7 @@ Base.size(rmat::RkMatrix)                                        = (size(rmat.A,
 Base.length(rmat::RkMatrix)                                      = prod(size(rmat))
 Base.isapprox(rmat::RkMatrix,B::AbstractArray,args...;kwargs...) = isapprox(Matrix(rmat),B,args...;kwargs...)
 
-LinearAlgebra.rank(M::RkMatrix) = size(M.A,2)
+rank(M::RkMatrix) = size(M.A,2)
 
 function Base.getproperty(R::RkMatrix,s::Symbol)
     if  s == :Bt
@@ -161,12 +161,12 @@ function Base.Matrix(R::RkMatrix{<:SMatrix})
 end
 
 """
-    RkMatrix(F::LinearAlgebra.SVD)
+    RkMatrix(F::SVD)
 
 Construct an [`RkMatrix`](@ref) from an `SVD` factorization.
 """
-function RkMatrix(F::LinearAlgebra.SVD)
-    A  = F.U*LinearAlgebra.Diagonal(F.S)
+function RkMatrix(F::SVD)
+    A  = F.U*Diagonal(F.S)
     B  = copy(F.V)
     return RkMatrix(A,B)
 end
@@ -204,7 +204,7 @@ compression_ratio(R::RkMatrix) = prod(size(R)) / num_stored_elements(R)
 # problem in LinearAlgebra for the generic mulplication mul!(C,A,B,a,b) when
 # C and B are a vectors of static matrices, and A is a matrix of static
 # matrices. Should eventually be removed.
-function LinearAlgebra.mul!(C::AbstractVector,Rk::RkMatrix{T},F::AbstractVector,a::Number,b::Number) where {T<:SMatrix}
+function mul!(C::AbstractVector,Rk::RkMatrix{T},F::AbstractVector,a::Number,b::Number) where {T<:SMatrix}
     m,n = size(Rk)
     r   = rank(Rk)
     tmp = Rk.Bt*F
