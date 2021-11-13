@@ -27,11 +27,14 @@ a    = rand()
 
 @testset "axpy!" begin
     @test axpy!(a,M,deepcopy(R)) ≈ a*_M + _R
-    @test axpy!(a,M,deepcopy(H)) ≈ a*_M + _H
+    tmp = axpy!(a,M,deepcopy(H))
+    @test Matrix(tmp;global_index=false) ≈ a*_M + _H
     @test axpy!(a,R,deepcopy(M)) ≈ a*_R + _M
     @test axpy!(a,R,deepcopy(R)) ≈ a*_R + _R
-    @test axpy!(a,R,deepcopy(H)) ≈ a*_R + _H
+    tmp = axpy!(a,R,deepcopy(H))
+    Matrix(tmp;global_index=false) ≈ a*_R + _H
     @test axpy!(a,H,deepcopy(M)) ≈ a*_H + _M
     @test axpy!(a,H,deepcopy(R)) ≈ a*_H + _R
-    @test axpy!(a,H,deepcopy(H)) ≈ a*_H + _H
+    tmp = axpy!(a,H,deepcopy(H))
+    @test Matrix(tmp;global_index=false) ≈ a*_H + _H
 end

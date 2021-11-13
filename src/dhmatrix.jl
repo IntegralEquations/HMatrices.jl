@@ -21,6 +21,13 @@ struct RemoteHMatrix{S,T}
     future::Future
 end
 
+Base.fetch(r::RemoteHMatrix) = fetch(r.future)
+
+function Base.getindex(r::RemoteHMatrix,i::Int,j::Int)
+    pid = r.future.where
+    @fetchfrom pid getindex(fetch(r),i,j)
+end
+
 """
     mutable struct DHMatrix{R,T} <: AbstractHMatrix{T}
 
@@ -71,10 +78,6 @@ function DHMatrix{T}(rowtree::R, coltree::R; partition_strategy=:distribute_colu
         error("unrecognized partition strategy")
     end
     return root
-end
-
-function Base.getindex(D::DHMatrix,args...)
-    error("method `getindex(D::DHMatrix,args...) has been disabled")
 end
 
 function _build_block_structure_distribute_cols!(current_node::DHMatrix{R,T},dmax) where {R,T}

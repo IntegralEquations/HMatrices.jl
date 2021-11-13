@@ -24,7 +24,11 @@ include(joinpath(HMatrices.PROJECT_ROOT,"test","testutils.jl"))
         H_full    = Matrix(H;global_index=false)
         adjH_full = adjoint(H_full)
         @testset "getindex" begin
+            HMatrices.enable_getindex()
             @test H_full[8,64] ≈ H[8,64]
+            HMatrices.disable_getindex()
+            @test_throws ErrorException H_full[8,64] ≈ H[8,64]
+            HMatrices.enable_getindex()
             @test H_full[:,666] ≈ H[:,666]
             @test adjH_full[:,666] ≈ adjH[:,666]
         end

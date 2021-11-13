@@ -20,6 +20,14 @@ import AbstractTrees
 import LinearAlgebra: mul!, lu!, lu, LU, ldiv!, rdiv!, axpy!, rank, rmul!, lmul!
 import Base: Matrix, adjoint
 
+"""
+    const ALLOW_GETINDEX
+
+If set to false, the `getindex(H,i,j)` method will throw an error on
+`AbstractHMatrix`.
+"""
+const ALLOW_GETINDEX = Ref(true)
+
 include("utils.jl")
 include("kernelmatrix.jl")
 include("rkmatrix.jl")

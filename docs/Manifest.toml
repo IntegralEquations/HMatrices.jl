@@ -17,6 +17,10 @@ uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 deps = ["Printf"]
 uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
 
+[[Distributed]]
+deps = ["Random", "Serialization", "Sockets"]
+uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
+
 [[DocStringExtensions]]
 deps = ["LibGit2"]
 git-tree-sha1 = "b19534d1895d702889b219c382a6e18010797f0b"
@@ -35,7 +39,7 @@ uuid = "e2ba6199-217a-4e67-a87a-7c52f15ade04"
 version = "0.1.6"
 
 [[HMatrices]]
-deps = ["AbstractTrees", "LinearAlgebra", "Printf", "RecipesBase", "SafeTestsets", "StaticArrays", "Statistics", "TimerOutputs", "WavePropBase"]
+deps = ["AbstractTrees", "Distributed", "LinearAlgebra", "Printf", "RecipesBase", "SafeTestsets", "StaticArrays", "Statistics", "TimerOutputs", "WavePropBase"]
 path = ".."
 uuid = "8646bddf-ab1c-4fa7-9c51-ba187d647618"
 version = "0.1.0"
@@ -162,6 +166,6 @@ uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 
 [[WavePropBase]]
 deps = ["AbstractTrees", "LinearAlgebra", "OrderedCollections", "Printf", "RecipesBase", "Requires", "StaticArrays", "Statistics"]
-path = "../../WavePropBase"
+git-tree-sha1 = "2fa25bd9c095d63ab789cedc7907cd919b457cc1"
 uuid = "91c5bd54-65f5-4719-ae3b-9579edfc4a0b"
 version = "0.1.2"

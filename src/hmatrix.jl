@@ -1,5 +1,44 @@
 abstract type  AbstractHMatrix{T} <: AbstractMatrix{T} end
 
+function Base.getindex(H::AbstractHMatrix,i,j)
+    # NOTE: you may disable `getindex` to avoid having code that will work, but be
+    # horribly slow because it falls back to some generic implementation in
+    # LinearAlgebra. The downside is that the `show` method, which will usually
+    # call `getindex` for `AbstractMatrix`, has to be overloaded too. One
+    # options is not not inherit from `AbstractMatrix` since we don't have an
+    # efficient `getindex` method in any case. The downside is that some
+    # convenient functionality of `AbstractMatrix` will be lost.
+    msg = """
+    method `getindex(::AbstractHMatrix,args...)` has been disabled to avoid
+    performance pitfalls. Unless you made an explicit call to `getindex`, this
+    error usually means that a linear algebra routine involving an
+    `AbstractHMatrix` has fallen back to a generic implementation.
+    """
+    if ALLOW_GETINDEX[]
+        shift = pivot(H) .-1
+        _getindex(H,i+shift[1],j+shift[2])
+    else
+        error(msg)
+    end
+end
+
+function _getindex(H,i,j)
+    (i ∈ rowrange(H)) && (j ∈ colrange(H)) || throw(BoundsError(H,(i,j)))
+    acc = zero(eltype(H))
+    shift = pivot(H) .- 1
+    if hasdata(H)
+        il = i - shift[1]
+        jl = j - shift[2]
+        acc  += data(H)[il,jl]
+    end
+    for child in children(H)
+        if (i ∈ rowrange(child)) && (j ∈ colrange(child))
+            acc += _getindex(child,i,j)
+        end
+    end
+    return acc
+end
+
 """
     mutable struct HMatrix{R,T} <: AbstractHMatrix{T}
 
@@ -34,29 +73,6 @@ rowtree(H::AbstractHMatrix) = H.rowtree
 coltree(H::AbstractHMatrix) = H.coltree
 
 cluster_type(::HMatrix{R,T}) where {R,T} = R
-
-function Base.getindex(H::HMatrix,i::Int,j::Int)
-    @warn "using `getindex(H::AbstractHMatrix,i::Int,j::Int)`."
-    shift = pivot(H) .-1
-    _getindex(H,i+shift[1],j+shift[2])
-end
-
-function _getindex(H,i,j)
-    (i ∈ rowrange(H)) && (j ∈ colrange(H)) || throw(BoundsError(H,(i,j)))
-    acc = zero(eltype(H))
-    shift = pivot(H) .- 1
-    if hasdata(H)
-        il = i - shift[1]
-        jl = j - shift[2]
-        acc  += data(H)[il,jl]
-    end
-    for child in children(H)
-        if (i ∈ rowrange(child)) && (j ∈ colrange(child))
-            acc += _getindex(child,i,j)
-        end
-    end
-    return acc
-end
 
 Base.getindex(H::HMatrix,::Colon,j) = getcol(H,j)
 
@@ -175,9 +191,15 @@ end
 
 num_stored_elements(M::Matrix) = length(M)
 
-function Base.show(io::IO,::MIME"text/plain",hmat::HMatrix)
+function Base.show(io::IO,hmat::HMatrix)
     isclean(hmat) || return print(io,"Dirty HMatrix")
     print(io,"HMatrix of $(eltype(hmat)) with range $(rowrange(hmat)) × $(colrange(hmat))")
+    _show(io,hmat)
+    return io
+end
+Base.show(io::IO,::MIME"text/plain",hmat::HMatrix) = show(io,hmat)
+
+function _show(io,hmat)
     nodes = collect(PreOrderDFS(hmat))
     @printf io "\n\t number of nodes in tree: %i" length(nodes)
     leaves = collect(Leaves(hmat))
@@ -197,6 +219,7 @@ function Base.show(io::IO,::MIME"text/plain",hmat::HMatrix)
     depth_per_leaf = map(depth,leaves)
     @printf(io,"\n\t depth of tree: %i",maximum(depth_per_leaf))
     @printf(io,"\n\t compression ratio: %f\n",compression_ratio(hmat))
+    return io
 end
 
 """
@@ -386,9 +409,14 @@ Trees.isleaf(adjH::Adjoint{<:Any,<:HMatrix}) = isleaf(adjH.parent)
 
 Base.size(adjH::Adjoint{<:Any,<:HMatrix}) = reverse(size(adjH.parent))
 
-function Base.show(io::IO,::MIME"text/plain",hmat::Adjoint{Float64,<:HMatrix})
-    print(io,"adjoint hmatrix with range ($(rowrange(hmat))) × ($(colrange(hmat)))")
+function Base.show(io::IO,adjH::Adjoint{<:Any,<:HMatrix})
+    hmat = parent(adjH)
+    isclean(hmat) || return print(io,"Dirty HMatrix")
+    print(io,"Adjoint HMatrix of $(eltype(hmat)) with range $(rowrange(adjH)) × $(colrange(adjH))")
+    _show(io,hmat)
+    return io
 end
+Base.show(io::IO,::MIME"text/plain",adjH::Adjoint{<:Any,<:HMatrix}) = show(io,adjH)
 
 """
     struct StrongAdmissibilityStd

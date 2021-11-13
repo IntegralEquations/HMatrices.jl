@@ -24,12 +24,20 @@ end
 RkMatrix(A,B) = RkMatrix(promote(A,B)...)
 
 function Base.getindex(rmat::RkMatrix,i::Int,j::Int)
-    @debug "calling slow `getindex` of an `RkMatrix`"
-    # error("calling slow `getindex` of an `RkMatrix`")
-    r = rank(rmat)
-    acc = zero(eltype(rmat))
-    for k in 1:r
-        acc += rmat.A[i,k] * conj(rmat.B[j,k])
+    msg = """
+    method `getindex(::AbstractHMatrix,args...)` has been disabled to avoid
+    performance pitfalls. Unless you made an explicit call to `getindex`, this
+    error usually means that a linear algebra routine involving an
+    `AbstractHMatrix` has fallen back to a generic implementation.
+    """
+    if ALLOW_GETINDEX[]
+        r = rank(rmat)
+        acc = zero(eltype(rmat))
+        for k in 1:r
+            acc += rmat.A[i,k] * conj(rmat.B[j,k])
+        end
+    else
+        error(msg)
     end
     return acc
 end

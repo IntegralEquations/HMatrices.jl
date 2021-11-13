@@ -142,6 +142,18 @@ H = assemble_hmat(K,Xclt,Yclt;adm,comp,threads=false,distributed=false)
 You can now use `H` *in lieu* of `K` (as an approximation) for certain linear
 algebra operations, as shown next.
 
+!!! tip "Disabling `getindex`"
+    Although the `getindex(H,i::Int,j::Int)` method is defined for an `AbstractHMatrix`, its use
+    is mostly for display purposes in a `REPL` environment, and should be
+    avoided in any linear algebra routine. To avoid the performance pitfalls
+    related to methods falling back to the generic `LinearAlgebra`
+    implementation of various algorithms (which make use `getindex`
+    extensively), you can disable `getindex` on types defined in this package by
+    calling [`HMatrices.disable_getindex`](@ref). The consequence is that
+    calling `getindex(H,i,j)` will throw an error. If a given operation is
+    running unexpectedly slow, try disabling `getindex` to see if any part of
+    the code is falling back to a generic implementation.
+
 ## Matrix vector product and iterative solvers
 
 The simplest operation you can perform with an `HMatrix` is to multiply it by a

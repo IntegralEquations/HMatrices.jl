@@ -207,3 +207,20 @@ function has_partition(seq,np,cmax,cost=identity)
     end
     return true
 end
+
+"""
+    disable_getindex()
+
+Call this function to disable the `getindex` method on `AbstractHMatrix`. This
+is useful to avoid performance pitfalls associated with linear algebra methods
+falling back to a generic implementation which uses the `getindex` method.
+Calling `getindex(H,i,j)` will error after calling this function.
+"""
+disable_getindex() = (ALLOW_GETINDEX[] = false)
+
+"""
+    enable_getindex()
+
+The opposite of [`disable_getindex`](@ref).
+"""
+enable_getindex()  = (ALLOW_GETINDEX[] = true)
