@@ -1,6 +1,6 @@
 # HMatrices.jl
 
-*A package for assembling and doing linear algebra with hierarchical matrices with a focus on boundary integral equations* 
+*A package for assembling and factoring hierarchical matrices*
 
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://WaveProp.github.io/HMatrices.jl/stable)
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://WaveProp.github.io/HMatrices.jl/dev)
@@ -17,61 +17,90 @@ pkg> add https://github.com/WaveProp/HMatrices.jl
 
 ## Overview
 
-Hierarchical matrices, or ℋ-matrices for short, describe abstract matrices with
-a hierarchical (tree-like) block structure. They are commonly used to compress
-certain linear operators containing large blocks of low numerical rank. See
-[1,2] in the [references](#references) section below for background information
-on hierarchical matrices.
+This package provides some functionality for assembling as well as for doing
+linear algebra with [hierarchical
+matrices](https://en.wikipedia.org/wiki/Hierarchical_matrix) with a strong focus
+in applications arising in **boundary integral equation** methods. 
 
-This package provides an implementation of various algorithms for assembling and
-performing linear algebra with ℋ-matrices with a *focus on applications arising
-in boundary integral equation methods*. Thus, many of the examples included in
-the documentation will deal with compression of boundary integral operators.
-
-In general, to construct an ℋ-matrix you need:
-
-- a matrix-like object `K` with a `getindex(K,i,j)` method.
-- a tree partition of the rows and columns indices of `K`
-- an admissibility condition for blocks given by a node of the row tree and a
-  node of the column tree
-
-The admissibility condition and the tree partition depend on the application.
-
-## Basic usage
-
-The following simple example illustrates how you may use this package to
-compress Laplace's single layer operator on a circle:
-
+For the purpose of illustration, let us consider an abstract matrix `K` with
+entry `i,j` given by the evaluation of some *kernel function* `G` on points
+`X[i]` and `Y[j]`, where `X` and `Y` are vector of points (in 3D here); that is,
+`K[i,j]=G(X[i],Y[j])`. This object can be constructed as follows:
 
 ```julia
-    using HMatrices, Clusters, Plots, LinearAlgebra
-    # create some random points
-    N           = 10_000 
-    pts         = [(cos(θ),sin(θ)) for θ in range(0,stop=2π,length=N)]
-    # make a cluster tree
-    clustertree = ClusterTree(pts)
-    # then a block cluster tree
-    blocktree   = BlockTree(clustertree,clustertree)
-    # create your matrix
-    f(x,y)      =  x==y ? 0.0 : -1/(2π)*log(norm(x-y)) # Laplace single layer kernels in 2d
-    M           = [f(x,y) for x in clustertree.data, y in clustertree.data]
-    # compress it
-    H           = HMatrix(M,blocktree)
+using HMatrices, LinearAlgebra, StaticArrays
+const Point3D = SVector{3,Float64}
+# sample some points on a sphere
+m = 100_000
+X = Y = [Point3D(sin(θ)cos(ϕ),sin(θ)*sin(ϕ),cos(θ)) for (θ,ϕ) in zip(π*rand(m),2π*rand(m))]
+function G(x,y) 
+  d = norm(x-y) + 1e-8
+  1/(4π*d)
+end
+K = KernelMatrix(G,X,Y)
 ```
-Many of the steps above accept keyword arguments or functors for modifying their default behavior.
 
-Often one cannot assemble the full matrix. In this case the `LazyMatrix` type is useful:
+where we took `G` to be the free-space Greens function of Laplace's
+equation in 3D (to avoid division-by-zero we added `1e-8` to the distance
+between points).
+
+The object `K` corresponds to a dense matrix, so converting it to a matrix can
+be costly both in terms of memory and flops. Instead, we can construct an
+approximation to `K` as a hierarchical matrix using:
+
 ```julia
-    L = LazyMatrix(f,clustertree.data,clustertree.data)
-    H = HMatrix(L,blocktree)
+H = assemble_hmat(K;atol=1e-6)
 ```
-This is just like the matrix we build `M`, but it computes the entries *on demand* and does not store them. To see the data sparse structure of the hierarchical matrix the package includes a `Plots` recipe so that you can do `plot(H)` to see something like the following image:
 
-![HMatrix](docs/src/figures/hmatrix.png "HMatrix")
+> **Tip**: For a smaller problem size (say `m=10_000`), you may try 
+> ```julia
+> using Plots
+> plot(H)
+> ```
+> to visualize the underlying block-structure. You should see something similar
+> to the figure below:
+>![HMatrix](docs/src/assets/hmatrix.png "HMatrix")
 
-## References
+Calling `HMatrices.compression_ratio(H)` reveals that storing a dense version of
+`K` would take roughly `25` times as much space (and probably would not fit in
+most laptops). We can now use `H` as an approximation to `K` for some linear
+algebra operations, such as:
+
+```julia
+x = rand(m)
+y = H*x
+```
+
+To check that this is indeed an approximation, we can compare against the exact
+value at a given entry:
+
+```julia
+y[42] - sum(K[42,j]*x[j] for j in 1:m)
+# about 2e-7
+```
+
+It is also possibly to factor `H` by calling e.g. `lu(H;atol=1e-6)` (this may
+take a few minutes on a reasonable machine for the `100_000 × 100_000` problem
+size and specified tolerance). The result is an `LU` factorization object with a
+hierarchical low-rank structure, and the factored object can be used both in a
+direct solver or as a preconditioner for `H` in an iterative solver.
+
+For more information, see the [documentation](https://waveprop.github.io/HMatrices.jl/dev/).
+
+## References and related packages
+
+Below are some good references on hierarchical matrices and their application to
+boundary integral equations:
 
 [1] Hackbusch, Wolfgang. Hierarchical matrices: algorithms and analysis. Vol. 49. Heidelberg: Springer, 2015.
 
 [2] Bebendorf, Mario. Hierarchical matrices. Springer Berlin Heidelberg, 2008.
 
+If you are interested in hierarchical matrices and Julia, check out also the
+following packages:
+
+- [HierarchicalMatrices.jl](https://github.com/JuliaMatrices/HierarchicalMatrices.jl):
+  a flexible framework for hierarchical matrices implementing an abstract
+  infrastructure.
+- [KernelMatrices.jl](https://bitbucket.org/cgeoga/kernelmatrices.jl): a library
+  implementing the *Hierarchically Off-Diagonal Low-Rank* structure (HODLR).
