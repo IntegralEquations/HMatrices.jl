@@ -478,7 +478,7 @@ function mul!(y::AbstractVector,A::HMatrix,x::AbstractVector,a::Number=1,b::Numb
         #    testing.
         @timeit_debug "hilbert partition" begin
             nt        = Threads.nthreads()
-            partition = hilbert_partitioning(A,nt,COST_MODEL.cost_gemv)
+            partition = hilbert_partitioning(A,nt,_cost_gemv)
         end
         @timeit_debug "threaded multiplication" begin
             _hgemv_static_partition!(y,x,partition,offset)
@@ -588,7 +588,7 @@ end
 
 
 """
-    hilbert_partitioning(H::HMatrix,np,[cost=cost_mv])
+    hilbert_partitioning(H::HMatrix,np,cost)
 
 Partiotion the leaves of `H` into `np` sequences of approximate equal cost (as
 determined by the `cost` function) while also trying to maximize the locality of
@@ -668,4 +668,27 @@ function rmul!(H::HMatrix, b::Number)
         rmul!(child, b)
     end
     return H
+end
+
+"""
+    _cost_gemv(A::Union{Matrix,SubArray,Adjoint})
+
+A proxy for the computational cost of a matrix/vector product.
+"""
+function _cost_gemv(R::RkMatrix)
+    rank(R)*sum(size(R))
+end
+function _cost_gemv(M::Matrix)
+    length(M)
+end
+function _cost_gemv(H::HMatrix)
+    acc = 0.0
+    if isleaf(H)
+        acc += _cost_gemv(data(H))
+    else
+        for c in children(H)
+            acc += cost_gemv(c)
+        end
+    end
+    return acc
 end
