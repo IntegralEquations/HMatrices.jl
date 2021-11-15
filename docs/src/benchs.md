@@ -1,9 +1,9 @@
 # Benchmark Report for *HMatrices*
 
 ## Job Properties
-* Time of benchmark: 12 Nov 2021 - 18:33
-* Package commit: dirty
-* Julia commit: ae8452
+* Time of benchmark: 15 Nov 2021 - 12:10
+* Package commit: e53a64
+* Julia commit: 6aaede
 * Julia command flags: `-O3`
 * Environment variables: `JULIA_NUM_THREADS => 4` `OPEN_BLAS_NUM_THREADS => 1`
 
@@ -17,42 +17,49 @@ An empty cell means that the value was zero.
 
 | ID                                                                | time            | GC time    | memory          | allocations |
 |-------------------------------------------------------------------|----------------:|-----------:|----------------:|------------:|
-| `["Compressors", "ACA(0.0, 9223372036854775807, 1.0e-6)"]`        |  61.241 ms (5%) |   4.972 ms | 107.21 MiB (1%) |          67 |
-| `["Compressors", "PartialACA(0.0, 9223372036854775807, 1.0e-6)"]` | 219.119 μs (5%) |            | 450.72 KiB (1%) |          47 |
-| `["Compressors", "TSVD(0.0, 9223372036854775807, 1.0e-6)"]`       | 286.398 ms (5%) |   1.540 ms |  46.04 MiB (1%) |          16 |
-| `["Helmholtz", "assemble cpu"]`                                   |    8.748 s (5%) | 274.875 ms |   2.00 GiB (1%) |      150511 |
-| `["Helmholtz", "assemble procs"]`                                 |    6.581 s (5%) |            |  20.08 MiB (1%) |      348308 |
-| `["Helmholtz", "assemble threads"]`                               |    2.018 s (5%) |            |   2.00 GiB (1%) |      155071 |
-| `["Helmholtz", "gemv cpu"]`                                       |  79.233 ms (5%) |            |  13.97 MiB (1%) |      375961 |
-| `["Helmholtz", "gemv threads"]`                                   |  54.442 ms (5%) |            |  13.96 MiB (1%) |      375658 |
-| `["Laplace", "assemble cpu"]`                                     | 667.362 ms (5%) |            | 661.53 MiB (1%) |       81762 |
-| `["Laplace", "assemble procs"]`                                   | 227.796 ms (5%) |            | 778.27 KiB (1%) |       26833 |
-| `["Laplace", "assemble threads"]`                                 | 166.750 ms (5%) |            | 661.88 MiB (1%) |       86321 |
-| `["Laplace", "gemv cpu"]`                                         |    7.608 s (5%) | 267.259 ms | 893.60 MiB (1%) |    26145811 |
-| `["Laplace", "gemv threads"]`                                     |  27.370 ms (5%) |            |  12.56 MiB (1%) |      363514 |
+| `["Compressors", "ACA(0.0, 9223372036854775807, 1.0e-6)"]`        |  76.567 ms (5%) |   7.685 ms | 107.21 MiB (1%) |          67 |
+| `["Compressors", "PartialACA(0.0, 9223372036854775807, 1.0e-6)"]` | 446.299 μs (5%) |            | 419.22 KiB (1%) |          45 |
+| `["Compressors", "TSVD(0.0, 9223372036854775807, 1.0e-6)"]`       | 648.363 ms (5%) |   4.974 ms |  46.04 MiB (1%) |          16 |
+| `["Helmholtz", "assemble cpu"]`                                   |  166.429 s (5%) |    8.595 s |  19.37 GiB (1%) |      727659 |
+| `["Helmholtz", "assemble threads"]`                               |   41.592 s (5%) |    1.555 s |  19.37 GiB (1%) |      750704 |
+| `["Helmholtz", "gemv cpu"]`                                       |    4.496 s (5%) |            | 261.00 MiB (1%) |     5620826 |
+| `["Helmholtz", "gemv threads"]`                                   |    1.378 s (5%) |            |  63.45 MiB (1%) |     1616343 |
+| `["Helmholtz", "lu"]`                                             |  192.001 s (5%) |   22.600 s |  58.16 GiB (1%) |    10800690 |
+| `["HelmholtzVec", "assemble cpu"]`                                |  110.399 s (5%) |    4.707 s |  17.76 GiB (1%) |     1106518 |
+| `["HelmholtzVec", "assemble threads"]`                            |   33.060 s (5%) |    2.216 s |  17.77 GiB (1%) |     1224735 |
+| `["Laplace", "assemble cpu"]`                                     |    7.262 s (5%) |    1.135 s |   4.53 GiB (1%) |      320677 |
+| `["Laplace", "assemble threads"]`                                 |    2.039 s (5%) | 408.197 ms |   4.53 GiB (1%) |      343721 |
+| `["Laplace", "gemv cpu"]`                                         |    2.130 s (5%) |            | 240.72 MiB (1%) |     5184907 |
+| `["Laplace", "gemv threads"]`                                     | 210.446 ms (5%) |            |  57.02 MiB (1%) |     1563342 |
+| `["Laplace", "lu"]`                                               |   72.762 s (5%) |    8.118 s |  27.03 GiB (1%) |    10119561 |
+| `["LaplaceVec", "assemble cpu"]`                                  |    7.162 s (5%) | 857.205 ms |   4.17 GiB (1%) |     1452739 |
+| `["LaplaceVec", "assemble threads"]`                              |    1.979 s (5%) | 468.014 ms |   4.11 GiB (1%) |      371866 |
 
 ## Benchmark Group List
 Here's a list of all the benchmark groups executed by this job:
 
 - `["Compressors"]`
 - `["Helmholtz"]`
+- `["HelmholtzVec"]`
 - `["Laplace"]`
+- `["LaplaceVec"]`
 
 ## Julia versioninfo
 ```
-Julia Version 1.6.3
-Commit ae8452a9e0 (2021-09-23 17:34 UTC)
+Julia Version 1.6.1
+Commit 6aaedecc44 (2021-04-23 05:59 UTC)
 Platform Info:
-  OS: macOS (x86_64-apple-darwin19.5.0)
-  uname: Darwin 21.1.0 Darwin Kernel Version 21.1.0: Wed Oct 13 17:33:23 PDT 2021; root:xnu-8019.41.5~1/RELEASE_X86_64 x86_64 i386
-  CPU: Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz: 
+  OS: Linux (x86_64-pc-linux-gnu)
+      Ubuntu 20.04.3 LTS
+  uname: Linux 5.4.0-89-generic #100-Ubuntu SMP Fri Sep 24 14:50:10 UTC 2021 x86_64 x86_64
+  CPU: Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz: 
                  speed         user         nice          sys         idle          irq
-       #1-16  2300 MHz     746382 s          0 s     346592 s   14103601 s          0 s
+       #1-40   800 MHz     116598 s       3332 s      23649 s  102282768 s          0 s
        
-  Memory: 16.0 GB (3794.78515625 MB free)
-  Uptime: 209471.0 sec
-  Load Avg:  7.66259765625  5.48193359375  4.224609375
+  Memory: 31.03945541381836 GB (8270.078125 MB free)
+  Uptime: 256097.0 sec
+  Load Avg:  3.52  2.51  1.89
   WORD_SIZE: 64
   LIBM: libopenlibm
-  LLVM: libLLVM-11.0.1 (ORCJIT, skylake)
+  LLVM: libLLVM-11.0.1 (ORCJIT, skylake-avx512)
 ```
