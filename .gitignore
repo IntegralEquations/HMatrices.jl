@@ -7,5 +7,3 @@
 /.benchmarkci
 /benchmark/*.json
 /sandbox/*
-/docs/Manifest.toml
-/test/Manifest.toml
