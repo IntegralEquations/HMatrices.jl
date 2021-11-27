@@ -2,8 +2,10 @@
 *.jl.cov
 *.jl.mem
 .vscode/*
-# /Manifest.toml
+/Manifest.toml
 /docs/build/
 /.benchmarkci
 /benchmark/*.json
 /sandbox/*
+/docs/Manifest.toml
+/test/Manifest.toml
