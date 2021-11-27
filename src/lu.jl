@@ -1,8 +1,4 @@
-LU(H::HMatrix) = LU(H,Int[],0)
-
-const HLU = LU{<:Any,<:HMatrix}
-
-function Base.getproperty(LU::HLU,s::Symbol)
+function Base.getproperty(LU::LU{<:Any,<:HMatrix},s::Symbol)
     H = getfield(LU,:factors) # the underlying hierarchical matrix
     if s == :L
         return UnitLowerTriangular(H)
@@ -20,12 +16,12 @@ Hierarhical LU facotrization of `M`, using `comp` to generate the compressed
 blocks during the multiplication routines.
 """
 function lu!(M::HMatrix,compressor;threads=false)
-    #perform the lu decomposition of M in place
+    # perform the lu decomposition of M in place
     @timeit_debug "lu factorization" begin
         _lu!(M,compressor,threads)
     end
-    #wrap the result in the LU structure
-    return LU(M)
+    # wrap the result in the LU structure
+    return LU(M,LinearAlgebra.BlasInt[],LinearAlgebra.BlasInt(0))
 end
 
 """
@@ -51,7 +47,7 @@ function _lu!(M::HMatrix,compressor,threads)
         d = data(M)
         @assert d isa Matrix
         @timeit_debug "dense lu factorization" begin
-            lu!(d,Val(false)) # Val(false) for pivot of dense lu factorization
+            lu!(d) # Val(false) for pivot of dense lu factorization
         end
     else
         @assert !hasdata(M)
@@ -85,7 +81,7 @@ function _lu!(M::HMatrix,compressor,threads)
     return M
 end
 
-function ldiv!(A::HLU,y::AbstractVector;global_index=true)
+function ldiv!(A::LU{<:Any,<:HMatrix},y::AbstractVector;global_index=true)
     p         = A.factors # underlying data
     ctree     = coltree(p)
     rtree     = rowtree(p)

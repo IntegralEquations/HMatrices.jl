@@ -49,9 +49,9 @@ deps = ["Serialization"]
 uuid = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [[RecipesBase]]
-git-tree-sha1 = "44a75aa7a527910ee3d1751d1f0e4148698add9e"
+git-tree-sha1 = "6bf3f380ff52ce0832ddd3a2a7b9538ed1bcca7d"
 uuid = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
-version = "1.1.2"
+version = "1.2.1"
 
 [[Requires]]
 deps = ["UUIDs"]
@@ -107,7 +107,7 @@ uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 
 [[WavePropBase]]
 deps = ["AbstractTrees", "LinearAlgebra", "OrderedCollections", "Printf", "RecipesBase", "Requires", "StaticArrays", "Statistics"]
-git-tree-sha1 = "c641d030da971a50b090aebb8cefa91652310878"
+git-tree-sha1 = "be75062b22c68064d947d13574323ac74c6d103a"
 repo-rev = "main"
 repo-url = "https://github.com/WaveProp/WavePropBase.jl.git"
 uuid = "91c5bd54-65f5-4719-ae3b-9579edfc4a0b"
