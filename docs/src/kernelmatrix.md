@@ -53,7 +53,7 @@ For vector-valued partial differential equations such as *Stokes* or
 time-harmonic *Maxwell's* equation, the underlying integral operator has a
 kernel function which is a tensor. This package currently provides some limited
 support for these types of operators. The example below illustrates how to build
-an `HMatrix` representing a `KernelMatrix` corresponding to Stokes Greens function for points on a sphere:
+an [`HMatrix`](@ref) representing a [`KernelMatrix`](@ref) corresponding to Stokes Greens function for points on a sphere:
 
 ```@example stokes
 using HMatrices, LinearAlgebra, StaticArrays
@@ -80,6 +80,15 @@ y = H*σ
 i = 42
 y[i] - sum(K[i,j]*σ[j] for j in 1:m)
 ```
+
+!!! note
+    The *naive* idea of reinterpreting these *matrices of tensors* as a (larger)
+    matrix of scalars does not always work because care to be taken when
+    choosing the pivot in the compression stage of the [`PartialACA`](@ref) in
+    order to exploit some analytic properties of the underlying kernel. See
+    e.g. section 2.3 of [this
+    paper](https://www.sciencedirect.com/science/article/pii/S0021999117306721)
+    for a brief discussion.
 
 ## Vectorized kernels and local indices
 

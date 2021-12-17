@@ -33,9 +33,7 @@ available methods and structures.
     The notation and algorithms implemented were mostly drawn from the following
     references:
     - Hackbusch, Wolfgang. *Hierarchical matrices: algorithms and analysis*. Vol. 49. Heidelberg: Springer, 2015.
-    - Bebendorf, Mario. *Hierarchical matrices*. Springer Berlin Heidelberg,
-    2008.
-    
+    - Bebendorf, Mario. *Hierarchical matrices*. Springer Berlin Heidelberg, 2008.
 ## [Assembling an `HMatrix`](@id assemble-generic-subsection)
 
 In order to assemble an [`HMatrix`](@ref), you need the following
@@ -212,10 +210,9 @@ factorization. See [`lu`](@ref) for more details.
 !!! important "Truncation error"
     The parameters `atol` and `rtol` are used to control the truncation of
     low-rank blocks *adaptively* using an estimate of the true error (in
-    Frobenius norm). These local error may accumulate after successive
-    truncations, which in practice means that the final errors can be somewhat
-    larger than the prescribed tolerance. Because of this, you may want to set
-    `atol` and `rtol` to be somewhat smaller than your target accuracy.
+    Frobenius norm). These local errors may accumulate after successive
+    truncations, meaning that the global approximation error (in Frobenius norm) may be larger
+    than the prescribed tolerance.
 
 The returned object `F` is of the `LU` type, and efficient
 routines are provided to solve linear system using `F`:

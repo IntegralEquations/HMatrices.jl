@@ -69,11 +69,13 @@ Random.seed!(1)
         atol = 1e-5
         tsvd = TSVD(atol=atol)
         R    = tsvd(M,irange,jrange)
-        @test norm(Matrix(R) - M) < atol
+        # the inequality below is guaranteed to be true  for  the spectral norm
+        # i.e. (the `opnorm` with `p=2`).
+        @test opnorm(Matrix(R) - M) < atol
         rtol = 1e-5
         tsvd = TSVD(rtol=rtol)
         R    = tsvd(M,irange,jrange)
-        @test norm(Matrix(R) - M) < rtol*norm(M)
+        @test opnorm(Matrix(R) - M) < rtol*opnorm(M)
         r = 10
         tsvd = TSVD(rank=r)
         R  = tsvd(M,irange,jrange)
