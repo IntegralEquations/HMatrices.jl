@@ -104,3 +104,5 @@ following packages:
   infrastructure.
 - [KernelMatrices.jl](https://bitbucket.org/cgeoga/kernelmatrices.jl): a library
   implementing the *Hierarchically Off-Diagonal Low-Rank* structure (HODLR).
+- [HSSMatrices.jl](https://github.com/bonevbs/HssMatrices.jl): an implementation
+  of the *Hierarchically semi-separable* structure (HSS).
