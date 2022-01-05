@@ -1,7 +1,7 @@
 name = "HMatrices"
 uuid = "8646bddf-ab1c-4fa7-9c51-ba187d647618"
 authors = ["Luiz M. Faria <maltezfaria@gmail.com> and contributors"]
-version = "0.1.0"
+version = "0.1.1"
 
 [deps]
 AbstractTrees = "1520ce14-60c1-5f80-bbc7-55ef81b5835c"
@@ -16,9 +16,9 @@ WavePropBase = "91c5bd54-65f5-4719-ae3b-9579edfc4a0b"
 
 [compat]
 AbstractTrees = "0.3"
-TimerOutputs = "0.5"
 RecipesBase = "1.1"
 StaticArrays = "1.2"
+TimerOutputs = "0.5"
 WavePropBase = "0.1"
 julia = "1.6"
 

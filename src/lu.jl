@@ -47,7 +47,7 @@ function _lu!(M::HMatrix,compressor,threads)
         d = data(M)
         @assert d isa Matrix
         @timeit_debug "dense lu factorization" begin
-            lu!(d) # Val(false) for pivot of dense lu factorization
+            lu!(d,NoPivot())
         end
     else
         @assert !hasdata(M)
@@ -72,8 +72,12 @@ function _lu!(M::HMatrix,compressor,threads)
                         end
                     end
                 end
-                @timeit_debug "hmul!" begin
-                    hmul!(chdM[j,j],chdM[j,i],chdM[i,j],-1,1,compressor)
+            end
+            for j in i+1:m
+                for k in i+1:n
+                    @timeit_debug "hmul!" begin
+                        hmul!(chdM[j,k],chdM[j,i],chdM[i,k],-1,1,compressor)
+                    end
                 end
             end
         end

@@ -12,7 +12,7 @@ Status](https://github.com/WaveProp/HMatrices.jl/workflows/CI/badge.svg)](https:
 ## Installation
 Install from the Pkg REPL:
 ```
-pkg> add https://github.com/WaveProp/HMatrices.jl
+pkg> add HMatrices
 ```
 
 ## Overview
