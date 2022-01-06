@@ -1,3 +1,5 @@
+const NOPIVOT = VERSION >= v"1.7" ? NoPivot : Val{false}
+
 function Base.getproperty(LU::LU{<:Any,<:HMatrix},s::Symbol)
     H = getfield(LU,:factors) # the underlying hierarchical matrix
     if s == :L
@@ -47,7 +49,7 @@ function _lu!(M::HMatrix,compressor,threads)
         d = data(M)
         @assert d isa Matrix
         @timeit_debug "dense lu factorization" begin
-            lu!(d,NoPivot())
+            lu!(d,NOPIVOT())
         end
     else
         @assert !hasdata(M)
