@@ -9,36 +9,36 @@ function G(x,y)
     exp(im*k*d)/(4π*d)
 end
 K = KernelMatrix(G,X,Y)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">10000×10000 KernelMatrix{typeof(Main.G), Vector{StaticArrays.SVector{3, Float64}}, Vector{StaticArrays.SVector{3, Float64}}, ComplexF64}:
-  0.0465962-0.0836778im    0.0653514-0.0627696im   …   0.0327418-0.0934523im
-  -0.160177+0.119887im     -0.104151+0.227182im       -0.0780255+0.256293im
-  0.0785891+0.00514823im   0.0787153+0.00457866im       0.079318-0.028033im
-  0.0644993-0.0640313im    0.0783171+0.00631522im      0.0755874-0.0422759im
- -0.0943457-0.0873622im    -0.119213-0.067137im         -0.13279-0.0514357im
-  0.0397292-0.0889501im    0.0702425-0.0545202im   …   0.0460632-0.0841212im
-  -0.105742-0.0792075im    0.0270092-0.0965951im      -0.0874805-0.091511im
-  -0.113475-0.0726411im     0.148192+0.387408im        -0.160314+0.119374im
-  -0.134619-0.0489654im    -0.157508-0.00493045im      -0.167427+0.0790691im
-  -0.132934-0.0512447im   -0.0321098+0.296092im        -0.161319+0.115465im
-           ⋮                                       ⋱  
-  -0.160434+0.00418991im   0.0228512-0.0985986im       -0.112021-0.0739464im
-   0.369915+0.439165im    -0.0560026+0.276811im         0.732475+0.473045im
- -0.0093553-0.107685im     -0.130706-0.0541335im      -0.0971251-0.0855259im
-  0.0187699-0.100357im    0.00441222-0.105074im       -0.0575174-0.103998im
- -0.0173152-0.108419im     -0.146293-0.0303853im   …   -0.120891-0.0654138im
- -0.0305337-0.108448im     0.0714868+0.0245768im       0.0556878-0.0750367im
-  -0.167809+0.074006im     0.0202914-0.0997248im       -0.106902-0.0782798im
-  -0.127543-0.0580122im    0.0438095+0.343492im        -0.156289+0.132972im
-  -0.143788-0.0348606im     0.109628+0.373295im        -0.132959+0.185138im</code></pre><p>Compressing <code>K</code> is now as simple as:</p><pre><code class="language-julia hljs">H = assemble_hmat(K;rtol=1e-6)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HMatrix of ComplexF64 with range 1:10000 × 1:10000
-	 number of nodes in tree: 16709
-	 number of leaves: 12532 (2456 admissible + 10076 full)
+  0.0512415-0.0795349im   -0.104816-0.0799347im  …   -0.138548+0.174927im
+  0.0805769-0.0106589im   0.0430909-0.0864847im        -0.1565-0.00773697im
+  0.0160767-0.101411im    0.0605357-0.0693915im      -0.162017+0.00994171im
+ 0.00431524-0.105099im    0.0498625-0.0808194im       -0.16382+0.0175777im
+  -0.152029-0.0187289im    -0.16296+0.0137573im     -0.0613316+0.272117im
+  0.0617306+0.0390156im   0.0468349-0.0834771im  …   -0.156934-0.00654687im
+  0.0769814+0.0111896im    0.074874+0.0171805im      -0.141957-0.0379403im
+ -0.0283389+0.0527763im   0.0415837+0.0554872im      -0.115481-0.0707822im
+   0.137307+0.383636im    -0.122996+0.201347im       -0.133834-0.0500384im
+  -0.165408+0.0258455im    -0.16722+0.0813234im     -0.0785016+0.255814im
+           ⋮                                     ⋱  
+  0.0336254-0.0929257im   0.0185584-0.100443im      -0.0612733-0.10289im
+  0.0734282-0.0478233im   -0.137544-0.0448005im     -0.0493603-0.105987im
+ -0.0427139-0.107191im   -0.0480741-0.106249im       -0.114996-0.0712382im
+  -0.112747-0.0732985im   -0.168114+0.0524166im      -0.099374-0.0839705im
+  -0.117515+0.209416im    -0.168169+0.0661647im  …   -0.156269-0.00835927im
+  -0.152912-0.0167167im   -0.128909-0.0563681im      -0.138295+0.175412im
+  0.0636401+0.0366962im   0.0346359-0.092309im       -0.162744+0.0128556im
+  -0.123646+0.200353im    0.0920201+0.3661im         -0.164761+0.022237im
+  0.0800041-0.0030432im   0.0374211-0.0905256im      -0.134173+0.183im</code></pre><p>Compressing <code>K</code> is now as simple as:</p><pre><code class="language-julia hljs">H = assemble_hmat(K;rtol=1e-6)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HMatrix of ComplexF64 with range 1:10000 × 1:10000
+	 number of nodes in tree: 16637
+	 number of leaves: 12478 (2462 admissible + 10016 full)
 	 min rank of sparse blocks : 21
-	 max rank of sparse blocks : 72
+	 max rank of sparse blocks : 90
 	 min length of dense blocks : 1521
 	 max length of dense blocks : 1600
 	 min number of elements per leaf: 1521
 	 max number of elements per leaf: 390625
 	 depth of tree: 8
-	 compression ratio: 2.392932
+	 compression ratio: 2.392654
 </code></pre><p>It is worth noting that several <em>default</em> choices are made during the compression above. See the <a href="../#assemble-generic-subsection">Assembling and <code>HMatrix</code></a> section or the documentation of <a href="../references/#HMatrices.assemble_hmat-Tuple{Any, Any, Any}"><code>assemble_hmat</code></a> for information on how to obtain a more granular control of the assembling stage.</p><p>As before, you can multiply <code>H</code> by a vector, or do an <code>lu</code> factorization of it.</p><h2 id="Support-for-tensor-kernels"><a class="docs-heading-anchor" href="#Support-for-tensor-kernels">Support for tensor kernels</a><a id="Support-for-tensor-kernels-1"></a><a class="docs-heading-anchor-permalink" href="#Support-for-tensor-kernels" title="Permalink"></a></h2><div class="admonition is-warning"><header class="admonition-header">Warning</header><div class="admonition-body"><p>Support for tensor-valued kernels should be considered experimental at this stage.</p></div></div><p>For vector-valued partial differential equations such as <em>Stokes</em> or time-harmonic <em>Maxwell&#39;s</em> equation, the underlying integral operator has a kernel function which is a tensor. This package currently provides some limited support for these types of operators. The example below illustrates how to build an <a href="../references/#HMatrices.HMatrix"><code>HMatrix</code></a> representing a <a href="../references/#HMatrices.KernelMatrix"><code>KernelMatrix</code></a> corresponding to Stokes Greens function for points on a sphere:</p><pre><code class="language-julia hljs">using HMatrices, LinearAlgebra, StaticArrays
 const Point3D = SVector{3,Float64}
 m = 5_000
@@ -51,21 +51,21 @@ function G(x,y)
 end
 K = KernelMatrix(G,X,Y)
 H = assemble_hmat(K;atol=1e-4)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HMatrix of StaticArrays.SMatrix{3, 3, Float64, 9} with range 1:5000 × 1:5000
-	 number of nodes in tree: 4605
-	 number of leaves: 3454 (1254 admissible + 2200 full)
-	 min rank of sparse blocks : 7
-	 max rank of sparse blocks : 26
+	 number of nodes in tree: 4645
+	 number of leaves: 3484 (1300 admissible + 2184 full)
+	 min rank of sparse blocks : 6
+	 max rank of sparse blocks : 28
 	 min length of dense blocks : 1521
 	 max length of dense blocks : 1600
 	 min number of elements per leaf: 1521
 	 max number of elements per leaf: 97969
 	 depth of tree: 7
-	 compression ratio: 3.549626
+	 compression ratio: 3.533225
 </code></pre><p>You can now multiply <code>H</code> by a density <code>σ</code>, where <code>σ</code> is a <code>Vector</code> of <code>SVector{3,Float64}</code></p><pre><code class="language-julia hljs">σ = rand(SVector{3,Float64},m)
 y = H*σ
 # test the output agains the exact value for a given `i`
 i = 42
 y[i] - sum(K[i,j]*σ[j] for j in 1:m)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">3-element StaticArrays.SVector{3, Float64} with indices SOneTo(3):
-  0.8176071904599667
- -1.7675896286964417
-  4.085683435201645</code></pre><div class="admonition is-info"><header class="admonition-header">Note</header><div class="admonition-body"><p>The <em>naive</em> idea of reinterpreting these <em>matrices of tensors</em> as a (larger) matrix of scalars does not always work because care to be taken when choosing the pivot in the compression stage of the <a href="../references/#HMatrices.PartialACA"><code>PartialACA</code></a> in order to exploit some analytic properties of the underlying kernel. See e.g. section 2.3 of <a href="https://www.sciencedirect.com/science/article/pii/S0021999117306721">this paper</a> for a brief discussion.</p></div></div><h2 id="Vectorized-kernels-and-local-indices"><a class="docs-heading-anchor" href="#Vectorized-kernels-and-local-indices">Vectorized kernels and local indices</a><a id="Vectorized-kernels-and-local-indices-1"></a><a class="docs-heading-anchor-permalink" href="#Vectorized-kernels-and-local-indices" title="Permalink"></a></h2><p>A more efficient implementation of your kernel <code>K::AbstractKernelMatrix</code> can sometimes lead to faster <em>assembling</em> times. In particular, providing a permuted kernel <code>Kp</code> using the local indexing system of the <code>HMatrix</code> (and setting the keyword argument <code>global_index=false</code> in <code>assemble_hmat</code>) avoids frequent unnecessary index permutations, and can facilitate vectorization. This is because the permuted kernel <code>Kp</code> will be called through <code>Kp[I::UnitRange,J::UnitRange]</code> to fill in the dense blocks of the matrix, through <code>Kp[I::UnitRange,j::int]</code> and <code>adjoint(Kp)[I::UnitRange,j]</code> to build a low-rank approximation of compressible blocks. </p><p>The vectorization example in the <a href="../notebooks/#notebook-section">Notebook section</a> shows how a custom (and somewhat more complex) implementation of a vectorized Laplace kernel using the <a href="https://github.com/JuliaSIMD/LoopVectorization.jl">LoopVectorization</a> package can lead to faster (sequential) execution.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Getting started</a><a class="docs-footer-nextpage" href="../dhmatrix/">Distributed HMatrix »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.10 on <span class="colophon-date" title="Sunday 1 May 2022 15:08">Sunday 1 May 2022</span>. Using Julia version 1.7.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+  0.38552792742848396
+ -0.23068612813949585
+  0.404444620013237</code></pre><div class="admonition is-info"><header class="admonition-header">Note</header><div class="admonition-body"><p>The <em>naive</em> idea of reinterpreting these <em>matrices of tensors</em> as a (larger) matrix of scalars does not always work because care to be taken when choosing the pivot in the compression stage of the <a href="../references/#HMatrices.PartialACA"><code>PartialACA</code></a> in order to exploit some analytic properties of the underlying kernel. See e.g. section 2.3 of <a href="https://www.sciencedirect.com/science/article/pii/S0021999117306721">this paper</a> for a brief discussion.</p></div></div><h2 id="Vectorized-kernels-and-local-indices"><a class="docs-heading-anchor" href="#Vectorized-kernels-and-local-indices">Vectorized kernels and local indices</a><a id="Vectorized-kernels-and-local-indices-1"></a><a class="docs-heading-anchor-permalink" href="#Vectorized-kernels-and-local-indices" title="Permalink"></a></h2><p>A more efficient implementation of your kernel <code>K::AbstractKernelMatrix</code> can sometimes lead to faster <em>assembling</em> times. In particular, providing a permuted kernel <code>Kp</code> using the local indexing system of the <code>HMatrix</code> (and setting the keyword argument <code>global_index=false</code> in <code>assemble_hmat</code>) avoids frequent unnecessary index permutations, and can facilitate vectorization. This is because the permuted kernel <code>Kp</code> will be called through <code>Kp[I::UnitRange,J::UnitRange]</code> to fill in the dense blocks of the matrix, through <code>Kp[I::UnitRange,j::int]</code> and <code>adjoint(Kp)[I::UnitRange,j]</code> to build a low-rank approximation of compressible blocks. </p><p>The vectorization example in the <a href="../notebooks/#notebook-section">Notebook section</a> shows how a custom (and somewhat more complex) implementation of a vectorized Laplace kernel using the <a href="https://github.com/JuliaSIMD/LoopVectorization.jl">LoopVectorization</a> package can lead to faster (sequential) execution.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Getting started</a><a class="docs-footer-nextpage" href="../dhmatrix/">Distributed HMatrix »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.10 on <span class="colophon-date" title="Sunday 1 May 2022 15:13">Sunday 1 May 2022</span>. Using Julia version 1.7.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
