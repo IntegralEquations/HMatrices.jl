@@ -149,19 +149,19 @@ function _getcol!(col,adjH::Adjoint{<:Any,<:HMatrix},j,piv)
 end
 
 # Trees interface
-Trees.children(H::AbstractHMatrix) = H.children
-Trees.children(H::AbstractHMatrix,idxs...) = H.children[idxs]
-Trees.parent(H::AbstractHMatrix)   = H.parent
-Trees.isleaf(H::AbstractHMatrix)   = isempty(children(H))
-Trees.isroot(H::AbstractHMatrix)   = parent(H) === H
+children(H::AbstractHMatrix) = H.children
+children(H::AbstractHMatrix,idxs...) = H.children[idxs]
+parent(H::AbstractHMatrix)   = H.parent
+isleaf(H::AbstractHMatrix)   = isempty(children(H))
+isroot(H::AbstractHMatrix)   = parent(H) === H
 
 # interface to AbstractTrees. No children is determined by an empty tuple for
 # AbstractTrees.
 AbstractTrees.children(t::AbstractHMatrix) = isleaf(t) ? () : t.children
 AbstractTrees.nodetype(t::AbstractHMatrix) = typeof(t)
 
-rowrange(H::AbstractHMatrix)         = Trees.index_range(H.rowtree)
-colrange(H::AbstractHMatrix)         = Trees.index_range(H.coltree)
+rowrange(H::AbstractHMatrix)         = index_range(H.rowtree)
+colrange(H::AbstractHMatrix)         = index_range(H.coltree)
 rowperm(H::AbstractHMatrix)          =  H |> rowtree |> loc2glob
 colperm(H::AbstractHMatrix)          =  H |> coltree |> loc2glob
 pivot(H::AbstractHMatrix)            = (rowrange(H).start,colrange(H).start)
@@ -182,7 +182,7 @@ The ratio of the uncompressed size of `H` to its compressed size.
 function compression_ratio(H::HMatrix)
     ns = 0 # stored entries
     nr = length(H) # represented entries
-    for block in Leaves(H)
+    for block in AbstractTrees.Leaves(H)
         data = block.data
         ns  += num_stored_elements(data)
    end
@@ -200,9 +200,9 @@ end
 Base.show(io::IO,::MIME"text/plain",hmat::HMatrix) = show(io,hmat)
 
 function _show(io,hmat)
-    nodes = collect(PreOrderDFS(hmat))
+    nodes = collect(AbstractTrees.PreOrderDFS(hmat))
     @printf io "\n\t number of nodes in tree: %i" length(nodes)
-    leaves = collect(Leaves(hmat))
+    leaves = collect(AbstractTrees.Leaves(hmat))
     sparse_leaves = filter(isadmissible,leaves)
     dense_leaves  = filter(!isadmissible,leaves)
     @printf(io,"\n\t number of leaves: %i (%i admissible + %i full)",length(leaves),length(sparse_leaves),
@@ -234,7 +234,7 @@ Matrix(hmat::HMatrix;global_index=true) = Matrix{eltype(hmat)}(hmat;global_index
 function Base.Matrix{T}(hmat::HMatrix;global_index) where {T}
     M = zeros(T,size(hmat)...)
     piv = pivot(hmat)
-    for block in PreOrderDFS(hmat)
+    for block in AbstractTrees.PreOrderDFS(hmat)
         hasdata(block) || continue
         irange = rowrange(block) .- piv[1] .+ 1
         jrange = colrange(block) .- piv[2] .+ 1
@@ -400,12 +400,12 @@ end
 
 hasdata(adjH::Adjoint{<:Any,<:HMatrix}) = hasdata(adjH.parent)
 data(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(data(adjH.parent))
-Trees.children(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(children(adjH.parent))
+children(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(children(adjH.parent))
 pivot(adjH::Adjoint{<:Any,<:HMatrix}) = reverse(pivot(adjH.parent))
 offset(adjH::Adjoint{<:Any,<:HMatrix}) = pivot(adjH) .- 1
 rowrange(adjH::Adjoint{<:Any,<:HMatrix}) = colrange(adjH.parent)
 colrange(adjH::Adjoint{<:Any,<:HMatrix}) = rowrange(adjH.parent)
-Trees.isleaf(adjH::Adjoint{<:Any,<:HMatrix}) = isleaf(adjH.parent)
+isleaf(adjH::Adjoint{<:Any,<:HMatrix}) = isleaf(adjH.parent)
 
 Base.size(adjH::Adjoint{<:Any,<:HMatrix}) = reverse(size(adjH.parent))
 
@@ -461,7 +461,7 @@ intermediate stages of a computation data may be associated with non-leaf nodes
 for convenience.
 """
 function isclean(H::HMatrix)
-    for node in PreOrderDFS(H)
+    for node in AbstractTrees.PreOrderDFS(H)
         if isleaf(node)
             if !hasdata(node)
                 @warn "leaf node without data found"

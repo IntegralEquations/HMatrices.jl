@@ -123,11 +123,11 @@ sources(node::HMulNode) = node.sources
 multiplier(node::HMulNode) = node.multiplier
 
 # Trees interface
-Trees.children(node::HMulNode) = node.children
-Trees.children(node::HMulNode,idxs...) = node.children[idxs]
-Trees.parent(node::HMulNode)   = node.parent
-Trees.isleaf(node::HMulNode)   = isempty(children(node))
-Trees.isroot(node::HMulNode)   = parent(node) === node
+children(node::HMulNode) = node.children
+children(node::HMulNode,idxs...) = node.children[idxs]
+parent(node::HMulNode)   = node.parent
+isleaf(node::HMulNode)   = isempty(children(node))
+isroot(node::HMulNode)   = parent(node) === node
 
 # AbstractMatrix interface
 Base.size(node::HMulNode) = size(target(node))
@@ -175,7 +175,7 @@ end
 
 adjoint(node::HMulNode) = Adjoint(node)
 Base.size(adjnode::Adjoint{<:Any,<:HMulNode}) = reverse(size(adjnode.parent))
-Trees.children(adjnode::Adjoint{<:Any,<:HMulNode}) = adjoint(children(adjnode.parent))
+children(adjnode::Adjoint{<:Any,<:HMulNode}) = adjoint(children(adjnode.parent))
 
 Base.getindex(adjnode::Adjoint{<:Any,<:HMulNode},::Colon,j::Int) = getcol(adjnode,j)
 
@@ -601,7 +601,7 @@ function hilbert_partitioning(H::HMatrix,np,cost)
     N   = max(m,n)
     N   = nextpow(2,N)
     # sort the leaves by their hilbert index
-    leaves = Leaves(H) |> collect
+    leaves = AbstractTrees.Leaves(H) |> collect
     hilbert_indices = map(leaves) do leaf
         # use the center of the leaf as a cartesian index
         i,j = pivot(leaf) .- 1 .+ size(leaf) .÷ 2

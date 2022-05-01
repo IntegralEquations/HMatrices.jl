@@ -11,10 +11,26 @@ using RecipesBase
 using Distributed
 using Base.Threads
 
-using WavePropBase
-using WavePropBase.Trees
-using WavePropBase.Utils
-using WavePropBase.Geometry
+import WavePropBase:
+    ClusterTree,
+    CardinalitySplitter,
+    DyadicSplitter,
+    GeometricSplitter,
+    GeometricMinimalSplitter,
+    HyperRectangle,
+    AbstractTree,
+    filter_tree,
+    isleaf,
+    children,
+    parent,
+    index_range,
+    container,
+    center,
+    diameter,
+    distance,
+    root_elements,
+    loc2glob
+
 
 import AbstractTrees
 import LinearAlgebra: mul!, lu!, lu, LU, ldiv!, rdiv!, axpy!, rank, rmul!, lmul!
@@ -39,12 +55,10 @@ include("multiplication.jl")
 include("triangular.jl")
 include("lu.jl")
 
-export Utils,
-    Geometry,
-    Trees,
+export
     # types (re-exported)
-    ClusterTree,
     CardinalitySplitter,
+    ClusterTree,
     DyadicSplitter,
     GeometricSplitter,
     GeometricMinimalSplitter,

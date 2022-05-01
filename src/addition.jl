@@ -55,7 +55,7 @@ end
 function axpy!(a,X::HMatrix,Y::Matrix)
     @debug "calling axpy! with `X` and HMatrix and `Y` a Matrix"
     shift = pivot(X) .- 1
-    for block in PreOrderDFS(X)
+    for block in AbstractTrees.PreOrderDFS(X)
         irange = rowrange(block) .- shift[1]
         jrange = colrange(block) .- shift[2]
         if hasdata(block)
