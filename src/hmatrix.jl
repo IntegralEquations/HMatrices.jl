@@ -493,7 +493,7 @@ end
 
 function compress!(H::HMatrix,comp)
     @assert isclean(H)
-    for leaf in Leaves(H)
+    for leaf in AbstractTrees.Leaves(H)
         d = data(leaf)
         if d isa RkMatrix
             compress!(d,comp)
@@ -514,7 +514,7 @@ end
     seriestype := :shape
     linecolor  --> :black
     # all leaves
-    for block in Leaves(hmat)
+    for block in AbstractTrees.Leaves(hmat)
         @series begin
             if isadmissible(block)
                 fillcolor    --> :blue

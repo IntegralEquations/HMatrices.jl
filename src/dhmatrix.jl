@@ -104,9 +104,9 @@ Base.size(H::DHMatrix) = length(rowrange(H)), length(colrange(H))
 function Base.show(io::IO,::MIME"text/plain",hmat::DHMatrix)
     # isclean(hmat) || return print(io,"Dirty DHMatrix")
     println(io,"Distributed HMatrix of $(eltype(hmat)) with range $(rowrange(hmat)) × $(colrange(hmat))")
-    nodes = collect(PreOrderDFS(hmat))
+    nodes = collect(AbstractTrees.PreOrderDFS(hmat))
     println(io,"\t number of nodes in tree: $(length(nodes))")
-    leaves = collect(Leaves(hmat))
+    leaves = collect(AbstractTrees.Leaves(hmat))
     @printf(io,"\t number of leaves: %i\n",length(leaves))
     for (i,leaf) in enumerate(leaves)
         r   = leaf.data.future
@@ -128,7 +128,7 @@ function _assemble_hmat_distributed(K,rtree,ctree;adm=StrongAdmissibilityStd(),c
     T = eltype(K)
     wids   = workers()
     root   = DHMatrix{T}(rtree,ctree;partition_strategy=:distribute_columns)
-    leaves = Leaves(root) |> collect
+    leaves = AbstractTrees.Leaves(root) |> collect
     @info "Assembling distributed HMatrix on $(length(leaves)) processes"
     @sync for (k, leaf) in enumerate(leaves)
         pid = wids[k] # id of k-th worker
@@ -177,7 +177,7 @@ function mul!(y::AbstractVector,A::DHMatrix,x::AbstractVector,a::Number,b::Numbe
 end
 
 function isclean(H::DHMatrix)
-    for node in PreOrderDFS(H)
+    for node in AbstractTrees.PreOrderDFS(H)
         if isleaf(node)
             if !hasdata(node)
                 @warn "leaf node without data found"

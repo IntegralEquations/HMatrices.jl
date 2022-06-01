@@ -324,7 +324,7 @@ end
 
 function _add_to_leaves!(H,R::RkMatrix)
     shift = pivot(H) .- 1
-    for block in Leaves(H)
+    for block in AbstractTrees.Leaves(H)
         irange   = rowrange(block) .- shift[1]
         jrange   = colrange(block) .- shift[2]
         bdata    = data(block)
