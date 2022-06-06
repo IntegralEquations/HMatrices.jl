@@ -445,7 +445,7 @@ end
 Perform `y <-- H*x*a + y*b` in place.
 """
 function mul!(y::AbstractVector,A::HMatrix,x::AbstractVector,a::Number=1,b::Number=0;
-                            global_index=true,threads=true)
+                            global_index=use_global_index(),threads=use_threads())
     # since the HMatrix represents A = Pr*H*Pc, where Pr and Pc are row and column
     # permutations, we need first to rewrite C <-- b*C + a*(Pc*H*Pb)*B as
     # C <-- Pr*(b*inv(Pr)*C + a*H*(Pc*B)). Following this rewrite, the

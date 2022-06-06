@@ -17,7 +17,7 @@ end
 Hierarhical LU facotrization of `M`, using `comp` to generate the compressed
 blocks during the multiplication routines.
 """
-function lu!(M::HMatrix,compressor;threads=false)
+function lu!(M::HMatrix,compressor;threads=use_threads())
     # perform the lu decomposition of M in place
     @timeit_debug "lu factorization" begin
         _lu!(M,compressor,threads)

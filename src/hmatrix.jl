@@ -264,7 +264,7 @@ as `comp(K,irange::UnitRange,jrange::UnitRange)` to produce a compressed version
 of `K[irange,jrange]` in the form of an [`RkMatrix`](@ref).
 """
 function assemble_hmat(K,rowtree,coltree;adm=StrongAdmissibilityStd(3),comp=PartialACA(),
-                       global_index=true,threads=true,distributed=false)
+                       global_index=use_global_index(),threads=use_threads(),distributed=false)
     T  = eltype(K)
     if distributed
         _assemble_hmat_distributed(K,rowtree,coltree;adm,comp,global_index,threads)

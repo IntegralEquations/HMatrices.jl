@@ -44,6 +44,20 @@ If set to false, the `getindex(H,i,j)` method will throw an error on
 """
 const ALLOW_GETINDEX = Ref(true)
 
+"""
+    use_threads()::Bool
+
+Default choice of whether threads will be used or not.
+"""
+use_threads() = true
+
+"""
+    use_global_index()::Bool
+
+Default choice of whether operations will use the global indexing system.
+"""
+use_global_index() = true
+
 include("utils.jl")
 include("kernelmatrix.jl")
 include("rkmatrix.jl")

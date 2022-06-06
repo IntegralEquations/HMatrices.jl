@@ -122,7 +122,8 @@ end
 Internal methods called **after** the `DHMatrix` structure has been initialized
 in order to construct the `HMatrix` on each of the leaves of the `DHMatrix`.
 """
-function _assemble_hmat_distributed(K,rtree,ctree;adm=StrongAdmissibilityStd(),comp=PartialACA(),global_index=true,threads=false)
+function _assemble_hmat_distributed(K,rtree,ctree;adm=StrongAdmissibilityStd(),comp=PartialACA(),
+                                    global_index=use_global_index(),threads=use_threads())
     #
     R = typeof(rtree)
     T = eltype(K)
@@ -139,7 +140,7 @@ function _assemble_hmat_distributed(K,rtree,ctree;adm=StrongAdmissibilityStd(),c
 end
 
 function mul!(y::AbstractVector,A::DHMatrix,x::AbstractVector,a::Number,b::Number;
-                            global_index=true,threads=true)
+                            global_index=use_global_index(),threads=use_threads())
     # since the HMatrix represents A = Pr*H*Pc, where Pr and Pc are row and column
     # permutations, we need first to rewrite C <-- b*C + a*(Pc*H*Pb)*B as
     # C <-- Pr*(b*inv(Pr)*C + a*H*(Pc*B)). Following this rewrite, the
