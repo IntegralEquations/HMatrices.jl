@@ -223,7 +223,9 @@ function execute!(node::HMulNode,compressor)
     execute_node!(node,compressor)
     C = target(node)
     flush_to_children!(C)
-    @threads for chd in children(node)
+    # FIXME: using @threads below breaks things when the `RkMatrix` has its own
+    # buffer due to a race condition that I do not yet undestand
+    Threads.@threads for chd in children(node)
         execute!(chd,compressor)
     end
     return node
@@ -369,7 +371,8 @@ function _mul113!(C::Union{Matrix,SubArray,Adjoint}, M::Union{Matrix,SubArray,Ad
 end
 
 function _mul121!(C::Union{Matrix,SubArray,Adjoint}, R::RkMatrix, M::Union{Matrix,SubArray,Adjoint}, a::Number)
-    _mul111!(C, R.A, R.Bt * M, a)
+    buffer = R.Bt * M
+    _mul111!(C, R.A, buffer, a)
 end
 
 function _mul122!(C::Union{Matrix,SubArray,Adjoint}, R::RkMatrix, S::RkMatrix, a::Number)
@@ -428,6 +431,7 @@ end
 # 1.2.1
 function mul!(y::AbstractVector,R::RkMatrix,x::AbstractVector,a::Number,b::Number)
     tmp = R.Bt*x
+    # tmp = mul!(R.buffer,adjoint(R.B),x)
     mul!(y,R.A,tmp,a,b)
 end
 
@@ -435,6 +439,7 @@ end
 function mul!(y::AbstractVector,adjR::Adjoint{<:Any,<:RkMatrix},x::AbstractVector,a::Number,b::Number)
     R = parent(adjR)
     tmp = R.At*x
+    # tmp = mul!(R.buffer,adjoint(R.A),x)
     mul!(y,R.B,tmp,a,b)
 end
 
@@ -467,6 +472,8 @@ function mul!(y::AbstractVector,A::HMatrix,x::AbstractVector,a::Number=1,b::Numb
     # of and HMatrix
     offset = pivot(A) .- 1
     if threads
+        # if a partition of the leaves does not already exist, create one. By
+        # default a `hilbert_partition` is created
         # TODO: test the various threaded implementations and chose one.
         # Currently there are two main choices:
         # 1. spawn a task per leaf, and let julia scheduler handle the tasks
@@ -476,14 +483,16 @@ function mul!(y::AbstractVector,A::HMatrix,x::AbstractVector,a::Number=1,b::Numb
         #    or row_partition
         #    Right now the hilbert partition is chosen by default without proper
         #    testing.
-        @timeit_debug "hilbert partition" begin
-            nt        = Threads.nthreads()
-            partition = hilbert_partitioning(A,nt,_cost_gemv)
+        @timeit_debug "partitioning leaves" begin
+            # haskey(CACHED_PARTITIONS,A) || hilbert_partitioning(A,Threads.nthreads(),_cost_gemv)
+            # haskey(CACHED_PARTITIONS,A) || col_partition(A,Threads.nthreads(),_cost_gemv)
+            haskey(CACHED_PARTITIONS,A) || row_partition(A,Threads.nthreads(),_cost_gemv)
         end
         @timeit_debug "threaded multiplication" begin
-            _hgemv_static_partition!(y,x,partition,offset)
+            p = CACHED_PARTITIONS[A]
+            _hgemv_static_partition!(y,x,p.partition,offset)
+            # _hgemv_threads!(y,x,p.partition,offset)  # threaded implementation
         end
-        # _hgemv_threads!(y,A,x,offset)  # threaded implementation
     else
         @timeit_debug "serial multiplication" begin
             _hgemv_recursive!(y,A,x,offset) # serial implementation
@@ -527,21 +536,16 @@ function _hgemv_recursive!(C::AbstractVector,A::Union{HMatrix,Adjoint{<:Any,<:HM
     return C
 end
 
-function _hgemv_threads!(C::AbstractVector,A::HMatrix,B::AbstractVector,offset)
+function _hgemv_threads!(C::AbstractVector,B::AbstractVector,partition,offset)
     nt        = Threads.nthreads()
-    # make `nt` copies of C and run in parallel. The tree is partitioned up to a
-    # given granularity to avoid creating too many small tasks.
+    # make `nt` copies of C and run in parallel
     Cthreads  = [zero(C) for _ in 1:nt]
-    blocks = filter_tree(A,true) do x
-        (isleaf(x) || length(x)<1000*1000)
-    end
-    sort!(blocks;lt=(x,y)->length(x)<length(y),rev=true)
-    n = length(blocks)
-    @sync for i in 1:n
-        block = blocks[i]
-        Threads.@spawn begin
-            id = Threads.threadid()
-            _hgemv_recursive!(Cthreads[id],block,B,offset)
+    @sync for p in partition
+        for block in p
+            Threads.@spawn begin
+                id = Threads.threadid()
+                _hgemv_recursive!(Cthreads[id],block,B,offset)
+            end
         end
     end
     # reduce
@@ -555,14 +559,14 @@ function _hgemv_static_partition!(C::AbstractVector,B::AbstractVector,partition,
     # create a lock for the reduction step
     T = eltype(C)
     mutex = ReentrantLock()
-    nt    = length(partition)
-    times = zeros(nt)
-    Threads.@threads for n in 1:nt
-        id = Threads.threadid()
-        times[id] =
-        @elapsed begin
+    np    = length(partition)
+    nt    = Threads.nthreads()
+    Cthreads  = [zero(C) for _ in 1:nt]
+    @sync for n in 1:np
+        Threads.@spawn begin
+            id     = Threads.threadid()
             leaves = partition[n]
-            Cloc   = zero(C)
+            Cloc   = Cthreads[id]
             for leaf in leaves
                 irange = rowrange(leaf) .- offset[1]
                 jrange = colrange(leaf) .- offset[2]
@@ -579,74 +583,7 @@ function _hgemv_static_partition!(C::AbstractVector,B::AbstractVector,partition,
             end
         end
     end
-    tmin,tmax = extrema(times)
-    if tmax/tmin > 1.1
-        @debug "gemv: ratio of tmax/tmin = $(tmax/tmin)"
-    end
     return C
-end
-
-
-"""
-    hilbert_partitioning(H::HMatrix,np,cost)
-
-Partiotion the leaves of `H` into `np` sequences of approximate equal cost (as
-determined by the `cost` function) while also trying to maximize the locality of
-each partition.
-"""
-function hilbert_partitioning(H::HMatrix,np,cost)
-    # the hilbert curve will be indexed from (0,0) × (N-1,N-1), so set N to be
-    # the smallest power of two larger than max(m,n), where m,n = size(H)
-    m,n = size(H)
-    N   = max(m,n)
-    N   = nextpow(2,N)
-    # sort the leaves by their hilbert index
-    leaves = AbstractTrees.Leaves(H) |> collect
-    hilbert_indices = map(leaves) do leaf
-        # use the center of the leaf as a cartesian index
-        i,j = pivot(leaf) .- 1 .+ size(leaf) .÷ 2
-        hilbert_cartesian_to_linear(N,i,j)
-    end
-    p = sortperm(hilbert_indices)
-    permute!(leaves,p)
-    # now compute a quasi-optimal partition of leaves based `cost_mv`
-    cmax      = find_optimal_cost(leaves,np,cost,1)
-    partition = build_sequence_partition(leaves,np,cost,cmax)
-    return partition
-end
-
-# TODO: benchmark the different partitioning strategies for gemv. Is the hilber
-# partition really faster than the simpler alternatives (row partition, col partition)?
-function row_partitioning(H::HMatrix,np=Threads.nthreads())
-    # sort the leaves by their row index
-    leaves = filter(x -> isleaf(x),H)
-    row_indices = map(leaves) do leaf
-        # use the center of the leaf as a cartesian index
-        i,j = pivot(leaf)
-        return i
-    end
-    p = sortperm(row_indices)
-    permute!(leaves,p)
-    # now compute a quasi-optimal partition of leaves based `cost_mv`
-    cmax = find_optimal_cost(leaves,np,cost_mv,1)
-    partition = build_sequence_partition(leaves,np,cost_mv,cmax)
-    return partition
-end
-
-function col_partitioning(H::HMatrix,np=Threads.nthreads())
-    # sort the leaves by their row index
-    leaves = filter(x -> isleaf(x),H)
-    row_indices = map(leaves) do leaf
-        # use the center of the leaf as a cartesian index
-        i,j = pivot(leaf)
-        return j
-    end
-    p = sortperm(row_indices)
-    permute!(leaves,p)
-    # now compute a quasi-optimal partition of leaves based `cost_mv`
-    cmax = find_optimal_cost(leaves,np,cost_mv,1)
-    partition = build_sequence_partition(leaves,np,cost_mv,cmax)
-    return partition
 end
 
 function rmul!(R::RkMatrix, b::Number)
