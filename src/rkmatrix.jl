@@ -10,6 +10,7 @@ to get the respective adjoints.
 mutable struct RkMatrix{T} <: AbstractMatrix{T}
     A::Matrix{T}
     B::Matrix{T}
+    buffer::Vector{T} # used for gemv routines to avoid allocations
     function RkMatrix(A::Matrix{T},B::Matrix{T}) where {T}
         @assert size(A,2) == size(B,2) "second dimension of `A` and `B` must match"
         m,r = size(A)
@@ -18,10 +19,19 @@ mutable struct RkMatrix{T} <: AbstractMatrix{T}
             @debug "Inefficient RkMatrix:" size(A) size(B)
             # error("Inefficient RkMatrix")
         end
-        new{T}(A,B)
+        buffer = Vector{T}(undef,r)
+        new{T}(A,B,buffer)
     end
 end
 RkMatrix(A,B) = RkMatrix(promote(A,B)...)
+
+function Base.setproperty!(R::RkMatrix,s::Symbol,mat::Matrix)
+    setfield!(R,s,mat)
+    # resize buffer
+    r = size(mat,2)
+    resize!(R.buffer,r)
+    return R
+end
 
 function Base.getindex(rmat::RkMatrix,i::Int,j::Int)
     msg = """

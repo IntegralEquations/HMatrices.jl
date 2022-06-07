@@ -30,7 +30,8 @@ Tree data structure representing the following computation:
 ```
     C <-- C + a * ∑ᵢ Aᵢ * Bᵢ
 ```
-where `C = target(node)`, and `Aᵢ,Bᵢ` are pairs stored in `sources(node)`.
+where `C = target(node)`, `Aᵢ,Bᵢ` are pairs stored in `sources(node)`, and `a`
+is stored in the `multiplier` field.
 
 This structure is used to group the operations required when multiplying
 hierarchical matrices so that they can later be executed in a way that minimizes
@@ -225,7 +226,7 @@ function execute!(node::HMulNode,compressor)
     flush_to_children!(C)
     # FIXME: using @threads below breaks things when the `RkMatrix` has its own
     # buffer due to a race condition that I do not yet undestand
-    Threads.@threads for chd in children(node)
+    for chd in children(node)
         execute!(chd,compressor)
     end
     return node
@@ -430,16 +431,16 @@ end
 
 # 1.2.1
 function mul!(y::AbstractVector,R::RkMatrix,x::AbstractVector,a::Number,b::Number)
-    tmp = R.Bt*x
-    # tmp = mul!(R.buffer,adjoint(R.B),x)
+    # tmp = R.Bt*x
+    tmp = mul!(R.buffer,adjoint(R.B),x)
     mul!(y,R.A,tmp,a,b)
 end
 
 # 1.2.1
 function mul!(y::AbstractVector,adjR::Adjoint{<:Any,<:RkMatrix},x::AbstractVector,a::Number,b::Number)
     R = parent(adjR)
-    tmp = R.At*x
-    # tmp = mul!(R.buffer,adjoint(R.A),x)
+    # tmp = R.At*x
+    tmp = mul!(R.buffer,adjoint(R.A),x)
     mul!(y,R.B,tmp,a,b)
 end
 
