@@ -70,18 +70,9 @@ for (name, K, p) in kernels
     if p
         x = rand(eltype(K), N)
         y = zero(x)
-        SUITE[name]["gemv cpu"] = @benchmarkable(
-            mul!($y, H, $x, $1, $0; threads = true, global_index = $p),
-            setup =
-             (H = assemble_hmat($K, $Xclt, $Xclt; adm = $adm, comp = $comp, threads = true, distributed = false, global_index = $p))
-        )
-        SUITE[name]["gemv threads"] = @benchmarkable(
-            mul!($y, H, $x, $1, $0; threads = true, global_index = $p);
-            setup = (H = assemble_hmat($K, $Xclt, $Xclt; adm = $adm, comp = $comp, threads = true, distributed = false, global_index = $p))
-        )
-        SUITE[name]["lu"]     = @benchmarkable(
-            lu!(H;rank=5),
-            setup = (H = assemble_hmat($K, $Xclt, $Xclt; adm = $adm, comp = $comp, threads = true, distributed = false, global_index = $p))
-        )
+        H = assemble_hmat(K, Xclt, Xclt; adm, comp, threads = true, distributed = false, global_index = p)
+        SUITE[name]["gemv cpu"] = @benchmarkable mul!($y, $H, $x, $1, $0; threads = false, global_index = $p)
+        SUITE[name]["gemv threads"] = @benchmarkable mul!($y, $H, $x, $1, $0; threads = true, global_index = $p)
+        SUITE[name]["lu"]     = @benchmarkable lu!($H;rank=5)
     end
 end

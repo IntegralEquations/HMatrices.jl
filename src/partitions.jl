@@ -14,6 +14,13 @@ struct Partition{T<:HMatrix}
     tag::Symbol
 end
 
+"""
+    const CACHED_PARTITIONS
+
+A `WeakKeyDict` mapping a hierarhical matrix to a [`Partition`](@ref) of itself.
+Used when computing e.g. the forward map (i.e. `mul!`) to avoid having to
+recompute the partition for each matrix/vector product.
+"""
 const CACHED_PARTITIONS = WeakKeyDict{HMatrix,Partition}()
 
 Base.hash(A::AbstractHMatrix,h::UInt) = hash(objectid(A),h)
