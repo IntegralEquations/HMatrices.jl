@@ -1,7 +1,7 @@
 name = "HMatrices"
 uuid = "8646bddf-ab1c-4fa7-9c51-ba187d647618"
 authors = ["Luiz M. Faria <maltezfaria@gmail.com> and contributors"]
-version = "0.1.1"
+version = "0.1.2"
 
 [deps]
 AbstractTrees = "1520ce14-60c1-5f80-bbc7-55ef81b5835c"

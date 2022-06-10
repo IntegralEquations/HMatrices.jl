@@ -446,27 +446,27 @@ end
 
 # 1.3.1
 """
-    mul!(y::AbstractVector,H::HMatrix,x::AbstractVector,a,b;global_index=true,threads=true)
+    mul!(y::AbstractVector,H::HMatrix,x::AbstractVector,a,b[;global_index,threads])
 
 Perform `y <-- H*x*a + y*b` in place.
 """
 function mul!(y::AbstractVector,A::HMatrix,x::AbstractVector,a::Number=1,b::Number=0;
                             global_index=use_global_index(),threads=use_threads())
-    # since the HMatrix represents A = Pr*H*Pc, where Pr and Pc are row and column
-    # permutations, we need first to rewrite C <-- b*C + a*(Pc*H*Pb)*B as
-    # C <-- Pr*(b*inv(Pr)*C + a*H*(Pc*B)). Following this rewrite, the
+    # since the HMatrix represents A = inv(Pr)*H*Pc, where Pr and Pc are row and column
+    # permutations, we need first to rewrite C <-- b*C + a*(inv(Pr)*H*Pc)*B as
+    # C <-- inv(Pr)*(b*Pr*C + a*H*(Pc*B)). Following this rewrite, the
     # multiplication is performed by first defining B <-- Pc*B, and C <--
-    # inv(Pr)*C, doing the multiplication with the permuted entries, and then
-    # permuting the result  C <-- Pr*C at the end.
+    # Pr*C, doing the multiplication with the permuted entries, and then
+    # permuting the result  back C <-- inv(Pr)*C at the end.
     ctree     = coltree(A)
     rtree     = rowtree(A)
     # permute input
     if global_index
-        x         = x[ctree.loc2glob]
-        y         = permute!(y,rtree.loc2glob)
+        x         = x[colperm(A)]
+        y         = permute!(y,rowperm(A))
         rmul!(x,a) # multiply in place since this is a new copy, so does not mutate exterior x
-    else
-        x = a*x # new copy of x
+    elseif a != 1
+        x = a*x # new copy of x since we should not mutate the external x in mul!
     end
     iszero(b) ? fill!(y,zero(eltype(y))) : rmul!(y,b)
     # offset in case A is not indexed starting at (1,1); e.g. A is not the root
@@ -485,9 +485,9 @@ function mul!(y::AbstractVector,A::HMatrix,x::AbstractVector,a::Number=1,b::Numb
         #    Right now the hilbert partition is chosen by default without proper
         #    testing.
         @timeit_debug "partitioning leaves" begin
-            # haskey(CACHED_PARTITIONS,A) || hilbert_partitioning(A,Threads.nthreads(),_cost_gemv)
+            haskey(CACHED_PARTITIONS,A) || hilbert_partition(A,Threads.nthreads(),_cost_gemv)
             # haskey(CACHED_PARTITIONS,A) || col_partition(A,Threads.nthreads(),_cost_gemv)
-            haskey(CACHED_PARTITIONS,A) || row_partition(A,Threads.nthreads(),_cost_gemv)
+            # haskey(CACHED_PARTITIONS,A) || row_partition(A,Threads.nthreads(),_cost_gemv)
         end
         @timeit_debug "threaded multiplication" begin
             p = CACHED_PARTITIONS[A]
@@ -500,7 +500,7 @@ function mul!(y::AbstractVector,A::HMatrix,x::AbstractVector,a::Number=1,b::Numb
         end
     end
     # permute output
-    global_index && invpermute!(y,loc2glob(rtree))
+    global_index && invpermute!(y,rowperm(A))
     return y
 end
 

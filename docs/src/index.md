@@ -59,6 +59,8 @@ for some kernel function $G$. To make things simple, we will take $X$ and
 $Y$ to be points distributed on a circle:
 
 ```@example assemble-basic
+using Random # hide
+Random.seed!(1) # hide
 using HMatrices, LinearAlgebra, StaticArrays
 const Point2D = SVector{2,Float64}
 
@@ -167,24 +169,54 @@ directly:
 
 ```@example assemble-basic
 y = similar(x)
-mul!(y,H,x,1,0;threads=false,global_index=true)
-norm(H*x - K*x)
+mul!(y,H,x,1,0;threads=false)
+norm(y - K*x)
 ```
 
-!!! important "Local and global indices"
-    The hierarchical matrix `H` above is stored as `H = Pr*_H*Pc`, where `Pr`
-    and `Pc` are row and column permutation matrices, respectively. It is
-    sometimes convenient to work directly with `_H` for performance reasons (for
-    example, in an iterative solver, you may want to permute rows and columns
-    only once *offline* and perform the matrix multiplication with `_H`); the
-    keyword argument `global_index=false` can be passed to perform the desired
-    operations on `_H` instead.
+The example below illustrates how to use the `HMatrix` `H` constructed above
+with the
+[`IterativeSolvers`](https://github.com/JuliaLinearAlgebra/IterativeSolvers.jl)
+package:
+
+```@example assemble-basic
+using IterativeSolvers
+b = rand(m)
+approx = gmres!(y,H,b;abstol=1e-6)
+exact  = Matrix(K)\b
+norm(approx-exact)/norm(exact)
+```
+
+Internally, the hierarchical matrix `H` is stored as `H = inv(Pr)*_H*Pc`, where `Pr` and
+`Pc` are row and column permutation matrices induced by the clustering of the
+target and source points as `ClusterTree`s, respectively, and `_H` is the
+actual hierarchical matrix constructed. It is sometimes convenient to work
+directly with `_H` for performance reasons; for example, in the iterative solver
+above, you may want to permute rows and columns only once *offline* and perform the
+matrix multiplication with `_H`. The keyword argument `global_index=false` can
+be passed to perform the desired operations on `_H` instead, or you may overload
+the [`HMatrices.use_global_index`](@ref) method which will in turn change the default
+value of `global_index` throughout the package (but be careful to know what you
+are doing, as this may cause some *unexpected* results); similarly, you can overload
+[`HMatrices.use_threads`](@ref) to globally change whether threads are used by
+default. In the iterative example above, for instance, we may permute the
+vectors *externally* before and after (but not in each forward product) as follows:
+
+```@example assemble-basic
+cperm  = HMatrices.colperm(H) # column permutation
+rperm  = HMatrices.rowperm(H) # row permutation
+bp     = b[cperm] 
+HMatrices.use_global_index() = false # perform operations on the local indexing system
+approx = gmres!(y,H,bp;abstol=1e-6)
+invpermute!(approx,rperm)
+HMatrices.use_global_index() = true # go back to default
+norm(approx-exact)/norm(exact)
+```
 
 !!! note "Problem size"
-    For "small" problem sizes, the overhead associated to the more complex
-    structure of the `HMatrix` will lead to computational times that are larger
+    For "small" problem sizes, the overhead associated with the more complex
+    structure of an `HMatrix` will lead to computational times that are larger
     than the *dense* representation, even when the `HMatrix` occupies less
-    memory. For large problem sizes, however, the linear complexity will yield
+    memory. For large problem sizes, however, the loglinear complexity will yield
     significant gains in terms of memory and cpu time provided the underlying
     operator has a hierarchical low-rank structure.
 
@@ -218,9 +250,7 @@ The returned object `F` is of the `LU` type, and efficient
 routines are provided to solve linear system using `F`:
 
 ```@example assemble-basic
-b = rand(m)
 approx = F\b
-exact  = Matrix(K)\b
 norm(approx-exact)/norm(exact)
 ```
 

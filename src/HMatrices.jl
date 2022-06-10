@@ -47,14 +47,15 @@ const ALLOW_GETINDEX = Ref(true)
 """
     use_threads()::Bool
 
-Default choice of whether threads will be used or not.
+Default choice of whether threads will be used or not throught the package.
 """
 use_threads() = true
 
 """
     use_global_index()::Bool
 
-Default choice of whether operations will use the global indexing system.
+Default choice of whether operations will use the global indexing system
+throughout the package.
 """
 use_global_index() = true
 

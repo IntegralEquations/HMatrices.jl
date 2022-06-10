@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.17.3
+# v0.19.4
 
 using Markdown
 using InteractiveUtils
@@ -11,7 +11,7 @@ begin
     Pkg.activate(Base.current_project())
 
     using HMatrices, Plots, PlutoUI, LinearAlgebra, StaticArrays, WavePropBase, BenchmarkTools, LoopVectorization
-	using WavePropBase.IO: PlotPoints, PlotTree
+	using WavePropBase: PlotPoints, PlotTree, root_elements
 end
 
 # ╔═╡ 9efa3b28-900c-4515-8aba-617bce2ddc68
@@ -20,7 +20,7 @@ PlutoUI.TableOfContents(;depth=2)
 # ╔═╡ d1917856-64d1-4dab-9e05-40b1152217d2
 begin
 	const Point3D = SVector{3,Float64}
-	m = 20_000
+	m = 10_000
 	X = Y = [Point3D(sin(θ)cos(ϕ),sin(θ)*sin(ϕ),cos(θ)) for (θ,ϕ) in zip(π*rand(m),2π*rand(m))]
 end
 
@@ -43,11 +43,11 @@ end
 H = assemble_hmat(K,Xclt,Yclt;threads=false)
 
 # ╔═╡ 02d89923-e478-4778-8b80-eaa3357a6a8c
-b = @benchmark assemble_hmat($K,Xclt,Yclt;threads=false)
+b = @benchmark assemble_hmat($K,$Xclt,$Yclt;threads=false)
 
 # ╔═╡ fca099bf-25c0-4ee8-b3f0-c042c4e5fde3
 begin 
-	Xp = Yp = Trees.root_elements(Xclt)
+	Xp = Yp = root_elements(Xclt)
 	Kp = KernelMatrix(G,Xp,Yp)
 	Hp = assemble_hmat(Kp,Xclt,Yclt;threads=false,global_index=false)
 end
@@ -276,4 +276,4 @@ end
 # ╟─0b967aaf-271c-4153-acd6-2e5acff8dc75
 # ╠═afc737f1-3523-413f-a73a-96a909580047
 # ╟─44f08eda-b5d3-40d0-aa8b-3cae9e137854
-# ╠═5fd9b390-ea5f-425c-a624-0cd4a146a897
+# ╟─5fd9b390-ea5f-425c-a624-0cd4a146a897
