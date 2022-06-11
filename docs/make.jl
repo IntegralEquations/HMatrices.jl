@@ -18,7 +18,7 @@ makedocs(;
         "Kernel matrices" => "kernelmatrix.md",
         "Distributed HMatrix" => "dhmatrix.md",
         "Notebooks" => "notebooks.md",
-        "Benchmarks" => ["benchs_v0.1.0.md","benchs_v0.1.1.md","benchs_v0.1.2.md"],
+        "Benchmarks" => ["benchs.md"],
         "References" => "references.md"
     ],
 )
