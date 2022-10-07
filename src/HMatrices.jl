@@ -9,6 +9,7 @@ using TimerOutputs
 using Printf
 using RecipesBase
 using Distributed
+using DataFlowTasks
 
 import WavePropBase:
                      ClusterTree,
@@ -68,6 +69,16 @@ include("partitions.jl")
 include("multiplication.jl")
 include("triangular.jl")
 include("lu.jl")
+
+# interface of DataFlowTasks
+function DataFlowTasks.memory_overlap(H1::HMatrix, H2::HMatrix)
+    isempty(intersect(rowrange(H1),rowrange(H2))) && (return false)
+    isempty(intersect(colrange(H1),colrange(H2))) && (return false)
+    return true
+end
+
+DataFlowTasks.memory_overlap(H1::HMatrix, A::AbstractArray) = false
+DataFlowTasks.memory_overlap(A::AbstractArray,H1::HMatrix)  = false
 
 export
 # types (re-exported)

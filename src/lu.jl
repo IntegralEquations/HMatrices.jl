@@ -23,7 +23,8 @@ function lu!(M::HMatrix, compressor; threads=use_threads())
         _lu!(M, compressor, threads)
     end
     # wrap the result in the LU structure
-    return LU(M, LinearAlgebra.BlasInt[], LinearAlgebra.BlasInt(0))
+    res = @dspawn LU(@R(M), LinearAlgebra.BlasInt[], LinearAlgebra.BlasInt(0))
+    return fetch(res)
 end
 
 """
@@ -64,19 +65,19 @@ function _lu!(M::HMatrix, compressor, threads)
             for j in (i + 1):n
                 @sync begin
                     @timeit_debug "ldiv! solution" begin
-                        @usespawn threads ldiv!(UnitLowerTriangular(chdM[i, i]), chdM[i, j],
-                                                compressor)
+                        @dspawn ldiv!(UnitLowerTriangular(@R(chdM[i, i])), @RW(chdM[i, j]),
+                                      compressor)
                     end
                     @timeit_debug "rdiv! solution" begin
-                        @usespawn threads rdiv!(chdM[j, i], UpperTriangular(chdM[i, i]),
-                                                compressor)
+                        @dspawn rdiv!(@RW(chdM[j, i]), UpperTriangular(@R(chdM[i, i])),
+                                      compressor)
                     end
                 end
             end
             for j in (i + 1):m
                 for k in (i + 1):n
                     @timeit_debug "hmul!" begin
-                        hmul!(chdM[j, k], chdM[j, i], chdM[i, k], -1, 1, compressor)
+                        @dspawn hmul!(@RW(chdM[j, k]), @R(chdM[j, i]), @R(chdM[i, k]), -1, 1, compressor)
                     end
                 end
             end
