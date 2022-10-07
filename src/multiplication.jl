@@ -160,11 +160,11 @@ end
 # non-recursive execution
 function execute_node!(C::HMatrix, compressor, dict, a, R)
     T = typeof(C)
-    pairs = get!(dict, C, Tuple{T,T}[])
+    pairs = get(dict, C, Tuple{T,T}[])
     isnothing(R) && isempty(pairs) && (return C)
     if isleaf(C) && !isadmissible(C)
         d = data(C)
-        for (A, B) in dict[C]
+        for (A, B) in pairs
             _mul_dense!(d, A, B, a)
         end
         isnothing(R) || axpy!(true, R, d)
