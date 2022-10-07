@@ -54,7 +54,7 @@ function hmul!(C::T, A::T, B::T, a, b, compressor) where {T<:HMatrix}
         _plan_dict!(dict, C, A, B)
     end
     @timeit_debug "executing plan" begin
-        execute!(C, compressor, dict, a, nothing)
+        _hmul!(C, compressor, dict, a, nothing)
     end
     return C
 end
@@ -78,6 +78,37 @@ function _plan_dict!(dict, C::T, A::T, B::T) where {T<:HMatrix}
         end
     end
     return dict
+end
+
+function _hmul!(C::HMatrix, compressor, dict, a, R)
+    T = typeof(C)
+    pairs = get(dict, C, Tuple{T,T}[])
+    # update the data in C if needed
+    if !isnothing(R) || !isempty(pairs)
+        if isleaf(C) && !isadmissible(C)
+            d = data(C)
+            for (A, B) in pairs
+                _mul_dense!(d, A, B, a)
+            end
+            isnothing(R) || axpy!(true, R, d)
+        else
+            L = MulLinearOp(data(C), R, pairs, a)
+            @timeit_debug "compressing" R = compressor(L)
+            setdata!(C, R)
+        end
+    end
+    # move to children
+    shift = pivot(C) .- 1
+    @sync for chd in children(C)
+        irange = rowrange(chd) .- shift[1]
+        jrange = colrange(chd) .- shift[2]
+        Rp = data(C)
+        # Rv = (!isroot(C) && hasdata(C)) ? RkMatrix(Rp.A[irange,:],Rp.B[jrange,:]) : nothing
+        Rv = (!isroot(C) && hasdata(C)) ? view(Rp, irange, jrange) : nothing
+        @usespawn false _hmul!(chd, compressor, dict, a, Rv)
+    end
+    isleaf(C) || (setdata!(C, nothing))
+    return C
 end
 
 # disable `mul` of hierarchial matrices
@@ -140,40 +171,6 @@ function getcol!(col, adjL::Adjoint{<:Any,<:MulLinearOp}, j)
         getcol!(col, adjoint(P), j, Val(true))
     end
     return col
-end
-
-function execute!(C::HMatrix, compressor, dict, a, R)
-    execute_node!(C, compressor, dict, a, R)
-    shift = pivot(C) .- 1
-    for chd in children(C)
-        irange = rowrange(chd) .- shift[1]
-        jrange = colrange(chd) .- shift[2]
-        Rp = data(C)
-        # Rv = (!isroot(C) && hasdata(C)) ? RkMatrix(Rp.A[irange,:],Rp.B[jrange,:]) : nothing
-        Rv = (!isroot(C) && hasdata(C)) ? view(Rp, irange, jrange) : nothing
-        execute!(chd, compressor, dict, a, Rv)
-    end
-    isleaf(C) || (setdata!(C, nothing))
-    return C
-end
-
-# non-recursive execution
-function execute_node!(C::HMatrix, compressor, dict, a, R)
-    T = typeof(C)
-    pairs = get(dict, C, Tuple{T,T}[])
-    isnothing(R) && isempty(pairs) && (return C)
-    if isleaf(C) && !isadmissible(C)
-        d = data(C)
-        for (A, B) in pairs
-            _mul_dense!(d, A, B, a)
-        end
-        isnothing(R) || axpy!(true, R, d)
-    else
-        L = MulLinearOp(data(C), R, pairs, a)
-        @timeit_debug "compressing" R = compressor(L)
-        setdata!(C, R)
-    end
-    return C
 end
 
 #=
@@ -321,7 +318,7 @@ end
 # 1.2.1
 function mul!(y::AbstractVector, R::RkMatrix, x::AbstractVector, a::Number, b::Number)
     # tmp = R.Bt*x
-    tmp = mul!(R.buffer, adjoint(R.B), x)
+    tmp = mul!(buffer(R), adjoint(R.B), x)
     return mul!(y, R.A, tmp, a, b)
 end
 
@@ -333,7 +330,7 @@ function mul!(y::AbstractVector,
               b::Number)
     R = parent(adjR)
     # tmp = R.At*x
-    tmp = mul!(R.buffer, adjoint(R.A), x)
+    tmp = mul!(buffer(R), adjoint(R.A), x)
     return mul!(y, R.B, tmp, a, b)
 end
 
