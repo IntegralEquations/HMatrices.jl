@@ -10,28 +10,31 @@ to get the respective adjoints.
 mutable struct RkMatrix{T} <: AbstractMatrix{T}
     A::Matrix{T}
     B::Matrix{T}
-    buffer::Vector{T} # used for gemv routines to avoid allocations
+    _buffers::Vector{Vector{T}} # used in gemv to avoid allocation, one per thread
     function RkMatrix(A::Matrix{T}, B::Matrix{T}) where {T}
         @assert size(A, 2) == size(B, 2) "second dimension of `A` and `B` must match"
         m, r = size(A)
         n = size(B, 1)
         if r * (m + n) >= m * n
             @debug "Inefficient RkMatrix:" size(A) size(B)
-            # error("Inefficient RkMatrix")
         end
-        buffer = Vector{T}(undef, r)
-        return new{T}(A, B, buffer)
+        buffers = [Vector{T}(undef, r) for _ in 1:Threads.nthreads()]
+        return new{T}(A, B, buffers)
     end
 end
 RkMatrix(A, B) = RkMatrix(promote(A, B)...)
 
 function Base.setproperty!(R::RkMatrix, s::Symbol, mat::Matrix)
     setfield!(R, s, mat)
-    # resize buffer
+    # resize buffers
     r = size(mat, 2)
-    resize!(R.buffer, r)
+    for b in R._buffers
+        resize!(b, r)
+    end
     return R
 end
+
+buffer(R::RkMatrix,i=Threads.threadid()) = R._buffers[i]
 
 function Base.getproperty(R::RkMatrix, s::Symbol)
     if s == :Bt
