@@ -33,6 +33,34 @@ function Base.setproperty!(R::RkMatrix,s::Symbol,mat::Matrix)
     return R
 end
 
+function Base.getproperty(R::RkMatrix,s::Symbol)
+    if  s == :Bt
+        return adjoint(R.B)
+    elseif  s == :At
+        return adjoint(R.A)
+    else
+        return getfield(R,s)
+    end
+end
+
+const RkMatrixBlockView{T} = SubArray{T, 2, RkMatrix{T}, Tuple{UnitRange{Int64}, UnitRange{Int64}}, false}
+
+function Base.getproperty(Rv::RkMatrixBlockView,s::Symbol)
+    R   = getfield(Rv,:parent)
+    I,J = getfield(Rv,:indices)
+    if  s == :A
+        return view(R.A,I,:)
+    elseif  s == :B
+        return view(R.B,J,:)
+    elseif  s == :Bt
+        return adjoint(Rv.B)
+    elseif  s == :At
+        return adjoint(Rv.A)
+    else
+        return getfield(Rv,s)
+    end
+end
+
 function Base.getindex(rmat::RkMatrix,i::Int,j::Int)
     msg = """
     method `getindex(::AbstractHMatrix,args...)` has been disabled to avoid
@@ -53,42 +81,53 @@ function Base.getindex(rmat::RkMatrix,i::Int,j::Int)
 end
 
 # some "fast" ways of computing a column of R and row of ajoint(R)
-Base.getindex(R::RkMatrix, ::Colon, j::Int) = getcol(R,j)
-
-"""
-    getcol!(col,M::AbstractMatrix,j)
-
-Fill the entries of `col` with column `j` of `M`.
-"""
-function getcol!(col,R::RkMatrix,j::Int)
-    mul!(col,R.A,conj(view(R.B,j,:)))
-end
+Base.getindex(R::Union{RkMatrix,RkMatrixBlockView}, ::Colon, j::Int)                            = getcol(R,j)
+Base.getindex(Ra::Adjoint{<:Any,<:Union{RkMatrix,RkMatrixBlockView}}, ::Colon, j::Int)          = getcol(Ra,j)
 
 """
     getcol(M::AbstractMatrix,j)
 
 Return a vector containing the `j`-th column of `M`.
 """
-function getcol(R::RkMatrix,j::Int)
-    m = size(R,1)
-    T = eltype(R)
+function getcol(A::AbstractMatrix,j::Int)
+    m = size(A,1)
+    T = eltype(A)
+    # col = Vector{T}(undef,m)
     col = zeros(T,m)
-    getcol!(col,R,j)
+    getcol!(col,A,j)
 end
 
-function getcol!(col,Ra::Adjoint{<:Any,<:RkMatrix},j::Int)
+"""
+    getcol!(col,M::AbstractMatrix,j,[append=Val(false)])
+
+Fill the entries of `col` with column `j` of `M`. If `append=Val(true)`, the
+result will be *added* to `col`; otherwise it will just be written to `col`.
+"""
+function getcol!(col,R::Union{RkMatrix,RkMatrixBlockView},j::Int,append::Val{T}=Val(false)) where T
+    if T
+        mul!(col,R.A,conj(view(R.B,j,:)),true,true)
+    else
+        mul!(col,R.A,conj(view(R.B,j,:)))
+    end
+end
+
+function getcol!(col,Ra::Adjoint{<:Any,<:Union{RkMatrix,RkMatrixBlockView}},j::Int,append::Val{T}=Val(false)) where {T}
     R = parent(Ra)
-    mul!(col,R.B,conj(view(R.A,j,:)))
+    if T
+        mul!(col,R.B,conj(view(R.A,j,:)),true,true)
+    else
+        mul!(col,R.B,conj(view(R.A,j,:)))
+    end
 end
 
-function getcol(Ra::Adjoint{<:Any,<:RkMatrix},j::Int)
-    m = size(Ra,1)
-    T = eltype(Ra)
-    col = zeros(T,m)
-    getcol!(col,Ra,j)
+function getcol!(col,Ra::Adjoint{<:Any,<:RkMatrixBlockView},j::Int,append::Val{T}=Val(false)) where {T}
+    R = parent(Ra)
+    if T
+        mul!(col,R.B,conj(view(R.A,j,:)),1,1)
+    else
+        mul!(col,R.B,conj(view(R.A,j,:)))
+    end
 end
-
-Base.getindex(Ra::Adjoint{<:Any,<:RkMatrix}, ::Colon, j::Int) = getcol(Ra,j)
 
 """
     RkMatrix(A::Vector{<:Vector},B::Vector{<:Vector})
@@ -118,16 +157,7 @@ Base.length(rmat::RkMatrix)                                      = prod(size(rma
 Base.isapprox(rmat::RkMatrix,B::AbstractArray,args...;kwargs...) = isapprox(Matrix(rmat),B,args...;kwargs...)
 
 rank(M::RkMatrix) = size(M.A,2)
-
-function Base.getproperty(R::RkMatrix,s::Symbol)
-    if  s == :Bt
-        return adjoint(R.B)
-    elseif  s == :At
-        return adjoint(R.A)
-    else
-        return getfield(R,s)
-    end
-end
+rank(M::RkMatrixBlockView) = size(M.parent.A,2)
 
 """
     hcat(M1::RkMatrix,M2::RkMatrix)

@@ -34,7 +34,7 @@ Hierarhical LU facotrization of `M`, using the `PartialACA(;atol,rtol;rank)` com
 """
 function lu!(M::HMatrix;atol=0,rank=typemax(Int),rtol=atol>0 || rank<typemax(Int) ? 0 : sqrt(eps(Float64)),kwargs...)
     compressor = PartialACA(atol,rank,rtol)
-    lu!(M,compressor)
+    lu!(M,compressor;kwargs...)
 end
 
 """
@@ -60,18 +60,10 @@ function _lu!(M::HMatrix,compressor,threads)
             for j=i+1:n
                 @sync begin
                     @timeit_debug "ldiv! solution" begin
-                        if threads
-                            Threads.@spawn ldiv!(UnitLowerTriangular(chdM[i,i]),chdM[i,j],compressor)
-                        else
-                            ldiv!(UnitLowerTriangular(chdM[i,i]),chdM[i,j],compressor)
-                        end
+                        @usespawn threads ldiv!(UnitLowerTriangular(chdM[i,i]),chdM[i,j],compressor)
                     end
                     @timeit_debug "rdiv! solution" begin
-                        if threads
-                            Threads.@spawn rdiv!(chdM[j,i],UpperTriangular(chdM[i,i]),compressor)
-                        else
-                            rdiv!(chdM[j,i],UpperTriangular(chdM[i,i]),compressor)
-                        end
+                        @usespawn threads rdiv!(chdM[j,i],UpperTriangular(chdM[i,i]),compressor)
                     end
                 end
             end

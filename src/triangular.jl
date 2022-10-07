@@ -1,7 +1,7 @@
 const HUnitLowerTriangular = UnitLowerTriangular{<:Any,<:HMatrix}
 const HUpperTriangular     = UpperTriangular{<:Any,<:HMatrix}
 
-function ldiv!(L::HUnitLowerTriangular, B::AbstractMatrix)
+function ldiv!(L::HUnitLowerTriangular, B::StridedMatrix)
     H = parent(L)
     if isleaf(H)
         d = data(H)
@@ -34,7 +34,6 @@ end
 
 function ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor)
     H = parent(L)
-    @assert isclean(H)
     if isleaf(X)
         d = data(X)
         @timeit_debug "dense ldiv!" ldiv!(L, d)
@@ -114,7 +113,7 @@ end
 
 # 2.3
 function rdiv!(R::RkMatrix, U::HUpperTriangular)
-    Bt = rdiv!(Matrix(R.Bt), U)
+    Bt = rdiv!(copy(R.Bt), U)
     adjoint!(R.B, Bt)
     return R
 end
@@ -124,13 +123,10 @@ function rdiv!(X::AbstractHMatrix, U::HUpperTriangular, compressor)
     H = parent(U)
     if isleaf(X)
         d = data(X)
-        @timeit_debug "dense rdiv!" begin
-            rdiv!(d, U) # b <-- b/L
-        end
+        @timeit_debug "dense rdiv!" rdiv!(d, U) # b <-- b/L
     elseif isleaf(H)
         error()
     else
-        @assert !hasdata(H) # only leaves are allowed to have data for the inversion
         chdX = children(X)
         chdH = children(H)
         m, n = size(chdH)

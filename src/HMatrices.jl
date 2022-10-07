@@ -9,7 +9,6 @@ using TimerOutputs
 using Printf
 using RecipesBase
 using Distributed
-using Base.Threads
 
 import WavePropBase:
     ClusterTree,
@@ -47,7 +46,7 @@ const ALLOW_GETINDEX = Ref(true)
 """
     use_threads()::Bool
 
-Default choice of whether threads will be used or not throught the package.
+Default choice of whether threads will be used or not throughout the package.
 """
 use_threads() = true
 
@@ -70,6 +69,17 @@ include("partitions.jl")
 include("multiplication.jl")
 include("triangular.jl")
 include("lu.jl")
+
+# interface of DataFlowTasks
+function DataFlowTasks.memory_overlap(H1::HMatrix, H2::HMatrix)
+    root(H1) === root(H2) || (return false)
+    isempty(intersect(rowrange(H1),rowrange(H2))) && (return false)
+    isempty(intersect(colrange(H1),colrange(H2))) && (return false)
+    return true
+end
+
+DataFlowTasks.memory_overlap(H1::HMatrix, A::AbstractArray) = false
+DataFlowTasks.memory_overlap(A::AbstractArray,H1::HMatrix)  = false
 
 export
     # types (re-exported)

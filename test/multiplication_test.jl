@@ -31,7 +31,7 @@ H_full = Matrix(H;global_index=false)
 @testset "hmul!" begin
     C  = deepcopy(H);
     tmp = β*H_full + α*H_full*H_full
-    HMatrices.hmul!(C,H,H,α,β,PartialACA(;atol=1e-6))
+    root = HMatrices.hmul!(C,H,H,α,β,PartialACA(;atol=1e-6))
     @test Matrix(C;global_index=false) ≈ tmp
 end
 

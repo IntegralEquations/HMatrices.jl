@@ -14,7 +14,7 @@ include(joinpath(HMatrices.PROJECT_ROOT,"test","testutils.jl"))
     rtol      = 1e-5
     comp      = PartialACA(rtol=rtol)
     # Laplace
-    for threads in (true,false)
+    for threads in (false,true)
         K         = laplace_matrix(X,Y)
         H         = assemble_hmat(K,Xclt,Yclt;adm,comp,threads)
         @test norm(Matrix(K) - Matrix(H;global_index=true)) < rtol*norm(Matrix(K))

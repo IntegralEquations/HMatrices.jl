@@ -137,3 +137,57 @@ disable_getindex() = (ALLOW_GETINDEX[] = false)
 The opposite of [`disable_getindex`](@ref).
 """
 enable_getindex()  = (ALLOW_GETINDEX[] = true)
+
+
+"""
+    @usethreads bool expr
+
+Append `Threads.@threads` if `bool==true` (see
+https://discourse.julialang.org/t/putting-threads-threads-or-any-macro-in-an-if-statement/41406/8)
+"""
+macro usethreads(multithreaded, expr::Expr)
+    ex = quote
+        if $multithreaded
+            Threads.@threads $expr
+        else
+            $expr
+        end
+    end
+    esc(ex)
+end
+
+"""
+    @usespawn bool expr
+
+Append `Threads.@spawn` if `bool==true`.
+"""
+macro usespawn(multithreaded, expr::Expr)
+    ex = quote
+        if $multithreaded
+            Threads.@spawn $expr
+        else
+            $expr
+        end
+    end
+    esc(ex)
+end
+
+"""
+    struct CanonicalUnitVector
+
+Cartesian basis vector `eᵢ` with `eᵢ[j] = 1` if `i==j` and `0` otherwise.
+"""
+struct CanonicalBasisElement <: AbstractVector{Bool}
+    index::Int
+    length::Int
+end
+
+Base.size(x::CanonicalBasisElement) = (x.length,)
+Base.getindex(x::CanonicalBasisElement,i::Int) = (i==x.index)
+
+nonzero_index(e::CanonicalBasisElement) = e.index
+
+# function Base.:*(A::AbstractMatrix{T},x::CanonicalBasisElement) where {T}
+#     y = Vector{T}(undef,size(A,1))
+#     mul!(y,A,x)
+# end

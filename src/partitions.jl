@@ -25,6 +25,7 @@ const CACHED_PARTITIONS = WeakKeyDict{HMatrix,Partition}()
 
 Base.hash(A::AbstractHMatrix,h::UInt) = hash(objectid(A),h)
 Base.:(==)(A::AbstractHMatrix,B::AbstractHMatrix) = A === B
+Base.isequal(A::AbstractHMatrix,B::AbstractHMatrix) = A === B
 
 """
     build_sequence_partition(seq,nq,cost,nmax)
