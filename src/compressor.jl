@@ -42,12 +42,12 @@ end
 function (aca::ACA)(K, rowtree::ClusterTree, coltree::ClusterTree)
     irange = index_range(rowtree)
     jrange = index_range(coltree)
-    aca(K, irange, jrange)
+    return aca(K, irange, jrange)
 end
 
 function (aca::ACA)(K, irange, jrange)
     M = K[irange, jrange] # computes the entire matrix.
-    _aca_full!(M, aca.atol, aca.rank, aca.rtol)
+    return _aca_full!(M, aca.atol, aca.rank, aca.rtol)
 end
 
 (comp::ACA)(K::Matrix) = comp(K, 1:size(K, 1), 1:size(K, 2))
@@ -129,15 +129,16 @@ function (paca::PartialACA)(K, rowtree::ClusterTree, coltree::ClusterTree)
     istart = _aca_partial_initial_pivot(rowtree)
     irange = index_range(rowtree)
     jrange = index_range(coltree)
-    _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol, istart - irange.start + 1)
+    return _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol,
+                        istart - irange.start + 1)
 end
 
-function (paca::PartialACA)(K, irange::Union{<:UnitRange,Colon}, jrange::Union{<:UnitRange,Colon})
-    _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol)
+function (paca::PartialACA)(K, irange::Union{<:UnitRange,Colon},
+                            jrange::Union{<:UnitRange,Colon})
+    return _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol)
 end
 
 (paca::PartialACA)(K) = paca(K, :, :)
-
 
 """
     _aca_partial(K,irange,jrange,atol,rmax,rtol,istart=1)
@@ -165,8 +166,8 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart=1)
     T = Base.eltype(K)
     A = Vector{Vector{T}}()
     B = Vector{Vector{T}}()
-    I = BitVector(true for i = 1:m)
-    J = BitVector(true for i = 1:n)
+    I = BitVector(true for i in 1:m)
+    J = BitVector(true for i in 1:n)
     i = istart # initial pivot
     er = Inf
     est_norm = 0 # approximate norm of K[irange,jrange]
@@ -175,8 +176,8 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart=1)
         # remove index i from allowed row
         I[i] = false
         # compute next row by row <-- K[i+ishift,jrange] - R[i,:]
-        adjcol = Kadj[jrange, i+ishift]
-        for k = 1:r
+        adjcol = Kadj[jrange, i + ishift]
+        for k in 1:r
             axpy!(-adjoint(A[k][i]), B[k], adjcol)
             # for j in eachindex(row)
             #     row[j] = row[j] - B[k][j]*adjoint(A[k][i])
@@ -195,8 +196,8 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart=1)
             end
             J[j] = false
             # compute next col by col <-- K[irange,j+jshift] - R[:,j]
-            col = K[irange, j+jshift]
-            for k = 1:r
+            col = K[irange, j + jshift]
+            for k in 1:r
                 axpy!(-adjoint(B[k][j]), A[k], col)
                 # for i in eachindex(col)
                 #     col[i] = col[i] - A[k][i]*adjoint(B[k][j])
@@ -228,7 +229,7 @@ compute the Frobenius norm of `Rₖ₊₁ = A*adjoint(B)` efficiently.
     a = A[end]
     b = B[end]
     out = norm(a)^2 * norm(b)^2
-    for l = 1:k-1
+    for l in 1:(k - 1)
         out += 2 * real(dot(A[l], a) * (dot(b, B[l])))
     end
     return sqrt(cur^2 + out)
@@ -321,12 +322,12 @@ end
 function (tsvd::TSVD)(K, rowtree::ClusterTree, coltree::ClusterTree)
     irange = index_range(rowtree)
     jrange = index_range(coltree)
-    tsvd(K, irange, jrange)
+    return tsvd(K, irange, jrange)
 end
 
 function (tsvd::TSVD)(K, irange::UnitRange, jrange::UnitRange)
     M = K[irange, jrange]
-    compress!(M, tsvd)
+    return compress!(M, tsvd)
 end
 
 (comp::TSVD)(K::Matrix) = comp(K, 1:size(K, 1), 1:size(K, 2))

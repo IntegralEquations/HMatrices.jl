@@ -16,7 +16,7 @@ simply be assigned `X`. This means that after the call `axpy(a,X,Y)`, the object
 [`flush_to_leaves!`](@ref) or [`flush_to_children!`](@ref) follows.
 """
 function axpy!(a, X::Matrix, Y::RkMatrix)
-    axpy!(a, RkMatrix(X), Y)
+    return axpy!(a, RkMatrix(X), Y)
 end
 
 # 1.3
@@ -33,12 +33,12 @@ end
 function axpy!(a, X::Union{RkMatrix,RkMatrixBlockView}, Y::Matrix)
     # axpy!(a,Matrix(X),Y)
     r = rank(X)
-    m,n = size(Y)
+    m, n = size(Y)
     # @turbo warn_check_args=false for i in 1:m
     for i in 1:m
         for j in 1:n
             for k in 1:r
-                Y[i,j] += a*X.A[i, k] * conj(X.B[j, k])
+                Y[i, j] += a * X.A[i, k] * conj(X.B[j, k])
             end
         end
     end
@@ -82,7 +82,7 @@ function axpy!(a, X::HMatrix, Y::RkMatrix)
     # FIXME: inneficient implementation due to conversion from HMatrix to
     # Matrix. Does it really matter? I don't think this function should be
     # called.
-    axpy!(a, Matrix(X; global_index=false), Y)
+    return axpy!(a, Matrix(X; global_index=false), Y)
 end
 
 # 3.3
@@ -109,12 +109,12 @@ function axpy!(a, X::UniformScaling, Y::HMatrix)
         d = data(Y)
         @assert d isa Matrix
         n = min(size(d)...)
-        for i = 1:n
+        for i in 1:n
             d[i, i] += a * X.λ
         end
     else
         n = min(blocksize(Y)...)
-        for i = 1:n
+        for i in 1:n
             axpy!(a, X, children(Y)[i, i])
         end
     end

@@ -54,7 +54,8 @@ mutable struct HMatrix{R,T} <: AbstractHMatrix{T}
     parent::HMatrix{R,T}
     root::HMatrix{R,T}
     # inner constructor which handles `nothing` fields.
-    function HMatrix{R,T}(rowtree, coltree, adm, parent=nothing, data=nothing, children=nothing) where {R,T}
+    function HMatrix{R,T}(rowtree, coltree, adm, parent=nothing, data=nothing,
+                          children=nothing) where {R,T}
         if data !== nothing
             @assert (length(rowtree), length(coltree)) === size(data) "$(length(rowtree)),$(length(coltree)) != $(size(data))"
         end
@@ -91,8 +92,8 @@ AbstractTrees.nodetype(t::AbstractHMatrix) = typeof(t)
 
 rowrange(H::AbstractHMatrix) = index_range(H.rowtree)
 colrange(H::AbstractHMatrix) = index_range(H.coltree)
-rowperm(H::AbstractHMatrix) = H |> rowtree |> loc2glob
-colperm(H::AbstractHMatrix) = H |> coltree |> loc2glob
+rowperm(H::AbstractHMatrix) = loc2glob(rowtree(H))
+colperm(H::AbstractHMatrix) = loc2glob(coltree(H))
 pivot(H::AbstractHMatrix) = (rowrange(H).start, colrange(H).start)
 offset(H::AbstractHMatrix) = pivot(H) .- 1
 
@@ -100,7 +101,7 @@ offset(H::AbstractHMatrix) = pivot(H) .- 1
 Base.size(H::AbstractHMatrix) = length(rowrange(H)), length(colrange(H))
 
 function blocksize(H::AbstractHMatrix)
-    size(children(H))
+    return size(children(H))
 end
 
 """
@@ -134,12 +135,17 @@ function _show(io, hmat)
     leaves = collect(AbstractTrees.Leaves(hmat))
     sparse_leaves = filter(isadmissible, leaves)
     dense_leaves = filter(!isadmissible, leaves)
-    @printf(io, "\n\t number of leaves: %i (%i admissible + %i full)", length(leaves), length(sparse_leaves),
-        length(dense_leaves))
-    rmin, rmax = isempty(sparse_leaves) ? (-1, -1) : extrema(x -> rank(x.data), sparse_leaves)
+    @printf(io,
+            "\n\t number of leaves: %i (%i admissible + %i full)",
+            length(leaves),
+            length(sparse_leaves),
+            length(dense_leaves))
+    rmin, rmax = isempty(sparse_leaves) ? (-1, -1) :
+                 extrema(x -> rank(x.data), sparse_leaves)
     @printf(io, "\n\t min rank of sparse blocks : %i", rmin)
     @printf(io, "\n\t max rank of sparse blocks : %i", rmax)
-    dense_min, dense_max = isempty(dense_leaves) ? (-1, -1) : extrema(x -> length(x.data), dense_leaves)
+    dense_min, dense_max = isempty(dense_leaves) ? (-1, -1) :
+                           extrema(x -> length(x.data), dense_leaves)
     @printf(io, "\n\t min length of dense blocks : %i", dense_min)
     @printf(io, "\n\t max length of dense blocks : %i", dense_max)
     points_per_leaf = map(length, leaves)
@@ -192,8 +198,14 @@ It is assumed that `K` supports `getindex(K,i,j)`, and that comp can be called
 as `comp(K,irange::UnitRange,jrange::UnitRange)` to produce a compressed version
 of `K[irange,jrange]` in the form of an [`RkMatrix`](@ref).
 """
-function assemble_hmat(K, rowtree, coltree; adm=StrongAdmissibilityStd(3), comp=PartialACA(),
-    global_index=use_global_index(), threads=use_threads(), distributed=false)
+function assemble_hmat(K,
+                       rowtree,
+                       coltree;
+                       adm=StrongAdmissibilityStd(3),
+                       comp=PartialACA(),
+                       global_index=use_global_index(),
+                       threads=use_threads(),
+                       distributed=false)
     T = eltype(K)
     R = typeof(rowtree)
     if distributed
@@ -211,17 +223,21 @@ function assemble_hmat(K, rowtree, coltree; adm=StrongAdmissibilityStd(3), comp=
             _assemble_hmat!(root, K, comp, adm, threads)
         end
     end
-    root
+    return root
 end
 
-function assemble_hmat(K::AbstractKernelMatrix; atol=0, rank=typemax(Int), rtol=atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)), kwargs...)
+function assemble_hmat(K::AbstractKernelMatrix;
+                       atol=0,
+                       rank=typemax(Int),
+                       rtol=atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
+                       kwargs...)
     comp = PartialACA(; rtol, atol, rank)
     adm = StrongAdmissibilityStd(3)
     X = rowelements(K)
     Y = colelements(K)
     Xclt = ClusterTree(X)
     Yclt = ClusterTree(Y)
-    assemble_hmat(K, Xclt, Yclt; adm, comp, kwargs...)
+    return assemble_hmat(K, Xclt, Yclt; adm, comp, kwargs...)
 end
 
 """
@@ -256,7 +272,7 @@ function _assemble_hmat!(H::HMatrix{R,T}, K, comp, adm, threads) where {R,T}
 end
 
 function _assemble_sparse_block!(hmat, K, comp)
-    hmat.data = comp(K, hmat.rowtree, hmat.coltree)
+    return hmat.data = comp(K, hmat.rowtree, hmat.coltree)
 end
 
 function _assemble_dense_block!(hmat, K)
@@ -280,7 +296,8 @@ Base.size(adjH::Adjoint{<:Any,<:HMatrix}) = reverse(size(adjH.parent))
 function Base.show(io::IO, adjH::Adjoint{<:Any,<:HMatrix})
     hmat = parent(adjH)
     isclean(hmat) || return print(io, "Dirty HMatrix")
-    print(io, "Adjoint HMatrix of $(eltype(hmat)) with range $(rowrange(adjH)) × $(colrange(adjH))")
+    print(io,
+          "Adjoint HMatrix of $(eltype(hmat)) with range $(rowrange(adjH)) × $(colrange(adjH))")
     _show(io, hmat)
     return io
 end
@@ -315,8 +332,7 @@ end
 Two blocks are admissible under this condition if the `distance`
 between them is positive.
 """
-struct WeakAdmissibilityStd
-end
+struct WeakAdmissibilityStd end
 
 (adm::WeakAdmissibilityStd)(left_node, right_node) = distance(left_node, right_node) > 0
 
@@ -375,7 +391,7 @@ Base.getindex(H::HMatrix, ::Colon, j) = getcol(H, j)
 function getcol!(col, M::Matrix, j, append::Val{T}=Val(false)) where {T}
     @assert length(col) == size(M, 1)
     if T
-        axpy!(true,col,view(M,:,j))
+        axpy!(true, col, view(M, :, j))
     else
         copyto!(col, view(M, :, j))
     end
@@ -383,7 +399,7 @@ end
 function getcol!(col, adjM::Adjoint{<:Any,<:Matrix}, j, append::Val{T}=Val(false)) where {T}
     @assert length(col) == size(adjM, 1)
     if T
-        axpy!(true,col,view(M,:,j))
+        axpy!(true, col, view(M, :, j))
     else
         copyto!(col, view(adjM, :, j))
     end
@@ -395,7 +411,7 @@ getcol(adjM::Adjoint{<:Any,<:Matrix}, j) = adjM[:, j]
 function getcol!(col, H::HMatrix, j::Int, append::Val{T}=Val(false)) where {T}
     (j ∈ colrange(H)) || throw(BoundsError())
     piv = pivot(H)
-    _getcol!(col, H, j, piv, append)
+    return _getcol!(col, H, j, piv, append)
 end
 
 function _getcol!(col, H::HMatrix, j, piv, append)
@@ -415,9 +431,10 @@ end
 
 Base.getindex(adjH::Adjoint{<:Any,<:HMatrix}, ::Colon, j) = getcol(adjH, j)
 
-function getcol!(col, adjH::Adjoint{<:Any,<:HMatrix}, j::Int, append::Val{T}=Val(false)) where {T}
+function getcol!(col, adjH::Adjoint{<:Any,<:HMatrix}, j::Int,
+                 append::Val{T}=Val(false)) where {T}
     piv = pivot(adjH)
-    _getcol!(col, adjH, j, piv, append)
+    return _getcol!(col, adjH, j, piv, append)
 end
 
 function _getcol!(col, adjH::Adjoint{<:Any,<:HMatrix}, j, piv, append)

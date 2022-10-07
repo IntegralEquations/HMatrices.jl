@@ -36,14 +36,14 @@ struct KernelMatrix{Tf,Tx,Ty,T} <: AbstractKernelMatrix{T}
     Y::Ty
 end
 
-Base.size(K::KernelMatrix)                   = length(K.X), length(K.Y)
-Base.getindex(K::KernelMatrix,i::Int,j::Int) =  K.f(K.X[i],K.Y[j])
+Base.size(K::KernelMatrix) = length(K.X), length(K.Y)
+Base.getindex(K::KernelMatrix, i::Int, j::Int) = K.f(K.X[i], K.Y[j])
 
 rowelements(K::KernelMatrix) = K.X
 colelements(K::KernelMatrix) = K.Y
 kernel(K::KernelMatrix) = K.f
 
-function KernelMatrix(f,X,Y)
-    T = Base.promote_op(f,eltype(X),eltype(Y))
-    KernelMatrix{typeof(f),typeof(X),typeof(Y),T}(f,X,Y)
+function KernelMatrix(f, X, Y)
+    T = Base.promote_op(f, eltype(X), eltype(Y))
+    return KernelMatrix{typeof(f),typeof(X),typeof(Y),T}(f, X, Y)
 end

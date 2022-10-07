@@ -6,122 +6,133 @@ using InteractiveUtils
 
 # ╔═╡ 2b4aa264-4145-11ec-0d24-ab437ba0f84e
 begin
-    import Pkg
+    using Pkg: Pkg
     # activate the shared project environment
     Pkg.activate(Base.current_project())
 
-    using HMatrices, Plots, PlutoUI, LinearAlgebra, StaticArrays, WavePropBase, BenchmarkTools, LoopVectorization
-	using WavePropBase: PlotPoints, PlotTree, root_elements
+    using HMatrices,
+          Plots,
+          PlutoUI,
+          LinearAlgebra,
+          StaticArrays,
+          WavePropBase,
+          BenchmarkTools,
+          LoopVectorization
+    using WavePropBase: PlotPoints, PlotTree, root_elements
 end
 
 # ╔═╡ 9efa3b28-900c-4515-8aba-617bce2ddc68
-PlutoUI.TableOfContents(;depth=2)
+PlutoUI.TableOfContents(; depth=2)
 
 # ╔═╡ d1917856-64d1-4dab-9e05-40b1152217d2
 begin
-	const Point3D = SVector{3,Float64}
-	m = 10_000
-	X = Y = [Point3D(sin(θ)cos(ϕ),sin(θ)*sin(ϕ),cos(θ)) for (θ,ϕ) in zip(π*rand(m),2π*rand(m))]
+    const Point3D = SVector{3,Float64}
+    m = 10_000
+    X = Y = [Point3D(sin(θ)cos(ϕ), sin(θ) * sin(ϕ), cos(θ))
+             for
+             (θ, ϕ) in zip(π * rand(m), 2π * rand(m))]
 end
 
 # ╔═╡ bdfebc7a-a7a6-4fa6-8884-b4f86dc55cb3
 begin
-	Xclt = Yclt = ClusterTree(X)
-	plot(PlotTree(),Xclt,mc=:red)
+    Xclt = Yclt = ClusterTree(X)
+    plot(PlotTree(), Xclt; mc=:red)
 end
 
 # ╔═╡ 306d493b-a558-4e1d-bad6-5c295da79e82
 begin
-	function G(x,y) 
-	    d = norm(x-y) + 1e-8
-	    inv(4π*d)
-	end
-	K = KernelMatrix(G,X,Y)
+    function G(x, y)
+        d = norm(x - y) + 1e-8
+        return inv(4π * d)
+    end
+    K = KernelMatrix(G, X, Y)
 end
 
 # ╔═╡ 99041c6a-c12f-4a09-8bfd-cf769fd258a6
-H = assemble_hmat(K,Xclt,Yclt;threads=false)
+H = assemble_hmat(K, Xclt, Yclt; threads=false)
 
 # ╔═╡ 02d89923-e478-4778-8b80-eaa3357a6a8c
-b = @benchmark assemble_hmat($K,$Xclt,$Yclt;threads=false)
+b = @benchmark assemble_hmat($K, $Xclt, $Yclt; threads=false)
 
 # ╔═╡ fca099bf-25c0-4ee8-b3f0-c042c4e5fde3
-begin 
-	Xp = Yp = root_elements(Xclt)
-	Kp = KernelMatrix(G,Xp,Yp)
-	Hp = assemble_hmat(Kp,Xclt,Yclt;threads=false,global_index=false)
+begin
+    Xp = Yp = root_elements(Xclt)
+    Kp = KernelMatrix(G, Xp, Yp)
+    Hp = assemble_hmat(Kp, Xclt, Yclt; threads=false, global_index=false)
 end
 
 # ╔═╡ 37ed939e-1738-4ade-85d7-526c3c4ab536
-bp = @benchmark assemble_hmat($Kp,Xclt,Yclt;threads=false,global_index=false)
+bp = @benchmark assemble_hmat($Kp, Xclt, Yclt; threads=false, global_index=false)
 
 # ╔═╡ c6729646-0b6c-4ea2-b692-62e1e8f6b97c
 begin
-	struct LaplaceMatrixVec <: AbstractKernelMatrix{Float64}
-		X::Matrix{Float64}
-		Y::Matrix{Float64}
-	end
-	Base.size(K::LaplaceMatrixVec) = size(K.X,1), size(K.Y,1)
-	
-	# convenience constructor based on Vector of StaticVector
-	function LaplaceMatrixVec(_X::Vector{Point3D},_Y::Vector{Point3D})
-	    X = reshape(reinterpret(Float64,_X), 3,:) |> transpose |> collect
-	    Y = reshape(reinterpret(Float64,_Y), 3,:) |> transpose |> collect
-	    LaplaceMatrixVec(X,Y)
-	end
-	
-	function Base.getindex(K::LaplaceMatrixVec,i::Int,j::Int)
-	    d2 = (K.X[i,1] - K.Y[j,1])^2 + (K.X[i,2] - K.Y[j,2])^2 + (K.X[i,3] - K.Y[j,3])^2
-	    d = sqrt(d2) + 1e-8
-	    return inv(4π*d)
-	end
-	function Base.getindex(K::LaplaceMatrixVec,I::UnitRange,J::UnitRange)
-	    T = eltype(K)
-	    m = length(I)
-	    n = length(J)
-	    Xv = view(K.X,I,:)
-	    Yv = view(K.Y,J,:)
-	    out = Matrix{T}(undef,m,n)
-	    @turbo for j in 1:n
-	        for i in 1:m
-	            d2 = (Xv[i,1] - Yv[j,1])^2
-	            d2 += (Xv[i,2] - Yv[j,2])^2
-	            d2 += (Xv[i,3] - Yv[j,3])^2
-	            d = sqrt(d2) + 1e-8
-	            out[i,j] = inv(4*π*d)
-	        end
-	    end
-	    return out
-	end
-	function Base.getindex(K::LaplaceMatrixVec,I::UnitRange,j::Int)
-	    T = eltype(K)
-	    m = length(I)
-	    Xv = view(K.X,I,:)
-	    out = Vector{T}(undef,m)
-	    @turbo for i in 1:m
-	            d2 = (Xv[i,1] -  K.Y[j,1])^2
-	            d2 += (Xv[i,2] - K.Y[j,2])^2
-	            d2 += (Xv[i,3] - K.Y[j,3])^2
-	            d = sqrt(d2) + 1e-8
-	            out[i] = inv(4*π*d)
-		end
-	    return out
-	end
-	function Base.getindex(adjK::Adjoint{<:Any,<:LaplaceMatrixVec},I::UnitRange,j::Int)
-		K = parent(adjK)
-	    T = eltype(K)
-	    m = length(I)
-		Yv = view(K.Y,I,:)
-	    out = Vector{T}(undef,m)
-	    @turbo for i in 1:m
-	            d2 = (Yv[i,1] - K.X[j,1])^2
-	            d2 += (Yv[i,2] - K.X[j,2])^2
-	            d2 += (Yv[i,3] - K.X[j,3])^2
-	            d = sqrt(d2) + 1e-8
-	            out[i] = inv(4*π*d)
-		end
-	    return out
-	end
+    struct LaplaceMatrixVec <: AbstractKernelMatrix{Float64}
+        X::Matrix{Float64}
+        Y::Matrix{Float64}
+    end
+    Base.size(K::LaplaceMatrixVec) = size(K.X, 1), size(K.Y, 1)
+
+    # convenience constructor based on Vector of StaticVector
+    function LaplaceMatrixVec(_X::Vector{Point3D}, _Y::Vector{Point3D})
+        X = collect(transpose(reshape(reinterpret(Float64, _X), 3, :)))
+        Y = collect(transpose(reshape(reinterpret(Float64, _Y), 3, :)))
+        return LaplaceMatrixVec(X, Y)
+    end
+
+    function Base.getindex(K::LaplaceMatrixVec, i::Int, j::Int)
+        d2 = (K.X[i, 1] - K.Y[j, 1])^2 +
+             (K.X[i, 2] - K.Y[j, 2])^2 +
+             (K.X[i, 3] - K.Y[j, 3])^2
+        d = sqrt(d2) + 1e-8
+        return inv(4π * d)
+    end
+    function Base.getindex(K::LaplaceMatrixVec, I::UnitRange, J::UnitRange)
+        T = eltype(K)
+        m = length(I)
+        n = length(J)
+        Xv = view(K.X, I, :)
+        Yv = view(K.Y, J, :)
+        out = Matrix{T}(undef, m, n)
+        @turbo for j in 1:n
+            for i in 1:m
+                d2 = (Xv[i, 1] - Yv[j, 1])^2
+                d2 += (Xv[i, 2] - Yv[j, 2])^2
+                d2 += (Xv[i, 3] - Yv[j, 3])^2
+                d = sqrt(d2) + 1e-8
+                out[i, j] = inv(4 * π * d)
+            end
+        end
+        return out
+    end
+    function Base.getindex(K::LaplaceMatrixVec, I::UnitRange, j::Int)
+        T = eltype(K)
+        m = length(I)
+        Xv = view(K.X, I, :)
+        out = Vector{T}(undef, m)
+        @turbo for i in 1:m
+            d2 = (Xv[i, 1] - K.Y[j, 1])^2
+            d2 += (Xv[i, 2] - K.Y[j, 2])^2
+            d2 += (Xv[i, 3] - K.Y[j, 3])^2
+            d = sqrt(d2) + 1e-8
+            out[i] = inv(4 * π * d)
+        end
+        return out
+    end
+    function Base.getindex(adjK::Adjoint{<:Any,<:LaplaceMatrixVec}, I::UnitRange, j::Int)
+        K = parent(adjK)
+        T = eltype(K)
+        m = length(I)
+        Yv = view(K.Y, I, :)
+        out = Vector{T}(undef, m)
+        @turbo for i in 1:m
+            d2 = (Yv[i, 1] - K.X[j, 1])^2
+            d2 += (Yv[i, 2] - K.X[j, 2])^2
+            d2 += (Yv[i, 3] - K.X[j, 3])^2
+            d = sqrt(d2) + 1e-8
+            out[i] = inv(4 * π * d)
+        end
+        return out
+    end
 end
 
 # ╔═╡ 85de3038-88f8-442e-a2cd-5462f9552d12
@@ -209,9 +220,9 @@ The `LaplaceMatrix` struct above has a vectorized implementatio of `getindex` fo
 """
 
 # ╔═╡ 71208d87-a9ed-410e-bad1-f770fc84d4db
-begin 
-	Kv = LaplaceMatrixVec(Xp,Yp)
-	Hv = assemble_hmat(Kv,Xclt,Yclt;global_index=false,threads=false)
+begin
+    Kv = LaplaceMatrixVec(Xp, Yp)
+    Hv = assemble_hmat(Kv, Xclt, Yclt; global_index=false, threads=false)
 end
 
 # ╔═╡ 6eaa63e3-755d-482a-a113-98312b6f6fb1
@@ -220,7 +231,7 @@ Benchmarking the new implementation yields:
 """
 
 # ╔═╡ 59fda22e-0547-4845-9207-31c7b526d2f6
-bv = @benchmark assemble_hmat($Kv,Xclt,Yclt;threads=false,global_index=false)
+bv = @benchmark assemble_hmat($Kv, Xclt, Yclt; threads=false, global_index=false)
 
 # ╔═╡ 0b967aaf-271c-4153-acd6-2e5acff8dc75
 md"""
@@ -228,7 +239,7 @@ Comparing the times we see that the vectorized implementation is the fastest, an
 """
 
 # ╔═╡ afc737f1-3523-413f-a73a-96a909580047
-minimum(b),minimum(bp),minimum(bv)
+minimum(b), minimum(bp), minimum(bv)
 
 # ╔═╡ 44f08eda-b5d3-40d0-aa8b-3cae9e137854
 md"""
@@ -237,14 +248,14 @@ Finally, not that as expected all of these yield the same matrix, as indicated b
 
 # ╔═╡ 5fd9b390-ea5f-425c-a624-0cd4a146a897
 begin
-	x = rand(m)
-	y  = H*x
-	yv = Hv*x
-	yp = Hp*x
-	er = max(norm(y-yv)/norm(y),norm(y-yp)/norm(y))
-	md"""
-	Maximum error: $er
-	"""
+    x = rand(m)
+    y = H * x
+    yv = Hv * x
+    yp = Hp * x
+    er = max(norm(y - yv) / norm(y), norm(y - yp) / norm(y))
+    md"""
+    Maximum error: $er
+    """
 end
 
 # ╔═╡ Cell order:
