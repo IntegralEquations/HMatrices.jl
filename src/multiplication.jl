@@ -47,15 +47,41 @@ of the multiplication to avoid growing the rank of admissible blocks after
 addition is performed.
 """
 function hmul!(C::T, A::T, B::T, a, b, compressor) where {T<:HMatrix}
-    @assert isroot(C) || !hasdata(parent(C))
-    b == true || rmul!(C, b)
+    # create a plan
     dict = Dict{T,Vector{NTuple{2,T}}}()
-    @timeit_debug "constructing plan" begin
-        _plan_dict!(dict, C, A, B)
+    _plan_dict!(dict, C, A, B)
+    # execute the plan
+    b == true || rmul!(C, b)
+    return _hmul!(C, compressor, dict, a, true)
+end
+
+function _hmul!(C::T, compressor, dict, a, root) where {T<:HMatrix}
+    pairs = get(dict, C, Tuple{T,T}[])
+    # update the data in C if needed
+    @dspawn begin
+        @RW C
+        @R parent(C)
+        @R pairs
+        R = _parent_data_restriction(C,root)
+        if !isnothing(R) || !isempty(pairs)
+            if isleaf(C) && !isadmissible(C)
+                d = data(C)
+                for (A, B) in pairs
+                    _mul_dense!(d, A, B, a)
+                end
+                isnothing(R) || axpy!(true, R, d)
+            else
+                L = MulLinearOp(data(C), R, pairs, a)
+                R = compressor(L)
+                setdata!(C, R)
+            end
+        end
+    end label="hmul"
+    # move to children
+    for chd in children(C)
+        _hmul!(chd, compressor, dict, a, false)
     end
-    @timeit_debug "executing plan" begin
-        _hmul!(C, compressor, dict, a, nothing)
-    end
+    isleaf(C) || @dspawn setdata!(@W(C), nothing) label="clear parent"
     return C
 end
 
@@ -80,35 +106,19 @@ function _plan_dict!(dict, C::T, A::T, B::T) where {T<:HMatrix}
     return dict
 end
 
-function _hmul!(C::HMatrix, compressor, dict, a, R)
-    T = typeof(C)
-    pairs = get(dict, C, Tuple{T,T}[])
-    # update the data in C if needed
-    if !isnothing(R) || !isempty(pairs)
-        if isleaf(C) && !isadmissible(C)
-            d = data(C)
-            for (A, B) in pairs
-                _mul_dense!(d, A, B, a)
-            end
-            isnothing(R) || axpy!(true, R, d)
-        else
-            L = MulLinearOp(data(C), R, pairs, a)
-            @timeit_debug "compressing" R = compressor(L)
-            setdata!(C, R)
-        end
+function _parent_data_restriction(C,root)
+    P  = parent(C)
+    Rp = data(P)
+    if root || isnothing(Rp)
+        return nothing
+    else
+        # compute indices of C relative to its parent
+        shift = pivot(P) .- 1
+        irange = rowrange(C) .- shift[1]
+        jrange = colrange(C) .- shift[2]
+        return view(Rp, irange, jrange)
+        # return RkMatrix(Rp.A[irange, :], Rp.B[jrange, :])
     end
-    # move to children
-    shift = pivot(C) .- 1
-    @sync for chd in children(C)
-        irange = rowrange(chd) .- shift[1]
-        jrange = colrange(chd) .- shift[2]
-        Rp = data(C)
-        # Rv = (!isroot(C) && hasdata(C)) ? RkMatrix(Rp.A[irange,:],Rp.B[jrange,:]) : nothing
-        Rv = (!isroot(C) && hasdata(C)) ? view(Rp, irange, jrange) : nothing
-        @usespawn false _hmul!(chd, compressor, dict, a, Rv)
-    end
-    isleaf(C) || (setdata!(C, nothing))
-    return C
 end
 
 # disable `mul` of hierarchial matrices

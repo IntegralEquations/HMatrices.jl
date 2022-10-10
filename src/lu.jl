@@ -23,7 +23,7 @@ function lu!(M::HMatrix, compressor; threads=use_threads())
         _lu!(M, compressor, threads)
     end
     # wrap the result in the LU structure
-    res = @dspawn LU(@R(M), LinearAlgebra.BlasInt[], LinearAlgebra.BlasInt(0))
+    res = @dspawn LU(@R(M), LinearAlgebra.BlasInt[], LinearAlgebra.BlasInt(0)) label = "LU"
     return fetch(res)
 end
 
@@ -51,34 +51,21 @@ lu(M::HMatrix, args...; kwargs...) = lu!(deepcopy(M), args...; kwargs...)
 
 function _lu!(M::HMatrix, compressor, threads)
     if isleaf(M)
-        d = data(M)
-        @assert d isa Matrix
-        @timeit_debug "dense lu factorization" begin
-            lu!(d, NOPIVOT())
-        end
+        @dspawn lu!(data(@RW(M)), NOPIVOT()) label = "Dense LU"
     else
-        @assert !hasdata(M)
         chdM = children(M)
         m, n = size(chdM)
         for i in 1:m
             _lu!(chdM[i, i], compressor, threads)
             for j in (i + 1):n
-                @sync begin
-                    @timeit_debug "ldiv! solution" begin
-                        @dspawn ldiv!(UnitLowerTriangular(@R(chdM[i, i])), @RW(chdM[i, j]),
-                                      compressor)
-                    end
-                    @timeit_debug "rdiv! solution" begin
-                        @dspawn rdiv!(@RW(chdM[j, i]), UpperTriangular(@R(chdM[i, i])),
-                                      compressor)
-                    end
-                end
+                ldiv!(UnitLowerTriangular(chdM[i, i]), chdM[i, j],
+                      compressor)
+                rdiv!(chdM[j, i], UpperTriangular(chdM[i, i]),
+                      compressor)
             end
             for j in (i + 1):m
                 for k in (i + 1):n
-                    @timeit_debug "hmul!" begin
-                        @dspawn hmul!(@RW(chdM[j, k]), @R(chdM[j, i]), @R(chdM[i, k]), -1, 1, compressor)
-                    end
+                    hmul!(chdM[j, k], chdM[j, i], chdM[i, k], -1, 1, compressor)
                 end
             end
         end
@@ -86,10 +73,11 @@ function _lu!(M::HMatrix, compressor, threads)
     return M
 end
 
+# routines needed to solve linear problem as HLU\y
 function ldiv!(A::LU{<:Any,<:HMatrix}, y::AbstractVector; global_index=true)
-    p = A.factors # underlying data
-    ctree = coltree(p)
-    rtree = rowtree(p)
+    H = A.factors # underlying data
+    ctree = coltree(H)
+    rtree = rowtree(H)
     # permute input
     global_index && permute!(y, loc2glob(ctree))
     L, U = A.L, A.U

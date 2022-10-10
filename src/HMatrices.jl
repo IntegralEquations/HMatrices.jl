@@ -71,14 +71,21 @@ include("triangular.jl")
 include("lu.jl")
 
 # interface of DataFlowTasks
-function DataFlowTasks.memory_overlap(H1::HMatrix, H2::HMatrix)
-    isempty(intersect(rowrange(H1),rowrange(H2))) && (return false)
-    isempty(intersect(colrange(H1),colrange(H2))) && (return false)
+import DataFlowTasks: memory_overlap
+function memory_overlap(H1::HMatrix, H2::HMatrix)
+    root(H1) == root(H2) || (return false)
+    isempty(intersect(rowrange(H1), rowrange(H2))) && (return false)
+    isempty(intersect(colrange(H1), colrange(H2))) && (return false)
     return true
 end
-
-DataFlowTasks.memory_overlap(H1::HMatrix, A::AbstractArray) = false
-DataFlowTasks.memory_overlap(A::AbstractArray,H1::HMatrix)  = false
+function memory_overlap(H1::HMatrix, pairs::Vector{<:NTuple{2,<:HMatrix}})
+    for (A, B) in pairs
+        memory_overlap(H1, A) && (return true)
+        memory_overlap(H1, B) && (return true)
+    end
+    return false
+end
+memory_overlap(pairs::Vector{<:NTuple{2,<:HMatrix}}, H::HMatrix) = memory_overlap(H, pairs)
 
 export
 # types (re-exported)

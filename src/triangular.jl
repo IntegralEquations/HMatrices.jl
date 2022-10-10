@@ -35,8 +35,11 @@ end
 function ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor)
     H = parent(L)
     if isleaf(X)
-        d = data(X)
-        @timeit_debug "dense ldiv!" ldiv!(L, d)
+        @dspawn begin
+            @RW X
+            @R H
+            ldiv!(L, data(X))
+        end label="dense ldiv"
     elseif isleaf(H) # X not a leaf, but L is a leaf. This should not happen.
         error()
     else
@@ -47,9 +50,7 @@ function ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor)
         for k in 1:size(chdX, 2)
             for i in 1:m
                 for j in 1:(i - 1)# j<i
-                    @timeit_debug "hmul!" begin
-                        hmul!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor)
-                    end
+                    hmul!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor)
                 end
                 ldiv!(UnitLowerTriangular(chdH[i, i]), chdX[i, k], compressor)
             end
@@ -58,7 +59,7 @@ function ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor)
     return X
 end
 
-function ldiv!(U::HUpperTriangular, B::AbstractMatrix)
+function ldiv!(U::HUpperTriangular, B::StridedMatrix)
     H = parent(U)
     if isleaf(H)
         d = data(H)
@@ -122,8 +123,11 @@ end
 function rdiv!(X::AbstractHMatrix, U::HUpperTriangular, compressor)
     H = parent(U)
     if isleaf(X)
-        d = data(X)
-        @timeit_debug "dense rdiv!" rdiv!(d, U) # b <-- b/L
+        @dspawn begin
+            @RW X
+            @R H
+            rdiv!(data(X), U) # b <-- b/L
+        end label="dense rdiv"
     elseif isleaf(H)
         error()
     else
@@ -133,9 +137,7 @@ function rdiv!(X::AbstractHMatrix, U::HUpperTriangular, compressor)
         for k in 1:size(chdX, 1)
             for i in 1:m
                 for j in 1:(i - 1)
-                    @timeit_debug "hmul!" begin
-                        hmul!(chdX[k, i], chdX[k, j], chdH[j, i], -1, 1, compressor)
-                    end
+                    hmul!(chdX[k, i], chdX[k, j], chdH[j, i], -1, 1, compressor)
                 end
                 rdiv!(chdX[k, i], UpperTriangular(chdH[i, i]), compressor)
             end

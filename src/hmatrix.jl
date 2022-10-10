@@ -75,6 +75,7 @@ setdata!(H::AbstractHMatrix, d) = setfield!(H, :data, d)
 rowtree(H::AbstractHMatrix) = H.rowtree
 coltree(H::AbstractHMatrix) = H.coltree
 leaves(H::AbstractHMatrix) = H.leaves
+root(H::AbstractHMatrix) = H.root
 
 cluster_type(::HMatrix{R,T}) where {R,T} = R
 
