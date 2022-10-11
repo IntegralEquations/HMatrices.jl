@@ -12,26 +12,17 @@ function Base.getproperty(LU::LU{<:Any,<:HMatrix}, s::Symbol)
 end
 
 """
-    lu!(M::HMatrix,comp)
+    lu!(M::HMatrix[;atol,rank,rtol])
+    lu!(M::HMatrix,comp::AbstractCompressor)
 
-Hierarhical LU facotrization of `M`, using `comp` to generate the compressed
-blocks during the multiplication routines.
-"""
-function lu!(M::HMatrix, compressor; threads=use_threads())
-    # perform the lu decomposition of M in place
-    @timeit_debug "lu factorization" begin
-        _lu!(M, compressor, threads)
-    end
-    # wrap the result in the LU structure
-    res = @dspawn LU(@R(M), LinearAlgebra.BlasInt[], LinearAlgebra.BlasInt(0)) label = "LU"
-    return fetch(res)
-end
+In-place hierarhical LU facotrization of `M`; the keyword arguemnts `atol`,
+`rank`, and `rtol` can be used to control the quality of the approximation.
+Alternatively, you  may directly pass an `AbstractCompressor` to compress
+low-rank blocks during the multiplication steps.
 
-"""
-    lu!(M::HMatrix;atol=0,rank=typemax(Int),rtol=atol>0 ||
-    rank<typemax(Int) ? 0 : sqrt(eps(Float64)))
-
-Hierarhical LU facotrization of `M`, using the `PartialACA(;atol,rtol;rank)` compressor.
+By default, the factorization is multithreaded through the use of
+`DataFlowTasks`; to disable it, you must call
+`DataFlowTasks.force_sequential(true)`.
 """
 function lu!(M::HMatrix;
              atol=0,
@@ -41,6 +32,15 @@ function lu!(M::HMatrix;
     compressor = PartialACA(atol, rank, rtol)
     return lu!(M, compressor; kwargs...)
 end
+function lu!(M::HMatrix, compressor)
+    # perform the lu decomposition of M in place
+    @timeit_debug "lu factorization" begin
+        _lu!(M, compressor)
+    end
+    # wrap the result in the LU structure
+    res = @dspawn LU(@R(M), LinearAlgebra.BlasInt[], LinearAlgebra.BlasInt(0)) label = "LU"
+    return fetch(res)
+end
 
 """
     lu(M::HMatrix,args...;kwargs...)
@@ -49,14 +49,14 @@ Hierarchical LU factorization. See [`lu!`](@ref) for the available options.
 """
 lu(M::HMatrix, args...; kwargs...) = lu!(deepcopy(M), args...; kwargs...)
 
-function _lu!(M::HMatrix, compressor, threads)
+function _lu!(M::HMatrix, compressor)
     if isleaf(M)
         @dspawn lu!(data(@RW(M)), NOPIVOT()) label = "Dense LU"
     else
         chdM = children(M)
         m, n = size(chdM)
         for i in 1:m
-            _lu!(chdM[i, i], compressor, threads)
+            _lu!(chdM[i, i], compressor)
             for j in (i + 1):n
                 ldiv!(UnitLowerTriangular(chdM[i, i]), chdM[i, j],
                       compressor)

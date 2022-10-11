@@ -15,8 +15,8 @@ recompression of intermediate computations.
 """
 struct MulLinearOp{R,T,S} <: AbstractMatrix{T}
     R::Union{RkMatrix{T},Nothing}
-    P::Union{RkMatrixBlockView{T},Nothing}
-    # P::Union{RkMatrix{T},Nothing}
+    # P::Union{RkMatrixBlockView{T},Nothing}
+    P::Union{RkMatrix{T},Nothing}
     pairs::Vector{NTuple{2,HMatrix{R,T}}}
     multiplier::S
 end
@@ -52,36 +52,44 @@ function hmul!(C::T, A::T, B::T, a, b, compressor) where {T<:HMatrix}
     _plan_dict!(dict, C, A, B)
     # execute the plan
     b == true || rmul!(C, b)
-    return _hmul!(C, compressor, dict, a, true)
+    return _hmul!(C, compressor, dict, a)
 end
 
-function _hmul!(C::T, compressor, dict, a, root) where {T<:HMatrix}
+function _hmul!(C::T, compressor, dict, a) where {T<:HMatrix}
     pairs = get(dict, C, Tuple{T,T}[])
-    # update the data in C if needed
-    @dspawn begin
-        @RW C
-        @R parent(C)
-        @R pairs
-        R = _parent_data_restriction(C,root)
-        if !isnothing(R) || !isempty(pairs)
-            if isleaf(C) && !isadmissible(C)
+    if isleaf(C) && !isempty(pairs)
+        if isadmissible(C)
+            @dspawn begin
+                @RW C
+                @R pairs
+                L = MulLinearOp(data(C), nothing, pairs, a)
+                R = compressor(L)
+                setdata!(C, R)
+            end label="sparse mul $(size(C)) ($(length(pairs)))"
+        else
+            @dspawn begin
+                @RW C
+                @R pairs
                 d = data(C)
                 for (A, B) in pairs
                     _mul_dense!(d, A, B, a)
                 end
-                isnothing(R) || axpy!(true, R, d)
-            else
-                L = MulLinearOp(data(C), R, pairs, a)
-                R = compressor(L)
-                setdata!(C, R)
-            end
+            end label="dense mul"
         end
-    end label="hmul"
-    # move to children
-    for chd in children(C)
-        _hmul!(chd, compressor, dict, a, false)
+    elseif !isempty(pairs)
+        # internal node: compute low rank approximation
+        Rtask = @dspawn begin
+            @R pairs
+            L = MulLinearOp(nothing, nothing, pairs, a)
+            compressor(L)
+        end label="internal node"
+        # move low rank data to leaves
+        add_to_leaves!(C,Rtask,compressor)
     end
-    isleaf(C) || @dspawn setdata!(@W(C), nothing) label="clear parent"
+    # continue with children of C
+    for chd in children(C)
+        _hmul!(chd, compressor, dict, a)
+    end
     return C
 end
 
@@ -106,8 +114,8 @@ function _plan_dict!(dict, C::T, A::T, B::T) where {T<:HMatrix}
     return dict
 end
 
-function _parent_data_restriction(C,root)
-    P  = parent(C)
+function _parent_data_restriction(C, root)
+    P = parent(C)
     Rp = data(P)
     if root || isnothing(Rp)
         return nothing
@@ -116,10 +124,50 @@ function _parent_data_restriction(C,root)
         shift = pivot(P) .- 1
         irange = rowrange(C) .- shift[1]
         jrange = colrange(C) .- shift[2]
-        return view(Rp, irange, jrange)
-        # return RkMatrix(Rp.A[irange, :], Rp.B[jrange, :])
+        # return view(Rp, irange, jrange)
+        return RkMatrix(Rp.A[irange, :], Rp.B[jrange, :])
     end
 end
+
+"""
+    add_to_leaves(H::HMatrix,R,compressor)
+
+Add `R` to the leaves of `H`.
+"""
+function add_to_leaves!(H::HMatrix, Rtask, compressor)
+    shift = pivot(H) .- 1
+    _add_to_leaves!(H,Rtask,compressor,shift)
+end
+function _add_to_leaves!(node,Rtask,compressor,shift)
+    S = typeof(node)
+    T = eltype(node)
+    if isleaf(node)
+        @dspawn begin
+            @RW node
+            @R Rtask
+            R = fetch(Rtask)::RkMatrix{T}
+            irange = rowrange(node) .- shift[1]
+            jrange = colrange(node) .- shift[2]
+            Rv = RkMatrix(R.A[irange, :], R.B[jrange, :])
+            # Rv = view(R,irange,jrange)
+            if isadmissible(node)
+                Rl= data(node)::RkMatrix{T}
+                L = MulLinearOp(Rl, Rv, Tuple{S,S}[], true)
+                node.data = compressor(L)
+            else
+                M = data(node)::Matrix{T}
+                axpy!(true, Rv, M)
+            end
+        end label="add to leaves"
+    else
+        for child in children(node)
+            _add_to_leaves!(child,Rtask,compressor,shift)
+        end
+    end
+    return node
+end
+
+
 
 # disable `mul` of hierarchial matrices
 function mul!(C::HMatrix, A::HMatrix, B::HMatrix, a::Number, b::Number)
