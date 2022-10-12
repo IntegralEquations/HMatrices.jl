@@ -39,7 +39,7 @@ function ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor)
             @RW X
             @R H
             ldiv!(L, data(X))
-        end label="dense ldiv"
+        end label = "dense ldiv"
     elseif isleaf(H) # X not a leaf, but L is a leaf. This should not happen.
         error()
     else
@@ -127,7 +127,7 @@ function rdiv!(X::AbstractHMatrix, U::HUpperTriangular, compressor)
             @RW X
             @R H
             rdiv!(data(X), U) # b <-- b/L
-        end label="dense rdiv"
+        end label = "dense rdiv"
     elseif isleaf(H)
         error()
     else

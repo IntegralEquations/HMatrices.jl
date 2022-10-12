@@ -65,7 +65,7 @@ function _hmul!(C::T, compressor, dict, a) where {T<:HMatrix}
                 L = MulLinearOp(data(C), nothing, pairs, a)
                 R = compressor(L)
                 setdata!(C, R)
-            end label="sparse mul $(size(C)) ($(length(pairs)))"
+            end label = "sparse mul $(size(C)) ($(length(pairs)))"
         else
             @dspawn begin
                 @RW C
@@ -74,7 +74,7 @@ function _hmul!(C::T, compressor, dict, a) where {T<:HMatrix}
                 for (A, B) in pairs
                     _mul_dense!(d, A, B, a)
                 end
-            end label="dense mul"
+            end label = "dense mul"
         end
     elseif !isempty(pairs)
         # internal node: compute low rank approximation
@@ -82,9 +82,9 @@ function _hmul!(C::T, compressor, dict, a) where {T<:HMatrix}
             @R pairs
             L = MulLinearOp(nothing, nothing, pairs, a)
             compressor(L)
-        end label="internal node"
+        end label = "internal node"
         # move low rank data to leaves
-        add_to_leaves!(C,Rtask,compressor)
+        add_to_leaves!(C, Rtask, compressor)
     end
     # continue with children of C
     for chd in children(C)
@@ -136,9 +136,9 @@ Add `R` to the leaves of `H`.
 """
 function add_to_leaves!(H::HMatrix, Rtask, compressor)
     shift = pivot(H) .- 1
-    _add_to_leaves!(H,Rtask,compressor,shift)
+    return _add_to_leaves!(H, Rtask, compressor, shift)
 end
-function _add_to_leaves!(node,Rtask,compressor,shift)
+function _add_to_leaves!(node, Rtask, compressor, shift)
     S = typeof(node)
     T = eltype(node)
     if isleaf(node)
@@ -151,23 +151,21 @@ function _add_to_leaves!(node,Rtask,compressor,shift)
             Rv = RkMatrix(R.A[irange, :], R.B[jrange, :])
             # Rv = view(R,irange,jrange)
             if isadmissible(node)
-                Rl= data(node)::RkMatrix{T}
+                Rl = data(node)::RkMatrix{T}
                 L = MulLinearOp(Rl, Rv, Tuple{S,S}[], true)
                 node.data = compressor(L)
             else
                 M = data(node)::Matrix{T}
                 axpy!(true, Rv, M)
             end
-        end label="add to leaves"
+        end label = "add to leaves"
     else
         for child in children(node)
-            _add_to_leaves!(child,Rtask,compressor,shift)
+            _add_to_leaves!(child, Rtask, compressor, shift)
         end
     end
     return node
 end
-
-
 
 # disable `mul` of hierarchial matrices
 function mul!(C::HMatrix, A::HMatrix, B::HMatrix, a::Number, b::Number)
@@ -445,8 +443,8 @@ function mul!(y::AbstractVector,
         end
         @timeit_debug "threaded multiplication" begin
             p = CACHED_PARTITIONS[A]
-            _hgemv_static_partition!(y, x, p.partition, offset)
-            # _hgemv_threads!(y,x,p.partition,offset)  # threaded implementation
+            # _hgemv_static_partition!(y, x, p.partition, offset)
+            _hgemv_threads!(y,x,p.partition,offset)  # threaded implementation
         end
     else
         @timeit_debug "serial multiplication" begin

@@ -34,7 +34,7 @@ function Base.setproperty!(R::RkMatrix, s::Symbol, mat::Matrix)
     return R
 end
 
-buffer(R::RkMatrix,i=Threads.threadid()) = R._buffers[i]
+buffer(R::RkMatrix, i=Threads.threadid()) = R._buffers[i]
 
 function Base.getproperty(R::RkMatrix, s::Symbol)
     if s == :Bt

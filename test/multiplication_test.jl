@@ -8,7 +8,7 @@ using HMatrices: RkMatrix
 
 include(joinpath(HMatrices.PROJECT_ROOT, "test", "testutils.jl"))
 
-Random.seed!(1)
+# Random.seed!(1)
 
 m = 2000
 n = 2000
@@ -32,7 +32,7 @@ H_full = Matrix(H; global_index=false)
     C = deepcopy(H)
     tmp = β * H_full + α * H_full * H_full
     root = HMatrices.hmul!(C, H, H, α, β, PartialACA(; atol=1e-6))
-    @test Matrix(C; global_index=false) ≈ tmp
+    @test norm(Matrix(C; global_index=false) - tmp,Inf) < 1e-5
 end
 
 @testset "gemv" begin
