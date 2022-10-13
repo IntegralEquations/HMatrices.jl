@@ -50,7 +50,7 @@ function ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor)
         for k in 1:size(chdX, 2)
             for i in 1:m
                 for j in 1:(i - 1)# j<i
-                    hmul!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor)
+                    hmul!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor, Val(false))
                 end
                 ldiv!(UnitLowerTriangular(chdH[i, i]), chdX[i, k], compressor)
             end
@@ -137,7 +137,7 @@ function rdiv!(X::AbstractHMatrix, U::HUpperTriangular, compressor)
         for k in 1:size(chdX, 1)
             for i in 1:m
                 for j in 1:(i - 1)
-                    hmul!(chdX[k, i], chdX[k, j], chdH[j, i], -1, 1, compressor)
+                    hmul!(chdX[k, i], chdX[k, j], chdH[j, i], -1, 1, compressor, Val(false))
                 end
                 rdiv!(chdX[k, i], UpperTriangular(chdH[i, i]), compressor)
             end

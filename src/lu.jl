@@ -65,7 +65,7 @@ function _lu!(M::HMatrix, compressor)
             end
             for j in (i + 1):m
                 for k in (i + 1):n
-                    hmul!(chdM[j, k], chdM[j, i], chdM[i, k], -1, 1, compressor)
+                    hmul!(chdM[j, k], chdM[j, i], chdM[i, k], -1, 1, compressor, Val(false))
                 end
             end
         end

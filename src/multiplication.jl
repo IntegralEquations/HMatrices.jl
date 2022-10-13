@@ -46,13 +46,15 @@ matrices and `compressor` is a function/functor used in the intermediate stages
 of the multiplication to avoid growing the rank of admissible blocks after
 addition is performed.
 """
-function hmul!(C::T, A::T, B::T, a, b, compressor) where {T<:HMatrix}
+function hmul!(C::T, A::T, B::T, a, b, compressor, ::Val{WAIT}=Val(true)) where {T<:HMatrix,WAIT}
     # create a plan
     dict = Dict{T,Vector{NTuple{2,T}}}()
     _plan_dict!(dict, C, A, B)
     # execute the plan
     b == true || rmul!(C, b)
-    return _hmul!(C, compressor, dict, a)
+    _hmul!(C, compressor, dict, a)
+    WAIT && wait(@dspawn @R(C))
+    return C
 end
 
 function _hmul!(C::T, compressor, dict, a) where {T<:HMatrix}
