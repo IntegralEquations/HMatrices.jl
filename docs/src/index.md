@@ -264,6 +264,43 @@ operator.
     rough factorization (with e.g. large tolerance or a fixed rank) as a
     preconditioner to an iterative solver.
 
+## Other kernels
+
+So far we focused on the (manual) compression of a simple kernel matrix where
+the entry `(i,j)` depended only on a function `G` and on point-clouds `X` and
+`Y`. There are many other interesting applications where the entry `(i,j)` requires
+more information, such as triangles, basis functions, or the normal vectors. To
+illustrate how the methods above could be adapted we consider now the
+construction of the double-layer kernel for Helmholtz equation. Our
+`AbstractMatrix` can then be defined as follows:
+
+```@example assemble-basic
+struct LaplaceDoubleLayer <: AbstractMatrix{Float64}
+    X::Vector{Point2D}
+    Y::Vector{Point2D}
+    NY::Vector{Point2D} # normals at Y coordinate
+end
+
+function Base.getindex(K::LaplaceDoubleLayer,i::Int,j::Int) 
+    r = K.X[i] - K.Y[j]
+    d = norm(r) + 1e-10
+    return (1 / (2π) / (d^2) * dot(r, K.NY[j]))
+end
+Base.size(K::LaplaceDoubleLayer) = length(K.X), length(K.Y)
+```
+
+We can now simply instantiate a double-layer kernel, and compress it as before
+
+```@example assemble-basic
+# create the abstract matrix
+ny = Y
+K = LaplaceDoubleLayer(X,Y,ny)
+H = assemble_hmat(K,Xclt,Yclt;adm,comp,threads=false,distributed=false)
+
+```
+
+With `H` assembled, everything else works exactly as before!
+
 ## Index
 
 ```@index
