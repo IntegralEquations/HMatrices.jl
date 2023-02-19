@@ -268,11 +268,14 @@ operator.
 
 So far we focused on the (manual) compression of a simple kernel matrix where
 the entry `(i,j)` depended only on a function `G` and on point-clouds `X` and
-`Y`. There are many other interesting applications where the entry `(i,j)` requires
-more information, such as triangles, basis functions, or the normal vectors. To
-illustrate how the methods above could be adapted we consider now the
-construction of the double-layer kernel for Helmholtz equation. Our
-`AbstractMatrix` can then be defined as follows:
+`Y`. There are many interesting applications where computing the `(i,j)` entry
+requires more information, such as triangles, basis functions, or normal
+vectors. To illustrate how the methods discussed before could be adapted lets
+construct a double-layer matrix for Laplace equation. To keep the example
+simple, we will re-use the point clouds `X` and `Y` defined before, so that we
+do not have to reconstruct the *target* and *source* cluster trees, and we will
+simply append the normal vector information to a `LaplaceDoubleLayer` structure.
+The implementation could look something like this:
 
 ```@example assemble-basic
 struct LaplaceDoubleLayer <: AbstractMatrix{Float64}
@@ -296,7 +299,6 @@ We can now simply instantiate a double-layer kernel, and compress it as before
 ny = Y
 K = LaplaceDoubleLayer(X,Y,ny)
 H = assemble_hmat(K,Xclt,Yclt;adm,comp,threads=false,distributed=false)
-
 ```
 
 With `H` assembled, everything else works exactly as before!
