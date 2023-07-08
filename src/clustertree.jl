@@ -21,8 +21,8 @@ mutable struct ClusterTree{N,T}
     buffer::Vector{Int}
     children::Vector{ClusterTree{N,T}}
     parent::ClusterTree{N,T}
-    function ClusterTree(els::Vector{SVector{N,T}},container,loc_idxs,
-                        loc2glob,buffer,children,parent) where {N,T}
+    function ClusterTree(els::Vector{SVector{N,T}}, container, loc_idxs,
+                         loc2glob, buffer, children, parent) where {N,T}
         clt = new{N,T}(els, container, loc_idxs, loc2glob, buffer)
         clt.children = isnothing(children) ? Vector{typeof(clt)}() : children
         clt.parent = isnothing(parent) ? clt : parent
@@ -108,16 +108,16 @@ strategy encoded in `splitter`. If `copy_elements` is set to false, the
 during the tree construction.
 """
 function ClusterTree(elements, splitter=CardinalitySplitter();
-                    copy_elements=true,
-                    threads=false)
+                     copy_elements=true,
+                     threads=false)
     copy_elements && (elements = deepcopy(elements))
     bbox = bounding_box(elements)
     n = length(elements)
     irange = 1:n
     loc2glob = collect(irange)
-    buffer   = collect(irange)
+    buffer = collect(irange)
     children = nothing
-    parent   = nothing
+    parent = nothing
     #build the root, then recurse
     root = ClusterTree(elements, bbox, irange, loc2glob, buffer, children, parent)
     _build_cluster_tree!(root, splitter, threads)
@@ -141,8 +141,6 @@ function _build_cluster_tree!(current_node, splitter, threads, depth=0)
     end
     return current_node
 end
-
-
 
 function Base.show(io::IO, tree::ClusterTree{N,T}) where {N,T}
     return print(io, "ClusterTree with $(length(tree.index_range)) points.")

@@ -1,5 +1,5 @@
 const HUnitLowerTriangular = UnitLowerTriangular{<:Any,<:HMatrix}
-const HUpperTriangular     = UpperTriangular{<:Any,<:HMatrix}
+const HUpperTriangular = UpperTriangular{<:Any,<:HMatrix}
 
 function ldiv!(L::HUnitLowerTriangular, B::AbstractMatrix)
     H = parent(L)
@@ -9,19 +9,19 @@ function ldiv!(L::HUnitLowerTriangular, B::AbstractMatrix)
     else
         @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
         shift = pivot(H) .- 1
-        chdH  = children(H)
-        m, n   = size(chdH)
+        chdH = children(H)
+        m, n = size(chdH)
         @assert m === n
-        for i = 1:m
-            irows  = colrange(chdH[i,i]) .- shift[2]
-            bi     = view(B, irows, :)
-            for j = 1:(i - 1)# j<i
-                jrows  = colrange(chdH[i,j]) .- shift[2]
-                bj     = view(B, jrows, :)
-                _mul131!(bi, chdH[i,j], bj, -1)
+        for i in 1:m
+            irows = colrange(chdH[i, i]) .- shift[2]
+            bi = view(B, irows, :)
+            for j in 1:(i - 1)# j<i
+                jrows = colrange(chdH[i, j]) .- shift[2]
+                bj = view(B, jrows, :)
+                _mul131!(bi, chdH[i, j], bj, -1)
             end
             # recursion stage
-            ldiv!(UnitLowerTriangular(chdH[i,i]), bi)
+            ldiv!(UnitLowerTriangular(chdH[i, i]), bi)
         end
     end
     return B
@@ -43,16 +43,16 @@ function ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor)
     else
         chdH = children(H)
         chdX = children(X)
-        m, n  = size(chdH)
+        m, n = size(chdH)
         @assert m == n
         for k in 1:size(chdX, 2)
-            for i = 1:m
-                for j = 1:(i - 1)# j<i
+            for i in 1:m
+                for j in 1:(i - 1)# j<i
                     @timeit_debug "hmul!" begin
-                        hmul!(chdX[i,k], chdH[i,j], chdX[j,k], -1, 1, compressor)
+                        hmul!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor)
                     end
                 end
-                ldiv!(UnitLowerTriangular(chdH[i,i]), chdX[i,k], compressor)
+                ldiv!(UnitLowerTriangular(chdH[i, i]), chdX[i, k], compressor)
             end
         end
     end
@@ -67,19 +67,19 @@ function ldiv!(U::HUpperTriangular, B::AbstractMatrix)
     else
         @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
         shift = pivot(H) .- 1
-        chdH  = children(H)
-        m, n   = size(chdH)
+        chdH = children(H)
+        m, n = size(chdH)
         @assert m === n
-        for i = m:-1:1
-            irows  = colrange(chdH[i,i]) .- shift[2]
-            bi     = view(B, irows, :)
-            for j = i+1:n # j>i
-                jrows  = colrange(chdH[i,j]) .- shift[2]
-                bj     = view(B, jrows, :)
-                _mul131!(bi, chdH[i,j], bj, -1)
+        for i in m:-1:1
+            irows = colrange(chdH[i, i]) .- shift[2]
+            bi = view(B, irows, :)
+            for j in (i + 1):n # j>i
+                jrows = colrange(chdH[i, j]) .- shift[2]
+                bj = view(B, jrows, :)
+                _mul131!(bi, chdH[i, j], bj, -1)
             end
             # recursion stage
-            ldiv!(UpperTriangular(chdH[i,i]), bi)
+            ldiv!(UpperTriangular(chdH[i, i]), bi)
         end
     end
     return B
@@ -93,20 +93,20 @@ function rdiv!(B::StridedMatrix, U::HUpperTriangular)
         rdiv!(B, UpperTriangular(d)) # b <-- b/L
     else
         @assert !hasdata(H) "only leaves are allowed to have data when using `rdiv`!"
-        shift = pivot(H) .- 1 |> reverse
-        chdH  = children(H)
-        m, n   = size(chdH)
+        shift = reverse(pivot(H) .- 1)
+        chdH = children(H)
+        m, n = size(chdH)
         @assert m === n
-        for i = 1:m
-            icols  = rowrange(chdH[i,i]) .- shift[1]
-            bi     = view(B, :, icols)
-            for j = 1:(i - 1)
-                jcols  = rowrange(chdH[j,i]) .- shift[1]
-                bj     = view(B, :, jcols)
-                _mul113!(bi, bj, chdH[j,i], -1)
+        for i in 1:m
+            icols = rowrange(chdH[i, i]) .- shift[1]
+            bi = view(B, :, icols)
+            for j in 1:(i - 1)
+                jcols = rowrange(chdH[j, i]) .- shift[1]
+                bj = view(B, :, jcols)
+                _mul113!(bi, bj, chdH[j, i], -1)
             end
             # recursion stage
-            rdiv!(bi, UpperTriangular(chdH[i,i]))
+            rdiv!(bi, UpperTriangular(chdH[i, i]))
         end
     end
     return B
@@ -135,13 +135,13 @@ function rdiv!(X::AbstractHMatrix, U::HUpperTriangular, compressor)
         chdH = children(H)
         m, n = size(chdH)
         for k in 1:size(chdX, 1)
-            for i = 1:m
-                for j = 1:(i - 1)
+            for i in 1:m
+                for j in 1:(i - 1)
                     @timeit_debug "hmul!" begin
-                        hmul!(chdX[k,i], chdX[k,j], chdH[j,i], -1, 1, compressor)
+                        hmul!(chdX[k, i], chdX[k, j], chdH[j, i], -1, 1, compressor)
                     end
                 end
-                rdiv!(chdX[k,i], UpperTriangular(chdH[i,i]), compressor)
+                rdiv!(chdX[k, i], UpperTriangular(chdH[i, i]), compressor)
             end
         end
     end

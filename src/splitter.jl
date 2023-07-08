@@ -134,7 +134,7 @@ the "left" node) or `false` (point sorted on the "right" node). At the end a
 minimal `HyperRectangle` containing all left/right points is created.
 """
 function binary_split!(cluster::ClusterTree{N,T}, predicate::Function) where {N,T}
-    f   = predicate
+    f = predicate
     rec = container(cluster)
     els = root_elements(cluster)
     irange = index_range(cluster)
@@ -156,12 +156,12 @@ function binary_split!(cluster::ClusterTree{N,T}, predicate::Function) where {N,
         else
             xl_right = min.(xl_right, pt)
             xu_right = max.(xu_right, pt)
-            buff[n-npts_right] = l2g[i]
+            buff[n - npts_right] = l2g[i]
             npts_right += 1
         end
     end
     # bounding boxes
-    left_rec  = HyperRectangle(xl_left, xu_left)
+    left_rec = HyperRectangle(xl_left, xu_left)
     right_rec = HyperRectangle(xl_right, xu_right)
     @assert npts_left + npts_right == length(irange) "elements lost during split"
     # new ranges for children cluster
