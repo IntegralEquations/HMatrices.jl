@@ -2,6 +2,10 @@ using SafeTestsets
 
 @safetestset "Utils" begin include("utils_test.jl") end
 
+@safetestset "HyperRectangle" begin include("hyperrectangle_test.jl") end
+
+@safetestset "ClusterTree" begin include("clustertree_test.jl") end
+
 @safetestset "RkMatrix" begin include("rkmatrix_test.jl") end
 
 @safetestset "Compressors" begin include("compressor_test.jl") end
