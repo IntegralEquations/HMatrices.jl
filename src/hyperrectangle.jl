@@ -34,7 +34,7 @@ half_width(r::HyperRectangle) = width(r) / 2
 Minimal Euclidean distance between a point `x ∈ Ω1` and `y ∈ Ω2`.
 """
 function distance(rec1::HyperRectangle{N},
-    rec2::HyperRectangle{N}) where {N}
+                  rec2::HyperRectangle{N}) where {N}
     d2 = 0
     rec1_low_corner = low_corner(rec1)
     rec1_high_corner = high_corner(rec1)
@@ -63,7 +63,6 @@ function distance(pt::SVector{N}, rec::HyperRectangle{N}) where {N}
 end
 distance(rec::HyperRectangle{N}, pt::SVector{N}) where {N} = distance(pt, rec)
 
-
 """
     diameter(Ω)
 
@@ -91,24 +90,24 @@ function vertices(rec::HyperRectangle{2})
     lc = low_corner(rec)
     hc = high_corner(rec)
     return SVector(SVector(lc[1], lc[2]),
-        SVector(hc[1], lc[2]),
-        SVector(hc[1], hc[2]),
-        SVector(lc[1], hc[2]))
+                   SVector(hc[1], lc[2]),
+                   SVector(hc[1], hc[2]),
+                   SVector(lc[1], hc[2]))
 end
 function vertices(rec::HyperRectangle{3})
     lc = low_corner(rec)
     hc = high_corner(rec)
     return SVector(
-        # lower face
-        SVector(lc[1], lc[2], lc[3]),
-        SVector(hc[1], lc[2], lc[3]),
-        SVector(hc[1], hc[2], lc[3]),
-        SVector(lc[1], hc[2], lc[3]),
-        # upper face
-        SVector(lc[1], lc[2], hc[3]),
-        SVector(hc[1], lc[2], hc[3]),
-        SVector(hc[1], hc[2], hc[3]),
-        SVector(lc[1], hc[2], hc[3]))
+                   # lower face
+                   SVector(lc[1], lc[2], lc[3]),
+                   SVector(hc[1], lc[2], lc[3]),
+                   SVector(hc[1], hc[2], lc[3]),
+                   SVector(lc[1], hc[2], lc[3]),
+                   # upper face
+                   SVector(lc[1], lc[2], hc[3]),
+                   SVector(hc[1], lc[2], hc[3]),
+                   SVector(hc[1], hc[2], hc[3]),
+                   SVector(lc[1], hc[2], hc[3]))
 end
 
 function bounding_box(els, cube=false)
@@ -133,7 +132,7 @@ function bounding_box(els, cube=false)
     return HyperRectangle(lb, ub)
 end
 center(x::SVector) = x
-center(x::NTuple)  = SVector(x)
+center(x::NTuple) = SVector(x)
 
 """
     split(rec::HyperRectangle,[axis]::Int,[place])
@@ -148,8 +147,8 @@ When no axis and no place is given, defaults to splitting along the largest axis
 function Base.split(rec::HyperRectangle{N}, axis, place) where {N}
     rec_low_corner = low_corner(rec)
     rec_high_corner = high_corner(rec)
-    high_corner1 = ntuple(n -> n == axis ? place : rec_high_corner[n], N) |> SVector
-    low_corner2  = ntuple(n -> n == axis ? place : rec_low_corner[n], N)  |> SVector
+    high_corner1 = SVector(ntuple(n -> n == axis ? place : rec_high_corner[n], N))
+    low_corner2 = SVector(ntuple(n -> n == axis ? place : rec_low_corner[n], N))
     rec1 = HyperRectangle(rec_low_corner, high_corner1)
     rec2 = HyperRectangle(low_corner2, rec_high_corner)
     return (rec1, rec2)

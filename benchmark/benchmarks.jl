@@ -23,7 +23,7 @@ K = laplace_matrix(X, Y)
 irange = 1:N
 jrange = 1:N
 
-compressors = [PartialACA(rtol = rtol), ACA(rtol = rtol), TSVD(rtol = rtol)]
+compressors = [PartialACA(; rtol=rtol), ACA(; rtol=rtol), TSVD(; rtol=rtol)]
 
 for comp in compressors
     SUITE["Compressors"][string(comp)] = @benchmarkable $comp($K, $irange, $jrange)
@@ -53,26 +53,34 @@ comp = HMatrices.PartialACA(; rtol)
 step = 1.75 * π * radius / sqrt(N)
 k = 2 * π / (10 * step) # 10 pts per wavelength
 
-kernels = [
-    ("Laplace", laplace_matrix(X, X), true),
-    ("Helmholtz", helmholtz_matrix(X, X, k), true),
-    ("LaplaceVec", LaplaceMatrixVec(Xp,Xp), false),
-    ("HelmholtzVec", HelmholtzMatrixVec(Xp,Xp,k),false)
-]
+kernels = [("Laplace", laplace_matrix(X, X), true),
+           ("Helmholtz", helmholtz_matrix(X, X, k), true),
+           ("LaplaceVec", LaplaceMatrixVec(Xp, Xp), false),
+           ("HelmholtzVec", HelmholtzMatrixVec(Xp, Xp, k), false)]
 
 for (name, K, p) in kernels
     SUITE[name] = BenchmarkGroup([name, N])
     # bench assemble
-    SUITE[name]["assemble cpu"] = @benchmarkable assemble_hmat($K, $Xclt, $Xclt; adm = $adm, comp = $comp, threads = false, distributed = false, global_index = $p)
-    SUITE[name]["assemble threads"] = @benchmarkable assemble_hmat($K, $Xclt, $Xclt; adm = $adm, comp = $comp, threads = true, distributed = false, global_index = $p)
+    SUITE[name]["assemble cpu"] = @benchmarkable assemble_hmat($K, $Xclt, $Xclt; adm=$adm,
+                                                               comp=$comp, threads=false,
+                                                               distributed=false,
+                                                               global_index=$p)
+    SUITE[name]["assemble threads"] = @benchmarkable assemble_hmat($K, $Xclt, $Xclt;
+                                                                   adm=$adm, comp=$comp,
+                                                                   threads=true,
+                                                                   distributed=false,
+                                                                   global_index=$p)
     # SUITE[name]["assemble procs"] = @benchmarkable assemble_hmat($K, $Xclt, $Xclt; adm = $adm, comp = $comp, threads = false, distributed = true, global_index = $p)
     # bench gemv only for regular case since the vectorized case should be the same
     if p
         x = rand(eltype(K), N)
         y = zero(x)
-        H = assemble_hmat(K, Xclt, Xclt; adm, comp, threads = true, distributed = false, global_index = p)
-        SUITE[name]["gemv cpu"] = @benchmarkable mul!($y, $H, $x, $1, $0; threads = false, global_index = $p)
-        SUITE[name]["gemv threads"] = @benchmarkable mul!($y, $H, $x, $1, $0; threads = true, global_index = $p)
-        SUITE[name]["lu"]     = @benchmarkable lu!($H;rank=5)
+        H = assemble_hmat(K, Xclt, Xclt; adm, comp, threads=true, distributed=false,
+                          global_index=p)
+        SUITE[name]["gemv cpu"] = @benchmarkable mul!($y, $H, $x, $1, $0; threads=false,
+                                                      global_index=$p)
+        SUITE[name]["gemv threads"] = @benchmarkable mul!($y, $H, $x, $1, $0; threads=true,
+                                                          global_index=$p)
+        SUITE[name]["lu"] = @benchmarkable lu!($H; rank=5)
     end
 end

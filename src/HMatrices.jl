@@ -1,10 +1,10 @@
 module HMatrices
 
-const PROJECT_ROOT =  pkgdir(HMatrices)
+const PROJECT_ROOT = pkgdir(HMatrices)
 
 using StaticArrays
 using LinearAlgebra
-using Statistics:median
+using Statistics: median
 using TimerOutputs
 using Printf
 using RecipesBase
@@ -12,7 +12,7 @@ using Distributed
 using Base.Threads
 using AbstractTrees: print_tree
 
-import AbstractTrees
+using AbstractTrees: AbstractTrees
 import LinearAlgebra: mul!, lu!, lu, LU, ldiv!, rdiv!, axpy!, rank, rmul!, lmul!
 import Base: Matrix, adjoint, parent
 
@@ -55,28 +55,28 @@ include("triangular.jl")
 include("lu.jl")
 
 export
-    # types (re-exported)
-    CardinalitySplitter,
-    ClusterTree,
-    DyadicSplitter,
-    GeometricSplitter,
-    GeometricMinimalSplitter,
-    HyperRectangle,
-    # abstract types
-    AbstractKernelMatrix,
-    # types
-    HMatrix,
-    KernelMatrix,
-    StrongAdmissibilityStd,
-    WeakAdmissibilityStd,
-    PartialACA,
-    ACA,
-    TSVD,
-    # functions
-    compression_ratio,
-    print_tree,
-    assemble_hmat,
-    # macros
-    @hprofile
+# types (re-exported)
+      CardinalitySplitter,
+      ClusterTree,
+      DyadicSplitter,
+      GeometricSplitter,
+      GeometricMinimalSplitter,
+      HyperRectangle,
+# abstract types
+      AbstractKernelMatrix,
+# types
+      HMatrix,
+      KernelMatrix,
+      StrongAdmissibilityStd,
+      WeakAdmissibilityStd,
+      PartialACA,
+      ACA,
+      TSVD,
+# functions
+      compression_ratio,
+      print_tree,
+      assemble_hmat,
+# macros
+      @hprofile
 
 end

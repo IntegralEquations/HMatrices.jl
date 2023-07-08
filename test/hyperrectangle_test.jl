@@ -26,7 +26,8 @@ using StaticArrays
             push!(pts, SVector(x, y))
         end
     end
-    @test HMatrices.bounding_box(pts) == HMatrices.HyperRectangle(SVector(-1.0, -1), SVector(1, 1.0))
+    @test HMatrices.bounding_box(pts) ==
+          HMatrices.HyperRectangle(SVector(-1.0, -1), SVector(1, 1.0))
     @test HMatrices.bounding_box(pts, true) ==
           HMatrices.HyperRectangle(SVector(-1.0, -1), SVector(1, 1.0))
     pts = SVector{2,Float64}[]
@@ -35,7 +36,8 @@ using StaticArrays
             push!(pts, SVector(x, y))
         end
     end
-    @test HMatrices.bounding_box(pts) == HMatrices.HyperRectangle(SVector(-1.0, -1), SVector(1, 2.0))
+    @test HMatrices.bounding_box(pts) ==
+          HMatrices.HyperRectangle(SVector(-1.0, -1), SVector(1, 2.0))
     @test HMatrices.bounding_box(pts, true) ==
           HMatrices.HyperRectangle(SVector(-1.5, -1), SVector(3 / 2, 2.0))
     rec1 = HMatrices.HyperRectangle(SVector(0, 0), SVector(1, 1))
