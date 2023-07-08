@@ -24,7 +24,7 @@ function mul!(C::HMatrix,A::HMatrix,B::HMatrix,a::Number,b::Number)
 end
 
 """
-    struct HMulNode{S,T} <: AbstractTree
+    struct HMulNode{S,T}
 
 Tree data structure representing the following computation:
 ```
@@ -37,7 +37,7 @@ This structure is used to group the operations required when multiplying
 hierarchical matrices so that they can later be executed in a way that minimizes
 recompression of intermediate computations.
 """
-mutable struct HMulNode{T} <: AbstractTree
+mutable struct HMulNode{T}
     target::T
     children::Matrix{HMulNode{T}}
     sources::Vector{Tuple{T,T}}
