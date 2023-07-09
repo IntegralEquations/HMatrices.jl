@@ -250,7 +250,6 @@ function Base.Matrix{T}(hmat::HMatrix; global_index) where {T}
     end
 end
 
-
 # deprecate assemble_hmat
 @deprecate assemble_hmat assemble_hmatrix
 
@@ -270,9 +269,9 @@ as `comp(K,irange::UnitRange,jrange::UnitRange)` to produce a compressed version
 of `K[irange,jrange]` in the form of an [`RkMatrix`](@ref).
 """
 function assemble_hmatrix(K, rowtree, coltree; adm=StrongAdmissibilityStd(3),
-                       comp=PartialACA(),
-                       global_index=use_global_index(), threads=use_threads(),
-                       distributed=false)
+                          comp=PartialACA(),
+                          global_index=use_global_index(), threads=use_threads(),
+                          distributed=false)
     T = eltype(K)
     if distributed
         _assemble_hmat_distributed(K, rowtree, coltree; adm, comp, global_index, threads)
@@ -297,8 +296,8 @@ function assemble_hmatrix(K, rowtree, coltree; adm=StrongAdmissibilityStd(3),
 end
 
 function assemble_hmatrix(K::AbstractKernelMatrix; atol=0, rank=typemax(Int),
-                       rtol=atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
-                       kwargs...)
+                          rtol=atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
+                          kwargs...)
     comp = PartialACA(; rtol, atol, rank)
     adm = StrongAdmissibilityStd(3)
     X = rowelements(K)
