@@ -16,7 +16,7 @@ adm = StrongAdmissibilityStd(; eta=3)
 rtol = 1e-5
 comp = PartialACA(; rtol=rtol)
 K = helmholtz_matrix(X, Y, 1.3)
-H = assemble_hmat(K, Xclt, Yclt; adm, comp, threads=false, distributed=false)
+H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads=false, distributed=false)
 T = eltype(H)
 _H = Matrix(H; global_index=false)
 R = RkMatrix(rand(T, N, r), rand(T, N, r))

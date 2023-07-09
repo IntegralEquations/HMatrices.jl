@@ -28,7 +28,7 @@ K = ExponentialKernel(X, X)
 splitter = CardinalitySplitter(; nmax=50)
 Xclt = ClusterTree(X, splitter)
 Yclt = ClusterTree(Y, splitter)
-H = assemble_hmat(K, Xclt, Yclt; threads=false, distributed=false)
+H = assemble_hmatrix(K, Xclt, Yclt; threads=false, distributed=false)
 H_full = Matrix(H; global_index=false)
 
 @testset "ldiv!" begin

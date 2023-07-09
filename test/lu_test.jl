@@ -22,7 +22,7 @@ Xclt = ClusterTree(X, splitter)
 Yclt = ClusterTree(Y, splitter)
 adm = StrongAdmissibilityStd(3)
 comp = PartialACA(; atol=1e-10);
-H = assemble_hmat(K, Xclt, Yclt; adm, comp, threads=false, distributed=false)
+H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads=false, distributed=false)
 H_full = Matrix(H)
 
 ##

@@ -16,8 +16,8 @@ using StaticArrays
     comp = PartialACA(; atol)
     # Laplace
     K = laplace_matrix(X, Y)
-    H = assemble_hmat(K, Xclt, Yclt; adm, comp, distributed=false, threads=true)
-    Hd = assemble_hmat(K, Xclt, Yclt; adm, comp, distributed=true, threads=false)
+    H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, distributed=false, threads=true)
+    Hd = assemble_hmatrix(K, Xclt, Yclt; adm, comp, distributed=true, threads=false)
     x = rand(n)
     y = rand(m)
     @test H * x ≈ Hd * x
