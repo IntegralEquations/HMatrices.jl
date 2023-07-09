@@ -250,6 +250,10 @@ function Base.Matrix{T}(hmat::HMatrix; global_index) where {T}
     end
 end
 
+
+# deprecate assemble_hmat
+@deprecate assemble_hmat assemble_hmatrix
+
 """
     assemble_hmat(K,rowtree,coltree;adm=StrongAdmissibilityStd(),comp=PartialACA(),threads=true,distributed=false,global_index=true)
     assemble_hmat(K::KernelMatrix;threads=true,distributed=false,global_index=true,[rtol],[atol],[rank])
@@ -265,7 +269,7 @@ It is assumed that `K` supports `getindex(K,i,j)`, and that comp can be called
 as `comp(K,irange::UnitRange,jrange::UnitRange)` to produce a compressed version
 of `K[irange,jrange]` in the form of an [`RkMatrix`](@ref).
 """
-function assemble_hmat(K, rowtree, coltree; adm=StrongAdmissibilityStd(3),
+function assemble_hmatrix(K, rowtree, coltree; adm=StrongAdmissibilityStd(3),
                        comp=PartialACA(),
                        global_index=use_global_index(), threads=use_threads(),
                        distributed=false)
@@ -292,7 +296,7 @@ function assemble_hmat(K, rowtree, coltree; adm=StrongAdmissibilityStd(3),
     end
 end
 
-function assemble_hmat(K::AbstractKernelMatrix; atol=0, rank=typemax(Int),
+function assemble_hmatrix(K::AbstractKernelMatrix; atol=0, rank=typemax(Int),
                        rtol=atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
                        kwargs...)
     comp = PartialACA(; rtol, atol, rank)
@@ -301,7 +305,7 @@ function assemble_hmat(K::AbstractKernelMatrix; atol=0, rank=typemax(Int),
     Y = colelements(K)
     Xclt = ClusterTree(X)
     Yclt = ClusterTree(Y)
-    return assemble_hmat(K, Xclt, Yclt; adm, comp, kwargs...)
+    return assemble_hmatrix(K, Xclt, Yclt; adm, comp, kwargs...)
 end
 
 """

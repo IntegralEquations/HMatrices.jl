@@ -75,7 +75,7 @@ export
 # functions
       compression_ratio,
       print_tree,
-      assemble_hmat,
+      assemble_hmatrix,
 # macros
       @hprofile
 

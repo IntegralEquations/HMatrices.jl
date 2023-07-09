@@ -138,7 +138,7 @@ function _assemble_hmat_distributed(K, rtree, ctree; adm=StrongAdmissibilityStd(
     @info "Assembling distributed HMatrix on $(length(leaves)) processes"
     @sync for (k, leaf) in enumerate(leaves)
         pid = wids[k] # id of k-th worker
-        r = @spawnat pid assemble_hmat(K, rowtree(leaf), coltree(leaf); adm, comp,
+        r = @spawnat pid assemble_hmatrix(K, rowtree(leaf), coltree(leaf); adm, comp,
                                        global_index, threads, distributed=false)
         leaf.data = RemoteHMatrix{R,T}(r)
     end
