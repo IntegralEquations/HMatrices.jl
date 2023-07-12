@@ -3,7 +3,7 @@
 !!! warning
     This is still an experimental feature!
 
-When calling [`assemble_hmat`](@ref), the keyword argument `distributed` can be
+When calling [`assemble_hmatrix`](@ref), the keyword argument `distributed` can be
 set to `true` in order to generate a `DHMatrix` object. The main
 difference between an `HMatrix` and a `DHMatrix` is that the leaves of a
 `DHMatrix` represent a remote reference to an `HMatrix` possibly stored on a
@@ -32,7 +32,7 @@ function G(x,y)
     1/(8π*μ) * (1/d*I + r*transpose(r)/d^3)
 end
 K = KernelMatrix(G,X,Y)
-H = assemble_hmat(K;atol=1e-4,distributed=true,threads=false)
+H = assemble_hmatrix(K;atol=1e-4,distributed=true,threads=false)
 ```
 
 **TODO**: add an interactive notebook example 

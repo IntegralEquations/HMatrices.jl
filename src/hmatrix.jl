@@ -254,8 +254,8 @@ end
 @deprecate assemble_hmat assemble_hmatrix
 
 """
-    assemble_hmat([T,], K,rowtree,coltree;adm=StrongAdmissibilityStd(),comp=PartialACA(),threads=true,distributed=false,global_index=true)
-    assemble_hmat([T,], K::KernelMatrix;threads=true,distributed=false,global_index=true,[rtol],[atol],[rank])
+    assemble_hmatrix([T,], K,rowtree,coltree;adm=StrongAdmissibilityStd(),comp=PartialACA(),threads=true,distributed=false,global_index=true)
+    assemble_hmatrix([T,], K::KernelMatrix;threads=true,distributed=false,global_index=true,[rtol],[atol],[rank])
 
 Main routine for assembling a hierarchical matrix. The argument `K` represents
 the matrix to be approximated, `rowtree` and `coltree` are tree structure
@@ -319,7 +319,7 @@ end
 Construct an empty `HMatrix` with `rowtree` and `coltree` using the
 admissibility condition `adm`. This function builds the skeleton for the
 hierarchical matrix, but **does not compute `data`** field in the blocks. See
-[`assemble_hmat`](@ref) for assembling a hierarhical matrix.
+[`assemble_hmatrix`](@ref) for assembling a hierarhical matrix.
 """
 function HMatrix{T}(rowtree::R, coltree::R, adm) where {R,T}
     #build root

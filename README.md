@@ -49,7 +49,7 @@ be costly both in terms of memory and flops. Instead, we can construct an
 approximation to `K` as a hierarchical matrix using:
 
 ```julia
-H = assemble_hmat(K;atol=1e-6)
+H = assemble_hmatrix(K;atol=1e-6)
 ```
 
 > **Tip**: For a smaller problem size (say `m=10_000`), you may try 

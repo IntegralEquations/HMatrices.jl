@@ -42,20 +42,20 @@ begin
 end
 
 # ╔═╡ 99041c6a-c12f-4a09-8bfd-cf769fd258a6
-H = assemble_hmat(K, Xclt, Yclt; threads=false)
+H = assemble_hmatrix(K, Xclt, Yclt; threads=false)
 
 # ╔═╡ 02d89923-e478-4778-8b80-eaa3357a6a8c
-b = @benchmark assemble_hmat($K, $Xclt, $Yclt; threads=false)
+b = @benchmark assemble_hmatrix($K, $Xclt, $Yclt; threads=false)
 
 # ╔═╡ fca099bf-25c0-4ee8-b3f0-c042c4e5fde3
 begin
     Xp = Yp = root_elements(Xclt)
     Kp = KernelMatrix(G, Xp, Yp)
-    Hp = assemble_hmat(Kp, Xclt, Yclt; threads=false, global_index=false)
+    Hp = assemble_hmatrix(Kp, Xclt, Yclt; threads=false, global_index=false)
 end
 
 # ╔═╡ 37ed939e-1738-4ade-85d7-526c3c4ab536
-bp = @benchmark assemble_hmat($Kp, Xclt, Yclt; threads=false, global_index=false)
+bp = @benchmark assemble_hmatrix($Kp, Xclt, Yclt; threads=false, global_index=false)
 
 # ╔═╡ c6729646-0b6c-4ea2-b692-62e1e8f6b97c
 begin
@@ -138,7 +138,7 @@ K_{i,j} = G(\boldsymbol{x}_i,\boldsymbol{y}_j), \quad \mbox{for} \quad \boldsymb
 ```
 where $X=\{\boldsymbol{x}_k\}_{k=1}^m$ and $Y=\{\boldsymbol{y}_k\}_{k=1}^n$ are sets of points in $\mathbb{R}^3$ and $G(\boldsymbol{x},\boldsymbol{y}) = \frac{1}{4\pi ||\boldsymbol{x} - \boldsymbol{y} ||}$ is the Laplace's freespace Greens function.
 
-After defining the point clouds $X$ and $Y$ (and the required tree data structures to cluster them) we will implement both a simple as well as a more complex (vectorized) implementation of this kernel matrix. 
+After defining the point clouds $X$ and $Y$ (and the required tree data structures to cluster them) we will implement both a simple as well as a more complex (vectorized) implementation of this kernel matrix.
 
 !!! note "Singular kernels"
 	To avoid dealing with singularity at $\boldsymbol{x} = \boldsymbol{y}$, we will 		 simply add a small quantity `EPS = 1e-8`  to the distance. In an actual boundary integral equation solver, some special treatment is usually required to handle entries with $\boldsymbol{x} \approx \boldsymbol{y}$.
@@ -214,7 +214,7 @@ The `LaplaceMatrix` struct above has a vectorized implementatio of `getindex` fo
 # ╔═╡ 71208d87-a9ed-410e-bad1-f770fc84d4db
 begin
     Kv = LaplaceMatrixVec(Xp, Yp)
-    Hv = assemble_hmat(Kv, Xclt, Yclt; global_index=false, threads=false)
+    Hv = assemble_hmatrix(Kv, Xclt, Yclt; global_index=false, threads=false)
 end
 
 # ╔═╡ 6eaa63e3-755d-482a-a113-98312b6f6fb1
@@ -223,7 +223,7 @@ Benchmarking the new implementation yields:
 """
 
 # ╔═╡ 59fda22e-0547-4845-9207-31c7b526d2f6
-bv = @benchmark assemble_hmat($Kv, Xclt, Yclt; threads=false, global_index=false)
+bv = @benchmark assemble_hmatrix($Kv, Xclt, Yclt; threads=false, global_index=false)
 
 # ╔═╡ 0b967aaf-271c-4153-acd6-2e5acff8dc75
 md"""

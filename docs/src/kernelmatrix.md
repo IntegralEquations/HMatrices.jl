@@ -32,13 +32,13 @@ K = KernelMatrix(G,X,Y)
 Compressing `K` is now as simple as:
 
 ```@example kernel-matrix
-H = assemble_hmat(K;rtol=1e-6)
+H = assemble_hmatrix(K;rtol=1e-6)
 ```
 
 It is worth noting that several *default* choices are made during the
 compression above. See the [Assembling and `HMatrix`](@ref
 assemble-generic-subsection) section or the documentation of
-[`assemble_hmat`](@ref) for information on how to obtain a more granular control
+[`assemble_hmatrix`](@ref) for information on how to obtain a more granular control
 of the assembling stage.
 
 As before, you can multiply `H` by a vector, or do an `lu` factorization of it.
@@ -67,7 +67,7 @@ function G(x,y)
     1/(8π*μ) * (1/d*I + r*transpose(r)/d^3)
 end
 K = KernelMatrix(G,X,Y)
-H = assemble_hmat(K;atol=1e-4)
+H = assemble_hmatrix(K;atol=1e-4)
 ```
 
 You can now multiply `H` by a density `σ`, where `σ` is a `Vector` of
@@ -95,7 +95,7 @@ y[i] - sum(K[i,j]*σ[j] for j in 1:m)
 A more efficient implementation of your kernel `K::AbstractKernelMatrix` can
 sometimes lead to faster *assembling* times. In particular, providing a permuted
 kernel `Kp` using the local indexing system of the `HMatrix` (and setting the
-keyword argument `global_index=false` in `assemble_hmat`) avoids frequent
+keyword argument `global_index=false` in `assemble_hmatrix`) avoids frequent
 unnecessary index permutations, and can facilitate vectorization. This is
 because the permuted kernel `Kp` will be called through
 `Kp[I::UnitRange,J::UnitRange]` to fill in the dense blocks of the matrix, through

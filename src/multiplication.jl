@@ -554,7 +554,7 @@ end
 function _hgemv_threads!(C::AbstractVector, B::AbstractVector, partition, offset)
     nt = Threads.nthreads()
     # make `nt` copies of C and run in parallel
-    buffers = Channel{typeof(C)}(nt)
+    buffers = Channel{typeof(zero(C))}(nt)
     foreach(_ -> put!(buffers, zero(C)), 1:nt)
     @sync for p in partition
         for block in p
