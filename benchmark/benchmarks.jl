@@ -61,22 +61,23 @@ kernels = [("Laplace", laplace_matrix(X, X), true),
 for (name, K, p) in kernels
     SUITE[name] = BenchmarkGroup([name, N])
     # bench assemble
-    SUITE[name]["assemble cpu"] = @benchmarkable assemble_hmatrix($K, $Xclt, $Xclt; adm=$adm,
-                                                               comp=$comp, threads=false,
-                                                               distributed=false,
-                                                               global_index=$p)
+    SUITE[name]["assemble cpu"] = @benchmarkable assemble_hmatrix($K, $Xclt, $Xclt;
+                                                                  adm=$adm,
+                                                                  comp=$comp, threads=false,
+                                                                  distributed=false,
+                                                                  global_index=$p)
     SUITE[name]["assemble threads"] = @benchmarkable assemble_hmatrix($K, $Xclt, $Xclt;
-                                                                   adm=$adm, comp=$comp,
-                                                                   threads=true,
-                                                                   distributed=false,
-                                                                   global_index=$p)
+                                                                      adm=$adm, comp=$comp,
+                                                                      threads=true,
+                                                                      distributed=false,
+                                                                      global_index=$p)
     # SUITE[name]["assemble procs"] = @benchmarkable assemble_hmatrix($K, $Xclt, $Xclt; adm = $adm, comp = $comp, threads = false, distributed = true, global_index = $p)
     # bench gemv only for regular case since the vectorized case should be the same
     if p
         x = rand(eltype(K), N)
         y = zero(x)
         H = assemble_hmatrix(K, Xclt, Xclt; adm, comp, threads=true, distributed=false,
-                          global_index=p)
+                             global_index=p)
         SUITE[name]["gemv cpu"] = @benchmarkable mul!($y, $H, $x, $1, $0; threads=false,
                                                       global_index=$p)
         SUITE[name]["gemv threads"] = @benchmarkable mul!($y, $H, $x, $1, $0; threads=true,
