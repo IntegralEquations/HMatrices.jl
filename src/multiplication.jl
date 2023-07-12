@@ -505,7 +505,7 @@ function mul!(y::AbstractVector, A::HMatrix, x::AbstractVector, a::Number=1, b::
         @timeit_debug "threaded multiplication" begin
             p = CACHED_PARTITIONS[A]
             # _hgemv_static_partition!(y, x, p.partition, offset)
-            _hgemv_threads!(y,x,p.partition,offset)  # threaded implementation
+            _hgemv_threads!(y, x, p.partition, offset)  # threaded implementation
         end
     else
         @timeit_debug "serial multiplication" begin
