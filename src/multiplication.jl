@@ -504,8 +504,8 @@ function mul!(y::AbstractVector, A::HMatrix, x::AbstractVector, a::Number=1, b::
         end
         @timeit_debug "threaded multiplication" begin
             p = CACHED_PARTITIONS[A]
-            _hgemv_static_partition!(y, x, p.partition, offset)
-            # _hgemv_threads!(y,x,p.partition,offset)  # threaded implementation
+            # _hgemv_static_partition!(y, x, p.partition, offset)
+            _hgemv_threads!(y,x,p.partition,offset)  # threaded implementation
         end
     else
         @timeit_debug "serial multiplication" begin
@@ -554,18 +554,20 @@ end
 function _hgemv_threads!(C::AbstractVector, B::AbstractVector, partition, offset)
     nt = Threads.nthreads()
     # make `nt` copies of C and run in parallel
-    Cthreads = [zero(C) for _ in 1:nt]
+    buffers = Channel{typeof(C)}(nt)
+    foreach(_ -> put!(buffers, copy(C)), 1:nt)
     @sync for p in partition
         for block in p
             Threads.@spawn begin
-                id = Threads.threadid()
-                _hgemv_recursive!(Cthreads[id], block, B, offset)
+                buffer = take!(buffers) # local buffer
+                _hgemv_recursive!(buffer, block, B, offset)
+                put!(buffers, buffer)
             end
         end
     end
     # reduce
-    for Ct in Cthreads
-        axpy!(1, Ct, C)
+    for buffer in buffers
+        axpy!(1, buffer, C)
     end
     return C
 end
@@ -576,12 +578,12 @@ function _hgemv_static_partition!(C::AbstractVector, B::AbstractVector, partitio
     mutex = ReentrantLock()
     np = length(partition)
     nt = Threads.nthreads()
-    Cthreads = [zero(C) for _ in 1:nt]
+    buffers = Channel{typeof(C)}(nt)
+    foreach(_ -> put!(buffers, copy(C)), 1:nt)
     @sync for n in 1:np
         Threads.@spawn begin
-            id = Threads.threadid()
             leaves = partition[n]
-            Cloc = Cthreads[id]
+            Cloc = take!(buffers)
             for leaf in leaves
                 irange = rowrange(leaf) .- offset[1]
                 jrange = colrange(leaf) .- offset[2]
@@ -596,6 +598,7 @@ function _hgemv_static_partition!(C::AbstractVector, B::AbstractVector, partitio
             lock(mutex) do
                 return axpy!(1, Cloc, C)
             end
+            put!(buffers, Cloc)
         end
     end
     return C
