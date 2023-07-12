@@ -23,8 +23,8 @@ elements. If `K` is a `KernelMatrix`, then `K[i,j] = f(X[i],Y[j])` where
 
 # Examples
 ```julia
-X = rand(Geometry.Point2D,100)
-Y = rand(Geometry.Point2D,100)
+X = rand(SVector{2,Float64},2)
+Y = rand(SVector{2,Float64},2)
 K = KernelMatrix(X,Y) do x,y
     sum(x+y)
 end

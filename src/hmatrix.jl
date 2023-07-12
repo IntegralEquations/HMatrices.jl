@@ -254,8 +254,8 @@ end
 @deprecate assemble_hmat assemble_hmatrix
 
 """
-    assemble_hmat(K,rowtree,coltree;adm=StrongAdmissibilityStd(),comp=PartialACA(),threads=true,distributed=false,global_index=true)
-    assemble_hmat(K::KernelMatrix;threads=true,distributed=false,global_index=true,[rtol],[atol],[rank])
+    assemble_hmat([T,], K,rowtree,coltree;adm=StrongAdmissibilityStd(),comp=PartialACA(),threads=true,distributed=false,global_index=true)
+    assemble_hmat([T,], K::KernelMatrix;threads=true,distributed=false,global_index=true,[rtol],[atol],[rank])
 
 Main routine for assembling a hierarchical matrix. The argument `K` represents
 the matrix to be approximated, `rowtree` and `coltree` are tree structure
@@ -267,12 +267,14 @@ blocks.
 It is assumed that `K` supports `getindex(K,i,j)`, and that comp can be called
 as `comp(K,irange::UnitRange,jrange::UnitRange)` to produce a compressed version
 of `K[irange,jrange]` in the form of an [`RkMatrix`](@ref).
+
+The type paramter `T` is used to specify the type of the entries of the matrix,
+by default is inferred from `K` using `eltype(K)`.
 """
-function assemble_hmatrix(K, rowtree, coltree; adm=StrongAdmissibilityStd(3),
+function assemble_hmatrix(::Type{T}, K, rowtree, coltree; adm=StrongAdmissibilityStd(3),
                           comp=PartialACA(),
                           global_index=use_global_index(), threads=use_threads(),
-                          distributed=false)
-    T = eltype(K)
+                          distributed=false) where {T}
     if distributed
         _assemble_hmat_distributed(K, rowtree, coltree; adm, comp, global_index, threads)
     else
@@ -295,11 +297,15 @@ function assemble_hmatrix(K, rowtree, coltree; adm=StrongAdmissibilityStd(3),
     end
 end
 
+function assemble_hmatrix(K::AbstractMatrix, args...; kwargs...)
+    assemble_hmatrix(eltype(K), K, args...; kwargs...)
+end
+
 function assemble_hmatrix(K::AbstractKernelMatrix; atol=0, rank=typemax(Int),
                           rtol=atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
                           kwargs...)
     comp = PartialACA(; rtol, atol, rank)
-    adm = StrongAdmissibilityStd(3)
+    adm = StrongAdmissibilityStd()
     X = rowelements(K)
     Y = colelements(K)
     Xclt = ClusterTree(X)
