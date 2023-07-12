@@ -505,7 +505,7 @@ function mul!(y::AbstractVector, A::HMatrix, x::AbstractVector, a::Number=1, b::
         @timeit_debug "threaded multiplication" begin
             p = CACHED_PARTITIONS[A]
             # _hgemv_static_partition!(y, x, p.partition, offset)
-            _hgemv_threads!(y, x, p.partition, offset)  # threaded implementation
+            _hgemv_threads!(y,x,p.partition,offset)  # threaded implementation
         end
     else
         @timeit_debug "serial multiplication" begin
@@ -555,7 +555,7 @@ function _hgemv_threads!(C::AbstractVector, B::AbstractVector, partition, offset
     nt = Threads.nthreads()
     # make `nt` copies of C and run in parallel
     buffers = Channel{typeof(C)}(nt)
-    foreach(_ -> put!(buffers, copy(C)), 1:nt)
+    foreach(_ -> put!(buffers, zero(C)), 1:nt)
     @sync for p in partition
         for block in p
             Threads.@spawn begin
@@ -566,6 +566,7 @@ function _hgemv_threads!(C::AbstractVector, B::AbstractVector, partition, offset
         end
     end
     # reduce
+    close(buffers)
     for buffer in buffers
         axpy!(1, buffer, C)
     end
