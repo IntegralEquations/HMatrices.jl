@@ -298,7 +298,7 @@ function assemble_hmatrix(::Type{T}, K, rowtree, coltree; adm=StrongAdmissibilit
 end
 
 function assemble_hmatrix(K::AbstractMatrix, args...; kwargs...)
-    assemble_hmatrix(eltype(K), K, args...; kwargs...)
+    return assemble_hmatrix(eltype(K), K, args...; kwargs...)
 end
 
 function assemble_hmatrix(K::AbstractKernelMatrix; atol=0, rank=typemax(Int),
