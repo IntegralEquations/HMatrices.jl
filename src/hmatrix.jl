@@ -274,7 +274,8 @@ by default is inferred from `K` using `eltype(K)`.
 function assemble_hmatrix(::Type{T}, K, rowtree, coltree; adm=StrongAdmissibilityStd(3),
                           comp=PartialACA(),
                           global_index=use_global_index(), threads=use_threads(),
-                          distributed=false) where {T}
+                          distributed=false,
+                          verbose=false) where {T}
     if distributed
         _assemble_hmat_distributed(K, rowtree, coltree; adm, comp, global_index, threads)
     else
@@ -287,10 +288,10 @@ function assemble_hmatrix(::Type{T}, K, rowtree, coltree; adm=StrongAdmissibilit
         # now assemble the data in the blocks
         @timeit_debug "assembling hmatrix" begin
             if threads
-                @info "Assembling HMatrix on $(Threads.nthreads()) threads"
+                verbose && @info "Assembling HMatrix on $(Threads.nthreads()) threads"
                 _assemble_threads!(hmat, K, comp)
             else
-                @info "Assembling HMatrix on 1 thread"
+                verbose && @info "Assembling HMatrix on 1 thread"
                 _assemble_cpu!(hmat, K, comp)
             end
         end
