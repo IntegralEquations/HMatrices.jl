@@ -22,7 +22,7 @@ import Base: Matrix, adjoint, parent
 If set to false, the `getindex(H,i,j)` method will throw an error on
 `AbstractHMatrix`.
 """
-const ALLOW_GETINDEX = Ref(true)
+const ALLOW_GETINDEX = Ref(false)
 
 """
     use_threads()::Bool
