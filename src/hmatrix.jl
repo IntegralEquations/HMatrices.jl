@@ -1,3 +1,8 @@
+"""
+    abstract type AbstractHMatrix{T} <: AbstractMatrix{T}
+
+Abstract type for hierarchical matrices.
+"""
 abstract type AbstractHMatrix{T} <: AbstractMatrix{T} end
 
 function Base.getindex(H::AbstractHMatrix, i::Int, j::Int)
