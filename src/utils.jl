@@ -122,21 +122,24 @@ function hilbert_points(n::Integer)
 end
 
 """
-    disable_getindex()
+    allow_getindex(bool)
 
-Call this function to disable the `getindex` method on `AbstractHMatrix`. This
-is useful to avoid performance pitfalls associated with linear algebra methods
-falling back to a generic implementation which uses the `getindex` method.
-Calling `getindex(H,i,j)` will error after calling this function.
-"""
-disable_getindex() = (ALLOW_GETINDEX[] = false)
+Call this function to enable/disable the `getindex` method on `AbstractHMatrix`
+and `RkMatrix`.
 
+By default, calling `getindex` on these types will error to avoid performance
+pitfalls associated with linear algebra methods falling back to a generic
+implementation which uses the `getindex` method.
 """
-    enable_getindex()
+allow_getindex(bool) = (ALLOW_GETINDEX[] = bool)
 
-The opposite of [`disable_getindex`](@ref).
+const GET_INDEX_ERROR_MSG = """
+method `getindex(::Union{AbstractHMatrix,RkMatrix},args...)` has been disabled
+to avoid performance pitfalls. Unless you made an explicit call to `getindex`,
+this error usually means that a linear algebra routine involving an
+`AbstractHMatrix` has fallen back to a generic implementation. Calling
+`allow_getindex(true)` fixes this error.
 """
-enable_getindex() = (ALLOW_GETINDEX[] = true)
 
 """
     filter_tree(f,tree,isterminal=true)

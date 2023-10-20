@@ -78,7 +78,9 @@ You can now multiply `H` by a density `σ`, where `σ` is a `Vector` of
 y = H*σ
 # test the output agains the exact value for a given `i`
 i = 42
-y[i] - sum(K[i,j]*σ[j] for j in 1:m)
+exact = sum(K[i,j]*σ[j] for j in 1:m)
+@assert norm(y[i] - exact) < 1e-4 # hide
+@show y[i] - exact
 ```
 
 !!! note

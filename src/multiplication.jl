@@ -533,16 +533,11 @@ function _hgemv_recursive!(C::AbstractVector, A::Union{HMatrix,Adjoint{<:Any,<:H
         irange = rowrange(A) .- offset[1]
         jrange = colrange(A) .- offset[2]
         d = data(A)
-        if T <: SMatrix
-            # FIXME: there is bug with gemv and static arrays, so we convert
-            # them to matrices of n × 1
-            # (https://github.com/JuliaArrays/StaticArrays.jl/issues/966#issuecomment-943679214).
-            mul!(view(C, irange, 1:1), d, view(B, jrange, 1:1), 1, 1)
-        else
-            # C and B are the "global" vectors handled by the caller, so a view
-            # is needed.
-            mul!(view(C, irange), d, view(B, jrange), 1, 1)
-        end
+        # FIXME: can we run into this?
+        # (https://github.com/JuliaArrays/StaticArrays.jl/issues/966#issuecomment-943679214).
+        # C and B are the "global" vectors handled by the caller, so a view
+        # is needed.
+        mul!(view(C, irange), d, view(B, jrange), 1, 1)
     else
         for block in children(A)
             _hgemv_recursive!(C, block, B, offset)
@@ -588,11 +583,7 @@ function _hgemv_static_partition!(C::AbstractVector, B::AbstractVector, partitio
                 irange = rowrange(leaf) .- offset[1]
                 jrange = colrange(leaf) .- offset[2]
                 data = leaf.data
-                if T <: SVector
-                    mul!(view(Cloc, irange, 1:1), data, view(B, jrange, 1:1), 1, 1)
-                else
-                    mul!(view(Cloc, irange), data, view(B, jrange), 1, 1)
-                end
+                mul!(view(Cloc, irange), data, view(B, jrange), 1, 1)
             end
             # reduction
             lock(mutex) do
