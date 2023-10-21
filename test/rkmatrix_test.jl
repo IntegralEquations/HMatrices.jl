@@ -21,8 +21,8 @@ using HMatrices: RkMatrix, compression_ratio
         @test rank(R) == r
         @test Matrix(R) ≈ M
         @test compression_ratio(R) ≈ m * n / (r * (m + n))
-        @test R[:, 5] ≈ M[:, 5]
-        @test Ra[:, 5] ≈ Ma[:, 5]
+        @test HMatrices.getcol(R,5) ≈ M[:, 5]
+        @test HMatrices.getcol(Ra,5) ≈ Ma[:, 5]
     end
 
     @testset "Matrix entries" begin

@@ -10,26 +10,20 @@ to get the respective adjoints.
 mutable struct RkMatrix{T} <: AbstractMatrix{T}
     A::Matrix{T}
     B::Matrix{T}
-    buffer::Vector{T} # used for gemv routines to avoid allocations
     function RkMatrix(A::Matrix{T}, B::Matrix{T}) where {T}
         @assert size(A, 2) == size(B, 2) "second dimension of `A` and `B` must match"
         m, r = size(A)
         n = size(B, 1)
         if r * (m + n) >= m * n
             @debug "Inefficient RkMatrix:" size(A) size(B)
-            # error("Inefficient RkMatrix")
         end
-        buffer = Vector{T}(undef, r)
-        return new{T}(A, B, buffer)
+        return new{T}(A, B)
     end
 end
 RkMatrix(A, B) = RkMatrix(promote(A, B)...)
 
 function Base.setproperty!(R::RkMatrix, s::Symbol, mat::Matrix)
     setfield!(R, s, mat)
-    # resize buffer
-    r = size(mat, 2)
-    resize!(R.buffer, r)
     return R
 end
 
@@ -59,9 +53,6 @@ function Base.getindex(rmat::RkMatrix, i::Int, j::Int)
     end
     return acc
 end
-
-# some "fast" ways of computing a column of R and row of ajoint(R)
-Base.getindex(R::RkMatrix, ::Colon, j::Int) = getcol(R, j)
 
 """
     getcol!(col,M::AbstractMatrix,j)
@@ -95,8 +86,6 @@ function getcol(Ra::Adjoint{<:Any,<:RkMatrix}, j::Int)
     col = zeros(T, m)
     return getcol!(col, Ra, j)
 end
-
-Base.getindex(Ra::Adjoint{<:Any,<:RkMatrix}, ::Colon, j::Int) = getcol(Ra, j)
 
 """
     RkMatrix(A::Vector{<:Vector},B::Vector{<:Vector})
