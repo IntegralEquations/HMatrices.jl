@@ -557,6 +557,18 @@ function mul!(
     return y
 end
 
+# FIXME: for matrix multiplication, we slice into columns and call the gemv
+# routine. This is a somewhat inneficient way of doing things, but it is simple
+# enough.
+function mul!(Y::AbstractMatrix, A::HMatrix, X::AbstractMatrix, a::Number=1, b::Number=0;
+              kwargs...)
+    size(Y, 2) == size(X, 2) || Throw(DimensionMismatch("size(Y,2) != size(X,2)"))
+    for k in 1:size(Y, 2)
+        mul!(view(Y, :, k), A, view(X, :, k), a, b; kwargs...)
+    end
+    return Y
+end
+
 """
     _hgemv_recursive!(C,A,B,offset)
 
