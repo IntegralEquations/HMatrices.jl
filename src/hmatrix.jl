@@ -194,15 +194,19 @@ function _show(io, hmat)
     leaves = collect(AbstractTrees.Leaves(hmat))
     sparse_leaves = filter(isadmissible, leaves)
     dense_leaves = filter(!isadmissible, leaves)
-    @printf(io, "\n\t number of leaves: %i (%i admissible + %i full)", length(leaves),
-            length(sparse_leaves),
-            length(dense_leaves))
-    rmin, rmax = isempty(sparse_leaves) ? (-1, -1) :
-                 extrema(x -> rank(x.data), sparse_leaves)
+    @printf(
+        io,
+        "\n\t number of leaves: %i (%i admissible + %i full)",
+        length(leaves),
+        length(sparse_leaves),
+        length(dense_leaves)
+    )
+    rmin, rmax =
+        isempty(sparse_leaves) ? (-1, -1) : extrema(x -> rank(x.data), sparse_leaves)
     @printf(io, "\n\t min rank of sparse blocks : %i", rmin)
     @printf(io, "\n\t max rank of sparse blocks : %i", rmax)
-    dense_min, dense_max = isempty(dense_leaves) ? (-1, -1) :
-                           extrema(x -> length(x.data), dense_leaves)
+    dense_min, dense_max =
+        isempty(dense_leaves) ? (-1, -1) : extrema(x -> length(x.data), dense_leaves)
     @printf(io, "\n\t min length of dense blocks : %i", dense_min)
     @printf(io, "\n\t max length of dense blocks : %i", dense_max)
     points_per_leaf = map(length, leaves)
@@ -222,7 +226,7 @@ given in the global indexing system (see [`HMatrix`](@ref) for more
 information); otherwise the *local* indexing system induced by the row and
 columns trees are used.
 """
-Matrix(hmat::HMatrix; global_index=true) = Matrix{eltype(hmat)}(hmat; global_index)
+Matrix(hmat::HMatrix; global_index = true) = Matrix{eltype(hmat)}(hmat; global_index)
 function Base.Matrix{T}(hmat::HMatrix; global_index) where {T}
     M = zeros(T, size(hmat)...)
     piv = pivot(hmat)
@@ -261,10 +265,17 @@ of `K[irange,jrange]` in the form of an [`RkMatrix`](@ref).
 The type paramter `T` is used to specify the type of the entries of the matrix,
 by default is inferred from `K` using `eltype(K)`.
 """
-function assemble_hmatrix(::Type{T}, K, rowtree, coltree; adm=StrongAdmissibilityStd(3),
-                          comp=PartialACA(),
-                          global_index=use_global_index(), threads=use_threads(),
-                          distributed=false) where {T}
+function assemble_hmatrix(
+    ::Type{T},
+    K,
+    rowtree,
+    coltree;
+    adm = StrongAdmissibilityStd(3),
+    comp = PartialACA(),
+    global_index = use_global_index(),
+    threads = use_threads(),
+    distributed = false,
+) where {T}
     if distributed
         _assemble_hmat_distributed(K, rowtree, coltree; adm, comp, global_index, threads)
     else
@@ -291,9 +302,13 @@ function assemble_hmatrix(K::AbstractMatrix, args...; kwargs...)
     return assemble_hmatrix(eltype(K), K, args...; kwargs...)
 end
 
-function assemble_hmatrix(K::AbstractKernelMatrix; atol=0, rank=typemax(Int),
-                          rtol=atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
-                          kwargs...)
+function assemble_hmatrix(
+    K::AbstractKernelMatrix;
+    atol = 0,
+    rank = typemax(Int),
+    rtol = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
+    kwargs...,
+)
     comp = PartialACA(; rtol, atol, rank)
     adm = StrongAdmissibilityStd()
     X = rowelements(K)
@@ -335,8 +350,10 @@ function _build_block_structure!(adm, current_node::HMatrix{R,T}) where {R,T}
         current_node.admissible = false
         row_children = X.children
         col_children = Y.children
-        children = [HMatrix{R,T}(r, c, false, nothing, nothing, current_node)
-                    for r in row_children, c in col_children]
+        children = [
+            HMatrix{R,T}(r, c, false, nothing, nothing, current_node) for
+            r in row_children, c in col_children
+        ]
         current_node.children = children
         for child in children
             _build_block_structure!(adm, child)
@@ -385,7 +402,7 @@ function _assemble_threads!(hmat, K, comp)
     blocks = filter_tree(hmat, true) do x
         return (isleaf(x) || length(x) < 1000 * 1000)
     end
-    sort!(blocks; lt=(x, y) -> length(x) < length(y), rev=true)
+    sort!(blocks; lt = (x, y) -> length(x) < length(y), rev = true)
     n = length(blocks)
     @sync for i in 1:n
         Threads.@spawn _assemble_cpu!(blocks[i], K, comp)
@@ -418,8 +435,10 @@ Base.size(adjH::Adjoint{<:Any,<:HMatrix}) = reverse(size(adjH.parent))
 function Base.show(io::IO, adjH::Adjoint{<:Any,<:HMatrix})
     hmat = parent(adjH)
     isclean(hmat) || return print(io, "Dirty HMatrix")
-    print(io,
-          "Adjoint HMatrix of $(eltype(hmat)) with range $(rowrange(adjH)) × $(colrange(adjH))")
+    print(
+        io,
+        "Adjoint HMatrix of $(eltype(hmat)) with range $(rowrange(adjH)) × $(colrange(adjH))",
+    )
     _show(io, hmat)
     return io
 end
@@ -454,8 +473,7 @@ end
 Two blocks are admissible under this condition if the `distance`
 between them is positive.
 """
-struct WeakAdmissibilityStd
-end
+struct WeakAdmissibilityStd end
 
 (adm::WeakAdmissibilityStd)(left_node, right_node) = distance(left_node, right_node) > 0
 
@@ -484,7 +502,7 @@ function isclean(H::HMatrix)
     return true
 end
 
-function depth(tree::HMatrix, acc=0)
+function depth(tree::HMatrix, acc = 0)
     if isroot(tree)
         return acc
     else

@@ -17,16 +17,16 @@ Y = X
 
 K = laplace_matrix(X, X)
 
-splitter = CardinalitySplitter(; nmax=50)
+splitter = CardinalitySplitter(; nmax = 50)
 Xclt = ClusterTree(X, splitter)
 Yclt = ClusterTree(Y, splitter)
 adm = StrongAdmissibilityStd(3)
-comp = PartialACA(; atol=1e-10);
-H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads=false, distributed=false)
+comp = PartialACA(; atol = 1e-10);
+H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false, distributed = false)
 H_full = Matrix(H)
 
 ##
-hlu = lu(H; atol=1e-5)
+hlu = lu(H; atol = 1e-5)
 y = rand(m)
 M = Matrix(K)
 exact = M \ y

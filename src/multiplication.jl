@@ -96,25 +96,33 @@ function _build_hmul_tree!(tree::HMulNode, A::HMatrix, B::HMatrix)
 end
 
 function Base.show(io::IO, ::MIME"text/plain", tree::HMulNode)
-    return print(io,
-                 "HMulNode with $(size(children(tree))) children and $(length(sources(tree))) pairs")
+    return print(
+        io,
+        "HMulNode with $(size(children(tree))) children and $(length(sources(tree))) pairs",
+    )
 end
 
 function Base.show(io::IO, tree::HMulNode)
-    return print(io,
-                 "HMulNode with $(size(children(tree))) children and $(length(sources(tree))) pairs")
+    return print(
+        io,
+        "HMulNode with $(size(children(tree))) children and $(length(sources(tree))) pairs",
+    )
 end
 
 function Base.show(io::IO, ::MIME"text/plain", tree::Adjoint{<:Any,<:HMulNode})
     p = parent(tree)
-    return print(io,
-                 "adjoint HMulNode with $(size(children(p))) children and $(length(sources(p))) pairs")
+    return print(
+        io,
+        "adjoint HMulNode with $(size(children(p))) children and $(length(sources(p))) pairs",
+    )
 end
 
 function Base.show(io::IO, tree::Adjoint{<:Any,<:HMulNode})
     p = parent(tree)
-    return print(io,
-                 "adjoint HMulNode with $(size(children(p))) children and $(length(sources(p))) pairs")
+    return print(
+        io,
+        "adjoint HMulNode with $(size(children(p))) children and $(length(sources(p))) pairs",
+    )
 end
 
 # compress the operator L = C + ∑ a*Aᵢ*Bᵢ
@@ -344,20 +352,32 @@ function _add_to_leaves!(H, R::RkMatrix)
     end
 end
 
-function _mul111!(C::Union{Matrix,SubArray,Adjoint}, A::Union{Matrix,SubArray,Adjoint},
-                  B::Union{Matrix,SubArray,Adjoint}, a::Number)
+function _mul111!(
+    C::Union{Matrix,SubArray,Adjoint},
+    A::Union{Matrix,SubArray,Adjoint},
+    B::Union{Matrix,SubArray,Adjoint},
+    a::Number,
+)
     return mul!(C, A, B, a, true)
 end
 
-function _mul112!(C::Union{Matrix,SubArray,Adjoint}, M::Union{Matrix,SubArray,Adjoint},
-                  R::RkMatrix, a::Number)
+function _mul112!(
+    C::Union{Matrix,SubArray,Adjoint},
+    M::Union{Matrix,SubArray,Adjoint},
+    R::RkMatrix,
+    a::Number,
+)
     buffer = M * R.A
     _mul111!(C, buffer, R.Bt, a)
     return C
 end
 
-function _mul113!(C::Union{Matrix,SubArray,Adjoint}, M::Union{Matrix,SubArray,Adjoint},
-                  H::HMatrix, a::Number)
+function _mul113!(
+    C::Union{Matrix,SubArray,Adjoint},
+    M::Union{Matrix,SubArray,Adjoint},
+    H::HMatrix,
+    a::Number,
+)
     T = eltype(C)
     if hasdata(H)
         mat = data(H)
@@ -380,8 +400,12 @@ function _mul113!(C::Union{Matrix,SubArray,Adjoint}, M::Union{Matrix,SubArray,Ad
     return C
 end
 
-function _mul121!(C::Union{Matrix,SubArray,Adjoint}, R::RkMatrix,
-                  M::Union{Matrix,SubArray,Adjoint}, a::Number)
+function _mul121!(
+    C::Union{Matrix,SubArray,Adjoint},
+    R::RkMatrix,
+    M::Union{Matrix,SubArray,Adjoint},
+    a::Number,
+)
     buffer = R.Bt * M
     return _mul111!(C, R.A, buffer, a)
 end
@@ -403,8 +427,12 @@ function _mul123!(C::Union{Matrix,SubArray,Adjoint}, R::RkMatrix, H::HMatrix, a:
     return C
 end
 
-function _mul131!(C::Union{Matrix,SubArray,Adjoint}, H::HMatrix,
-                  M::Union{Matrix,SubArray,Adjoint}, a::Number)
+function _mul131!(
+    C::Union{Matrix,SubArray,Adjoint},
+    H::HMatrix,
+    M::Union{Matrix,SubArray,Adjoint},
+    a::Number,
+)
     if isleaf(H)
         mat = data(H)
         if mat isa Matrix
@@ -448,8 +476,13 @@ function mul!(y::AbstractVector, R::RkMatrix, x::AbstractVector, a::Number, b::N
 end
 
 # 1.2.1
-function mul!(y::AbstractVector, adjR::Adjoint{<:Any,<:RkMatrix}, x::AbstractVector,
-              a::Number, b::Number)
+function mul!(
+    y::AbstractVector,
+    adjR::Adjoint{<:Any,<:RkMatrix},
+    x::AbstractVector,
+    a::Number,
+    b::Number,
+)
     R = parent(adjR)
     # tmp = R.At*x
     tmp = mul!(R.buffer, adjoint(R.A), x)
@@ -462,8 +495,15 @@ end
 
 Perform `y <-- H*x*a + y*b` in place.
 """
-function mul!(y::AbstractVector, A::HMatrix, x::AbstractVector, a::Number=1, b::Number=0;
-              global_index=use_global_index(), threads=use_threads())
+function mul!(
+    y::AbstractVector,
+    A::HMatrix,
+    x::AbstractVector,
+    a::Number = 1,
+    b::Number = 0;
+    global_index = use_global_index(),
+    threads = use_threads(),
+)
     # since the HMatrix represents A = inv(Pr)*H*Pc, where Pr and Pc are row and column
     # permutations, we need first to rewrite C <-- b*C + a*(inv(Pr)*H*Pc)*B as
     # C <-- inv(Pr)*(b*Pr*C + a*H*(Pc*B)). Following this rewrite, the
@@ -526,8 +566,12 @@ rowrange(A) - offset[1]` and `J = rowrange(B) - offset[2]`.
 The `offset` argument is used on the caller side to signal if the original
 hierarchical matrix had a `pivot` other than `(1,1)`.
 """
-function _hgemv_recursive!(C::AbstractVector, A::Union{HMatrix,Adjoint{<:Any,<:HMatrix}},
-                           B::AbstractVector, offset)
+function _hgemv_recursive!(
+    C::AbstractVector,
+    A::Union{HMatrix,Adjoint{<:Any,<:HMatrix}},
+    B::AbstractVector,
+    offset,
+)
     T = eltype(A)
     if isleaf(A)
         irange = rowrange(A) .- offset[1]

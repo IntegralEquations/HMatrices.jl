@@ -1,1 +1,32 @@
-style = "yas"
+# ignore = ["docs/*"]
+
+indent = 4
+margin = 92
+whitespace_typedefs = false
+always_for_in = true
+whitespace_ops_in_indices = false
+remove_extra_newlines = true
+import_to_using = false
+pipe_to_function_call = false
+short_to_long_function_def = true
+long_to_short_function_def = false
+always_use_return = true
+whitespace_in_kwargs = true
+annotate_untyped_fields_with_any = false
+format_docstrings = false
+# alignement options
+align_assignment = true
+align_struct_field = true
+align_conditional = true
+align_pair_arrow = true
+align_matrix = false
+#
+conditional_to_if = true
+normalize_line_endings = "auto"
+trailing_comma = true
+trailing_zero = true
+join_lines_based_on_source = false
+indent_submodule = true
+separate_kwargs_with_semicolon = true
+surround_whereop_typeparameters = true
+for_in_replacement = "in"

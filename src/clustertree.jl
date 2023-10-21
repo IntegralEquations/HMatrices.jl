@@ -22,8 +22,15 @@ mutable struct ClusterTree{N,T}
     glob2loc::Vector{Int}
     children::Vector{ClusterTree{N,T}}
     parent::ClusterTree{N,T}
-    function ClusterTree(els::Vector{SVector{N,T}}, container, loc_idxs,
-                         loc2glob, glob2loc, children, parent) where {N,T}
+    function ClusterTree(
+        els::Vector{SVector{N,T}},
+        container,
+        loc_idxs,
+        loc2glob,
+        glob2loc,
+        children,
+        parent,
+    ) where {N,T}
         clt = new{N,T}(els, container, loc_idxs, loc2glob, glob2loc)
         clt.children = isnothing(children) ? Vector{typeof(clt)}() : children
         clt.parent = isnothing(parent) ? clt : parent
@@ -113,9 +120,12 @@ strategy encoded in `splitter`. If `copy_elements` is set to false, the
 `elements` argument are directly stored in the `ClusterTree` and are permuted
 during the tree construction.
 """
-function ClusterTree(elements, splitter=CardinalitySplitter();
-                     copy_elements=true,
-                     threads=false)
+function ClusterTree(
+    elements,
+    splitter = CardinalitySplitter();
+    copy_elements = true,
+    threads = false,
+)
     copy_elements && (elements = deepcopy(elements))
     bbox = bounding_box(elements)
     n = length(elements)
@@ -134,7 +144,7 @@ function ClusterTree(elements, splitter=CardinalitySplitter();
     return root
 end
 
-function _build_cluster_tree!(current_node, splitter, threads, depth=0)
+function _build_cluster_tree!(current_node, splitter, threads, depth = 0)
     if should_split(current_node, depth, splitter)
         split!(current_node, splitter)
         if threads
