@@ -73,19 +73,19 @@ end
 
     @testset "serial" begin
         exact = β * y + α * H_full * x
-        approx = mul!(copy(y), H, x, α, β; threads=false, global_index=false)
+        approx = mul!(copy(y), H, x, α, β; threads = false, global_index = false)
         @test exact ≈ approx
-        exact = β * y + α * Matrix(H; global_index=true) * x
-        approx = mul!(copy(y), H, x, α, β; threads=false, global_index=true)
+        exact = β * y + α * Matrix(H; global_index = true) * x
+        approx = mul!(copy(y), H, x, α, β; threads = false, global_index = true)
         @test exact ≈ approx
     end
 
     @testset "threads" begin
         exact = β * y + α * H_full * x
-        approx = mul!(copy(y), H, x, α, β; threads=true, global_index=false)
+        approx = mul!(copy(y), H, x, α, β; threads = true, global_index = false)
         @test exact ≈ approx
-        exact = β * y + α * Matrix(H; global_index=true) * x
-        approx = mul!(copy(y), H, x, α, β; threads=false, global_index=true)
+        exact = β * y + α * Matrix(H; global_index = true) * x
+        approx = mul!(copy(y), H, x, α, β; threads = false, global_index = true)
         @test exact ≈ approx
     end
 end
