@@ -61,3 +61,31 @@ end
         @test exact ≈ approx
     end
 end
+
+@testset "gemm" begin
+    α = rand() - 0.5
+    β = rand() - 0.5
+    T = eltype(H)
+    m, n = size(H)
+    k = 10
+    x = rand(T, n, k)
+    y = rand(T, m, k)
+
+    @testset "serial" begin
+        exact = β * y + α * H_full * x
+        approx = mul!(copy(y), H, x, α, β; threads=false, global_index=false)
+        @test exact ≈ approx
+        exact = β * y + α * Matrix(H; global_index=true) * x
+        approx = mul!(copy(y), H, x, α, β; threads=false, global_index=true)
+        @test exact ≈ approx
+    end
+
+    @testset "threads" begin
+        exact = β * y + α * H_full * x
+        approx = mul!(copy(y), H, x, α, β; threads=true, global_index=false)
+        @test exact ≈ approx
+        exact = β * y + α * Matrix(H; global_index=true) * x
+        approx = mul!(copy(y), H, x, α, β; threads=false, global_index=true)
+        @test exact ≈ approx
+    end
+end
