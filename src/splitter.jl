@@ -139,7 +139,7 @@ function binary_split!(cluster::ClusterTree{N,T}, predicate::Function) where {N,
     els = root_elements(cluster)
     irange = index_range(cluster)
     n = length(irange)
-    buff = view(cluster.buffer, irange)
+    buff = view(cluster.glob2loc, irange) # use as a temporary buffer
     l2g = loc2glob(cluster)
     npts_left = 0
     npts_right = 0
@@ -169,7 +169,7 @@ function binary_split!(cluster::ClusterTree{N,T}, predicate::Function) where {N,
     left_indices = (irange.start):((irange.start) + npts_left - 1)
     right_indices = (irange.start + npts_left):(irange.stop)
     # create children
-    clt1 = ClusterTree(els, left_rec, left_indices, l2g, cluster.buffer, nothing, cluster)
-    clt2 = ClusterTree(els, right_rec, right_indices, l2g, cluster.buffer, nothing, cluster)
+    clt1 = ClusterTree(els, left_rec, left_indices, l2g, cluster.glob2loc, nothing, cluster)
+    clt2 = ClusterTree(els, right_rec, right_indices, l2g, cluster.glob2loc, nothing, cluster)
     return clt1, clt2
 end

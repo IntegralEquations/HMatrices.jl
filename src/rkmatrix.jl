@@ -33,13 +33,11 @@ function Base.setproperty!(R::RkMatrix, s::Symbol, mat::Matrix)
     return R
 end
 
+function Base.show(io::IO, ::MIME"text/plain", R::RkMatrix)
+    print(io, size(R,1), "×", size(R,2), " RkMatrix{", eltype(R), "}",  " of rank ", rank(R))
+end
+
 function Base.getindex(rmat::RkMatrix, i::Int, j::Int)
-    msg = """
-    method `getindex(::AbstractHMatrix,args...)` has been disabled to avoid
-    performance pitfalls. Unless you made an explicit call to `getindex`, this
-    error usually means that a linear algebra routine involving an
-    `AbstractHMatrix` has fallen back to a generic implementation.
-    """
     if ALLOW_GETINDEX[]
         r = rank(rmat)
         acc = zero(eltype(rmat))
@@ -47,7 +45,7 @@ function Base.getindex(rmat::RkMatrix, i::Int, j::Int)
             acc += rmat.A[i, k] * conj(rmat.B[j, k])
         end
     else
-        error(msg)
+        error(GET_INDEX_ERROR_MSG)
     end
     return acc
 end
@@ -240,3 +238,6 @@ function mul!(C::AbstractVector, Rk::RkMatrix{T}, F::AbstractVector, a::Number,
     end
     return C
 end
+
+# scalar multiplication
+Base.:*(a::Number, R::RkMatrix) = (A = a * R.A; B = copy(R.B); RkMatrix(A, B))

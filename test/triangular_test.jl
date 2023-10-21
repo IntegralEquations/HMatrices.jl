@@ -69,7 +69,7 @@ end
     ## 3.2
     exact = rdiv!(copy(R_full), UpperTriangular(H_full))
     approx = rdiv!(copy(R), UpperTriangular(H))
-    @test exact ≈ approx
+    @test exact ≈ Matrix(approx)
 
     ## 3.3
     compressor = PartialACA(; atol=1e-10)

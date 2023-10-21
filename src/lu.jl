@@ -1,6 +1,8 @@
 const NOPIVOT = VERSION >= v"1.7" ? NoPivot : Val{false}
 
-function Base.getproperty(LU::LU{<:Any,<:HMatrix}, s::Symbol)
+const HLU = LU{<:Any,<:HMatrix}
+
+function Base.getproperty(LU::HLU, s::Symbol)
     H = getfield(LU, :factors) # the underlying hierarchical matrix
     if s == :L
         return UnitLowerTriangular(H)
@@ -9,6 +11,11 @@ function Base.getproperty(LU::LU{<:Any,<:HMatrix}, s::Symbol)
     else
         return getfield(LU, s)
     end
+end
+
+function Base.show(io::IO, ::MIME"text/plain", LU::HLU)
+    H = getfield(LU, :factors) # the underlying hierarchical matrix
+    println(io, "LU factorization of $H")
 end
 
 """

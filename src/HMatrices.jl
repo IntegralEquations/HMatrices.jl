@@ -19,10 +19,10 @@ import Base: Matrix, adjoint, parent
 """
     const ALLOW_GETINDEX
 
-If set to false, the `getindex(H,i,j)` method will throw an error on
-`AbstractHMatrix`.
+If set to false (default), the `getindex(H,i,j)` method will throw an error on
+[`AbstractHMatrix`](@ref) and [`RkMatrix`](@ref).
 """
-const ALLOW_GETINDEX = Ref(true)
+const ALLOW_GETINDEX = Ref(false)
 
 """
     use_threads()::Bool

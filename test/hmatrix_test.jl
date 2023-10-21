@@ -21,16 +21,23 @@ include(joinpath(HMatrices.PROJECT_ROOT, "test", "testutils.jl"))
         H = assemble_hmatrix(K; threads, distributed=false)
         @test norm(Matrix(K) - Matrix(H; global_index=true)) < rtol * norm(Matrix(K))
         adjH = adjoint(H)
-        H_full = Matrix(H; global_index=false)
+        H_full = Matrix(H; global_index=true)
         adjH_full = adjoint(H_full)
         @testset "getindex" begin
-            HMatrices.enable_getindex()
-            @test H_full[8, 64] ≈ H[8, 64]
-            HMatrices.disable_getindex()
             @test_throws ErrorException H_full[8, 64] ≈ H[8, 64]
-            HMatrices.enable_getindex()
+            HMatrices.allow_getindex(true)
+            @test H_full[8, 64] ≈ H[8, 64]
             @test H_full[:, 666] ≈ H[:, 666]
             @test adjH_full[:, 666] ≈ adjH[:, 666]
+            HMatrices.allow_getindex(false)
+        end
+
+        @testset "getcol" begin
+            Hloc = Matrix(H; global_index=false)
+            HMatrices.allow_getindex(false)
+            @test Hloc[:, 666] ≈ HMatrices.getcol(H, 666)
+            @test adjoint(Hloc)[:, 666] ≈ HMatrices.getcol(adjH,666)
+            HMatrices.allow_getindex(false)
         end
         # Elastostatic
         K = elastostatic_matrix(X, Y, 1.1, 1.2)

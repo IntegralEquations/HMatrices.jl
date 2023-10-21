@@ -1,6 +1,16 @@
 const HUnitLowerTriangular = UnitLowerTriangular{<:Any,<:HMatrix}
 const HUpperTriangular = UpperTriangular{<:Any,<:HMatrix}
 
+function Base.show(io::IO, ::MIME"text/plain", U::HUpperTriangular)
+    H = parent(U)
+    println(io, "Upper triangular part of $H")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", L::HUnitLowerTriangular)
+    H = parent(L)
+    println(io, "Unit lower triangular part of $H")
+end
+
 function ldiv!(L::HUnitLowerTriangular, B::AbstractMatrix)
     H = parent(L)
     if isleaf(H)

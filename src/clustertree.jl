@@ -10,6 +10,7 @@ Tree structure used to cluster poitns of type `SVector{N,T}` into [`HyperRectang
 - `loc2glob::Vector{Int}` : permutation from the local indexing system to the
   original (global) indexing system used as input in the construction of the
   tree.
+- `glob2loc::Vector{Int}` : inverse of `loc2glob` permutation.
 - `children::Vector{ClusterTree{N,T}}`
 - `parent::ClusterTree{N,T}`
 """
@@ -18,12 +19,12 @@ mutable struct ClusterTree{N,T}
     container::HyperRectangle{N,T}
     index_range::UnitRange{Int}
     loc2glob::Vector{Int}
-    buffer::Vector{Int}
+    glob2loc::Vector{Int}
     children::Vector{ClusterTree{N,T}}
     parent::ClusterTree{N,T}
     function ClusterTree(els::Vector{SVector{N,T}}, container, loc_idxs,
-                         loc2glob, buffer, children, parent) where {N,T}
-        clt = new{N,T}(els, container, loc_idxs, loc2glob, buffer)
+                         loc2glob, glob2loc, children, parent) where {N,T}
+        clt = new{N,T}(els, container, loc_idxs, loc2glob, glob2loc)
         clt.children = isnothing(children) ? Vector{typeof(clt)}() : children
         clt.parent = isnothing(parent) ? clt : parent
         return clt
@@ -76,7 +77,12 @@ the (global) indexes used upon the construction of the tree.
 """
 loc2glob(clt::ClusterTree) = clt.loc2glob
 
-buffer(clt::ClusterTree) = clt.buffer
+"""
+    glob2loc(clt::ClusterTree)
+
+The inverse of [`loc2glob`](@ref).
+"""
+glob2loc(clt::ClusterTree) = clt.glob2loc
 
 isleaf(clt::ClusterTree) = isempty(clt.children)
 isroot(clt::ClusterTree) = clt.parent == clt
@@ -115,12 +121,14 @@ function ClusterTree(elements, splitter=CardinalitySplitter();
     n = length(elements)
     irange = 1:n
     loc2glob = collect(irange)
-    buffer = collect(irange)
+    glob2loc = collect(irange) # used as buffer during the construction
     children = nothing
     parent = nothing
     #build the root, then recurse
-    root = ClusterTree(elements, bbox, irange, loc2glob, buffer, children, parent)
+    root = ClusterTree(elements, bbox, irange, loc2glob, glob2loc, children, parent)
     _build_cluster_tree!(root, splitter, threads)
+    # inverse the loc2glob permutation
+    glob2loc .= invperm(loc2glob)
     # finally, permute the elements so as to use the local indexing
     copy!(elements, elements[loc2glob]) # faster than permute!
     return root

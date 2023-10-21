@@ -1,28 +1,22 @@
+"""
+    abstract type AbstractHMatrix{T} <: AbstractMatrix{T}
+
+Abstract type for hierarchical matrices.
+"""
 abstract type AbstractHMatrix{T} <: AbstractMatrix{T} end
 
-function Base.getindex(H::AbstractHMatrix, i, j)
-    # NOTE: you may disable `getindex` to avoid having code that will work, but be
-    # horribly slow because it falls back to some generic implementation in
-    # LinearAlgebra. The downside is that the `show` method, which will usually
-    # call `getindex` for `AbstractMatrix`, has to be overloaded too. One
-    # options is not not inherit from `AbstractMatrix` since we don't have an
-    # efficient `getindex` method in any case. The downside is that some
-    # convenient functionality of `AbstractMatrix` will be lost.
-    msg = """
-    method `getindex(::AbstractHMatrix,args...)` has been disabled to avoid
-    performance pitfalls. Unless you made an explicit call to `getindex`, this
-    error usually means that a linear algebra routine involving an
-    `AbstractHMatrix` has fallen back to a generic implementation.
-    """
+function Base.getindex(H::AbstractHMatrix, i::Int, j::Int)
     if ALLOW_GETINDEX[]
+        iloc = glob2loc(rowtree(H))[i]
+        jloc = glob2loc(coltree(H))[j]
         shift = pivot(H) .- 1
-        _getindex(H, i + shift[1], j + shift[2])
+        _getindex(H, iloc + shift[1], jloc + shift[2])
     else
-        error(msg)
+        error(GET_INDEX_ERROR_MSG)
     end
 end
 
-function _getindex(H, i, j)
+function _getindex(H, i::Int, j::Int)
     (i ∈ rowrange(H)) && (j ∈ colrange(H)) || throw(BoundsError(H, (i, j)))
     acc = zero(eltype(H))
     shift = pivot(H) .- 1
@@ -74,8 +68,6 @@ coltree(H::AbstractHMatrix) = H.coltree
 
 cluster_type(::HMatrix{R,T}) where {R,T} = R
 
-Base.getindex(H::HMatrix, ::Colon, j) = getcol(H, j)
-
 # getcol for regular matrices
 function getcol!(col, M::Matrix, j)
     @assert length(col) == size(M, 1)
@@ -116,8 +108,6 @@ function _getcol!(col, H::HMatrix, j, piv)
     end
     return col
 end
-
-Base.getindex(adjH::Adjoint{<:Any,<:HMatrix}, ::Colon, j) = getcol(adjH, j)
 
 function getcol(adjH::Adjoint{<:Any,<:HMatrix}, j::Int)
     # (j ∈ colrange(adjH)) || throw(BoundsError())
@@ -225,12 +215,12 @@ function _show(io, hmat)
 end
 
 """
-    Matrix(H::HMatrix;global_index=false)
+    Matrix(H::HMatrix;global_index=true)
 
-Convert `H` to a `Matrix`. If `global_index=true`, the entries are given in the
-global indexing system (see [`HMatrix`](@ref) for more information); otherwise
-the *local* indexing system induced by the row and columns trees are used
-(default).
+Convert `H` to a `Matrix`. If `global_index=true` (the default), the entries are
+given in the global indexing system (see [`HMatrix`](@ref) for more
+information); otherwise the *local* indexing system induced by the row and
+columns trees are used.
 """
 Matrix(hmat::HMatrix; global_index=true) = Matrix{eltype(hmat)}(hmat; global_index)
 function Base.Matrix{T}(hmat::HMatrix; global_index) where {T}
