@@ -15,24 +15,24 @@ n = 2000
 
 X = rand(SVector{3,Float64}, m)
 Y = [rand(SVector{3,Float64}) for _ in 1:n]
-splitter = CardinalitySplitter(; nmax=40)
+splitter = CardinalitySplitter(; nmax = 40)
 Xclt = ClusterTree(X, splitter)
 Yclt = ClusterTree(Y, splitter)
-adm = StrongAdmissibilityStd(; eta=3)
+adm = StrongAdmissibilityStd(; eta = 3)
 rtol = 1e-5
-comp = PartialACA(; rtol=rtol)
+comp = PartialACA(; rtol = rtol)
 K = laplace_matrix(X, Y)
-H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads=false, distributed=false)
+H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false, distributed = false)
 
-H_full = Matrix(H; global_index=false)
+H_full = Matrix(H; global_index = false)
 
 α = rand() - 0.5
 β = rand() - 0.5
 @testset "hmul!" begin
     C = deepcopy(H)
     tmp = β * H_full + α * H_full * H_full
-    HMatrices.hmul!(C, H, H, α, β, PartialACA(; atol=1e-6))
-    @test Matrix(C; global_index=false) ≈ tmp
+    HMatrices.hmul!(C, H, H, α, β, PartialACA(; atol = 1e-6))
+    @test Matrix(C; global_index = false) ≈ tmp
 end
 
 @testset "gemv" begin
@@ -45,19 +45,19 @@ end
 
     @testset "serial" begin
         exact = β * y + α * H_full * x
-        approx = mul!(copy(y), H, x, α, β; threads=false, global_index=false)
+        approx = mul!(copy(y), H, x, α, β; threads = false, global_index = false)
         @test exact ≈ approx
-        exact = β * y + α * Matrix(H; global_index=true) * x
-        approx = mul!(copy(y), H, x, α, β; threads=false, global_index=true)
+        exact = β * y + α * Matrix(H; global_index = true) * x
+        approx = mul!(copy(y), H, x, α, β; threads = false, global_index = true)
         @test exact ≈ approx
     end
 
     @testset "threads" begin
         exact = β * y + α * H_full * x
-        approx = mul!(copy(y), H, x, α, β; threads=true, global_index=false)
+        approx = mul!(copy(y), H, x, α, β; threads = true, global_index = false)
         @test exact ≈ approx
-        exact = β * y + α * Matrix(H; global_index=true) * x
-        approx = mul!(copy(y), H, x, α, β; threads=false, global_index=true)
+        exact = β * y + α * Matrix(H; global_index = true) * x
+        approx = mul!(copy(y), H, x, α, β; threads = false, global_index = true)
         @test exact ≈ approx
     end
 end

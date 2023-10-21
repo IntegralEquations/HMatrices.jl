@@ -113,7 +113,7 @@ function hilbert_points(n::Integer)
     @assert ispow2(n)
     xx = Int[]
     yy = Int[]
-    for d in 0:(n^2 - 1)
+    for d in 0:(n^2-1)
         x, y = hilbert_linear_to_cartesian(n, d)
         push!(xx, x)
         push!(yy, y)
@@ -148,7 +148,7 @@ Return a vector containing all the nodes of `tree` such that
 `f(node)==true`.  The argument `isterminal` can be used to control whether
 to continue the search on `children` of nodes for which `f(node)==true`.
 """
-function filter_tree(f, tree, isterminal=true)
+function filter_tree(f, tree, isterminal = true)
     nodes = Vector{typeof(tree)}()
     return filter_tree!(f, nodes, tree, isterminal)
 end
@@ -158,7 +158,7 @@ end
 
 Like [`filter_tree`](@ref), but appends results to `nodes`.
 """
-function filter_tree!(f, nodes, tree, isterminal=true)
+function filter_tree!(f, nodes, tree, isterminal = true)
     if f(tree)
         push!(nodes, tree)
         # terminate the search along this path if terminal=true
@@ -178,7 +178,7 @@ Recursive function to compute the depth of `node` in a a tree-like structure.
 Overload this function if your structure has a more efficient way to compute
 `depth` (e.g. if it stores it in a field).
 """
-function depth(tree, acc=0)
+function depth(tree, acc = 0)
     if isroot(tree)
         return acc
     else
@@ -204,7 +204,7 @@ function _partition_by_depth!(partition, tree, depth)
     if length(partition) < depth + 1
         push!(partition, [])
     end
-    length(tree) > 0 && push!(partition[depth + 1], tree)
+    length(tree) > 0 && push!(partition[depth+1], tree)
     for chd in children(tree)
         _partition_by_depth!(partition, chd, depth + 1)
     end

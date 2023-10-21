@@ -34,7 +34,17 @@ function Base.setproperty!(R::RkMatrix, s::Symbol, mat::Matrix)
 end
 
 function Base.show(io::IO, ::MIME"text/plain", R::RkMatrix)
-    print(io, size(R,1), "×", size(R,2), " RkMatrix{", eltype(R), "}",  " of rank ", rank(R))
+    return print(
+        io,
+        size(R, 1),
+        "×",
+        size(R, 2),
+        " RkMatrix{",
+        eltype(R),
+        "}",
+        " of rank ",
+        rank(R),
+    )
 end
 
 function Base.getindex(rmat::RkMatrix, i::Int, j::Int)
@@ -224,8 +234,13 @@ compression_ratio(R::RkMatrix) = prod(size(R)) / num_stored_elements(R)
 # problem in LinearAlgebra for the generic mulplication mul!(C,A,B,a,b) when
 # C and B are a vectors of static matrices, and A is a matrix of static
 # matrices. Should eventually be removed.
-function mul!(C::AbstractVector, Rk::RkMatrix{T}, F::AbstractVector, a::Number,
-              b::Number) where {T<:SMatrix}
+function mul!(
+    C::AbstractVector,
+    Rk::RkMatrix{T},
+    F::AbstractVector,
+    a::Number,
+    b::Number,
+) where {T<:SMatrix}
     m, n = size(Rk)
     r = rank(Rk)
     tmp = Rk.Bt * F

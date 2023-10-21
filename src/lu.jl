@@ -15,7 +15,7 @@ end
 
 function Base.show(io::IO, ::MIME"text/plain", LU::HLU)
     H = getfield(LU, :factors) # the underlying hierarchical matrix
-    println(io, "LU factorization of $H")
+    return println(io, "LU factorization of $H")
 end
 
 """
@@ -24,7 +24,7 @@ end
 Hierarhical LU facotrization of `M`, using `comp` to generate the compressed
 blocks during the multiplication routines.
 """
-function lu!(M::HMatrix, compressor; threads=use_threads())
+function lu!(M::HMatrix, compressor; threads = use_threads())
     # perform the lu decomposition of M in place
     @timeit_debug "lu factorization" begin
         _lu!(M, compressor, threads)
@@ -39,8 +39,13 @@ end
 
 Hierarhical LU facotrization of `M`, using the `PartialACA(;atol,rtol;rank)` compressor.
 """
-function lu!(M::HMatrix; atol=0, rank=typemax(Int),
-             rtol=atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)), kwargs...)
+function lu!(
+    M::HMatrix;
+    atol = 0,
+    rank = typemax(Int),
+    rtol = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
+    kwargs...,
+)
     compressor = PartialACA(atol, rank, rtol)
     return lu!(M, compressor)
 end
@@ -65,28 +70,34 @@ function _lu!(M::HMatrix, compressor, threads)
         m, n = size(chdM)
         for i in 1:m
             _lu!(chdM[i, i], compressor, threads)
-            for j in (i + 1):n
+            for j in (i+1):n
                 @sync begin
                     @timeit_debug "ldiv! solution" begin
                         if threads
-                            Threads.@spawn ldiv!(UnitLowerTriangular(chdM[i, i]),
-                                                 chdM[i, j], compressor)
+                            Threads.@spawn ldiv!(
+                                UnitLowerTriangular(chdM[i, i]),
+                                chdM[i, j],
+                                compressor,
+                            )
                         else
                             ldiv!(UnitLowerTriangular(chdM[i, i]), chdM[i, j], compressor)
                         end
                     end
                     @timeit_debug "rdiv! solution" begin
                         if threads
-                            Threads.@spawn rdiv!(chdM[j, i], UpperTriangular(chdM[i, i]),
-                                                 compressor)
+                            Threads.@spawn rdiv!(
+                                chdM[j, i],
+                                UpperTriangular(chdM[i, i]),
+                                compressor,
+                            )
                         else
                             rdiv!(chdM[j, i], UpperTriangular(chdM[i, i]), compressor)
                         end
                     end
                 end
             end
-            for j in (i + 1):m
-                for k in (i + 1):n
+            for j in (i+1):m
+                for k in (i+1):n
                     @timeit_debug "hmul!" begin
                         hmul!(chdM[j, k], chdM[j, i], chdM[i, k], -1, 1, compressor)
                     end
@@ -97,7 +108,7 @@ function _lu!(M::HMatrix, compressor, threads)
     return M
 end
 
-function ldiv!(A::LU{<:Any,<:HMatrix}, y::AbstractVector; global_index=true)
+function ldiv!(A::LU{<:Any,<:HMatrix}, y::AbstractVector; global_index = true)
     p = A.factors # underlying data
     ctree = coltree(p)
     rtree = rowtree(p)
@@ -127,7 +138,7 @@ function ldiv!(L::HUnitLowerTriangular, y::AbstractVector)
         for i in 1:m
             irows = colrange(chdH[i, i]) .- shift[2]
             bi = view(y, irows)
-            for j in 1:(i - 1)# j<i
+            for j in 1:(i-1)# j<i
                 jrows = colrange(chdH[i, j]) .- shift[2]
                 bj = view(y, jrows)
                 _mul131!(bi, chdH[i, j], bj, -1)
@@ -153,7 +164,7 @@ function ldiv!(U::HUpperTriangular, y::AbstractVector)
         for i in m:-1:1
             irows = colrange(chdH[i, i]) .- shift[2]
             bi = view(y, irows)
-            for j in (i + 1):n # j>i
+            for j in (i+1):n # j>i
                 jrows = colrange(chdH[i, j]) .- shift[2]
                 bj = view(y, jrows)
                 _mul131!(bi, chdH[i, j], bj, -1)

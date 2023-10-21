@@ -65,8 +65,11 @@ for distributed computing. Currently, the only available options is
 `distribute_columns`, which will partition the columns of the underlying matrix
 into `floor(log2(nw))` parts, where `nw` is the number of workers available.
 """
-function DHMatrix{T}(rowtree::R, coltree::R;
-                     partition_strategy=:distribute_columns) where {R,T}
+function DHMatrix{T}(
+    rowtree::R,
+    coltree::R;
+    partition_strategy = :distribute_columns,
+) where {R,T}
     #build root
     root = DHMatrix{R,T}(rowtree, coltree, nothing, nothing, nothing)
     # depending on the partition strategy, dispatch to appropriate (recursive)
@@ -81,8 +84,10 @@ function DHMatrix{T}(rowtree::R, coltree::R;
     return root
 end
 
-function _build_block_structure_distribute_cols!(current_node::DHMatrix{R,T},
-                                                 dmax) where {R,T}
+function _build_block_structure_distribute_cols!(
+    current_node::DHMatrix{R,T},
+    dmax,
+) where {R,T}
     if Trees.depth(current_node) == dmax
         return current_node
     else
@@ -92,8 +97,10 @@ function _build_block_structure_distribute_cols!(current_node::DHMatrix{R,T},
         # do not recurse on row, only on columns
         row_children = [X]
         col_children = Y.children
-        children = [DHMatrix{R,T}(r, c, nothing, nothing, current_node)
-                    for r in row_children, c in col_children]
+        children = [
+            DHMatrix{R,T}(r, c, nothing, nothing, current_node) for r in row_children,
+            c in col_children
+        ]
         current_node.children = children
         for child in children
             _build_block_structure_distribute_cols!(child, dmax)
@@ -106,8 +113,10 @@ Base.size(H::DHMatrix) = length(rowrange(H)), length(colrange(H))
 
 function Base.show(io::IO, ::MIME"text/plain", hmat::DHMatrix)
     # isclean(hmat) || return print(io,"Dirty DHMatrix")
-    println(io,
-            "Distributed HMatrix of $(eltype(hmat)) with range $(rowrange(hmat)) × $(colrange(hmat))")
+    println(
+        io,
+        "Distributed HMatrix of $(eltype(hmat)) with range $(rowrange(hmat)) × $(colrange(hmat))",
+    )
     nodes = collect(AbstractTrees.PreOrderDFS(hmat))
     println(io, "\t number of nodes in tree: $(length(nodes))")
     leaves = collect(AbstractTrees.Leaves(hmat))
@@ -126,27 +135,48 @@ end
 Internal methods called **after** the `DHMatrix` structure has been initialized
 in order to construct the `HMatrix` on each of the leaves of the `DHMatrix`.
 """
-function _assemble_hmat_distributed(K, rtree, ctree; adm=StrongAdmissibilityStd(),
-                                    comp=PartialACA(),
-                                    global_index=use_global_index(), threads=use_threads())
+function _assemble_hmat_distributed(
+    K,
+    rtree,
+    ctree;
+    adm = StrongAdmissibilityStd(),
+    comp = PartialACA(),
+    global_index = use_global_index(),
+    threads = use_threads(),
+)
     #
     R = typeof(rtree)
     T = eltype(K)
     wids = workers()
-    root = DHMatrix{T}(rtree, ctree; partition_strategy=:distribute_columns)
+    root = DHMatrix{T}(rtree, ctree; partition_strategy = :distribute_columns)
     leaves = collect(AbstractTrees.Leaves(root))
     @info "Assembling distributed HMatrix on $(length(leaves)) processes"
     @sync for (k, leaf) in enumerate(leaves)
         pid = wids[k] # id of k-th worker
-        r = @spawnat pid assemble_hmatrix(K, rowtree(leaf), coltree(leaf); adm, comp,
-                                          global_index, threads, distributed=false)
+        r = @spawnat pid assemble_hmatrix(
+            K,
+            rowtree(leaf),
+            coltree(leaf);
+            adm,
+            comp,
+            global_index,
+            threads,
+            distributed = false,
+        )
         leaf.data = RemoteHMatrix{R,T}(r)
     end
     return root
 end
 
-function mul!(y::AbstractVector, A::DHMatrix, x::AbstractVector, a::Number, b::Number;
-              global_index=use_global_index(), threads=use_threads())
+function mul!(
+    y::AbstractVector,
+    A::DHMatrix,
+    x::AbstractVector,
+    a::Number,
+    b::Number;
+    global_index = use_global_index(),
+    threads = use_threads(),
+)
     # since the HMatrix represents A = Pr*H*Pc, where Pr and Pc are row and column
     # permutations, we need first to rewrite C <-- b*C + a*(Pc*H*Pb)*B as
     # C <-- Pr*(b*inv(Pr)*C + a*H*(Pc*B)). Following this rewrite, the
@@ -172,8 +202,15 @@ function mul!(y::AbstractVector, A::DHMatrix, x::AbstractVector, a::Number, b::N
         pid = r.where
         jrange = @fetchfrom pid colrange(fetch(r))
         T, n = eltype(y), length(y)
-        acc[i] = @spawnat pid mul!(zeros(T, n), fetch(r), view(x, jrange), 1, 0;
-                                   global_index=false, threads)
+        acc[i] = @spawnat pid mul!(
+            zeros(T, n),
+            fetch(r),
+            view(x, jrange),
+            1,
+            0;
+            global_index = false,
+            threads,
+        )
     end
     # reduction stage: fetch everybody to worker 1 and sum them up
     for yi in acc

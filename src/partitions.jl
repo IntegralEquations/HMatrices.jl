@@ -59,7 +59,7 @@ Find an approximation to the cost of an optimal partitioning of `seq` into `nq`
 contiguous segments. The optimal cost is the smallest number `cmax` such that
 `has_partition(seq,nq,cost,cmax)` returns `true`.
 """
-function find_optimal_cost(seq, np, cost=identity, tol=1)
+function find_optimal_cost(seq, np, cost = identity, tol = 1)
     lbound = Float64(maximum(cost, seq))
     ubound = Float64(sum(cost, seq))
     guess = (lbound + ubound) / 2
@@ -85,7 +85,7 @@ which minimizes the maximum `cost` over all possible partitions of `seq` into
 The generated partition is optimal up to a tolerance `tol`; for integer valued
 `cost`, setting `tol=1` means the partition is optimal.
 """
-function find_optimal_partition(seq, np, cost=(x) -> 1, tol=1)
+function find_optimal_partition(seq, np, cost = (x) -> 1, tol = 1)
     cmax = find_optimal_cost(seq, np, cost, tol)
     p = build_sequence_partition(seq, np, cost, cmax)
     return p
@@ -97,7 +97,7 @@ end
 Given a vector `v`, determine whether or not a partition into `np` segments is
 possible where the `cost` of each partition does not exceed `cmax`.
 """
-function has_partition(seq, np, cmax, cost=identity)
+function has_partition(seq, np, cmax, cost = identity)
     acc = 0
     k = 1
     for el in seq
@@ -119,7 +119,7 @@ Partiotion the leaves of `H` into `np` sequences of approximate equal cost (as
 determined by the `cost` function) while also trying to maximize the locality of
 each partition.
 """
-function hilbert_partition(H::HMatrix, np=Threads.nthreads(), cost=_cost_gemv)
+function hilbert_partition(H::HMatrix, np = Threads.nthreads(), cost = _cost_gemv)
     # the hilbert curve will be indexed from (0,0) × (N-1,N-1), so set N to be
     # the smallest power of two larger than max(m,n), where m,n = size(H)
     m, n = size(H)
@@ -144,7 +144,7 @@ end
 
 # TODO: benchmark the different partitioning strategies for gemv. Is the hilber
 # partition really faster than the simpler alternatives (row partition, col partition)?
-function row_partition(H::HMatrix, np=Threads.nthreads(), cost=_cost_gemv)
+function row_partition(H::HMatrix, np = Threads.nthreads(), cost = _cost_gemv)
     # sort the leaves by their row index
     leaves = filter_tree(x -> isleaf(x), H)
     row_indices = map(leaves) do leaf
@@ -162,7 +162,7 @@ function row_partition(H::HMatrix, np=Threads.nthreads(), cost=_cost_gemv)
     return partition
 end
 
-function col_partition(H::HMatrix, np=Threads.nthreads(), cost=_cost_gemv)
+function col_partition(H::HMatrix, np = Threads.nthreads(), cost = _cost_gemv)
     # sort the leaves by their row index
     leaves = filter_tree(x -> isleaf(x), H)
     row_indices = map(leaves) do leaf

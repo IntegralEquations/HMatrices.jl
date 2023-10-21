@@ -71,7 +71,7 @@ function axpy!(a, X::HMatrix, Y::RkMatrix)
     # FIXME: inneficient implementation due to conversion from HMatrix to
     # Matrix. Does it really matter? I don't think this function should be
     # called.
-    return axpy!(a, Matrix(X; global_index=false), Y)
+    return axpy!(a, Matrix(X; global_index = false), Y)
 end
 
 # 3.3

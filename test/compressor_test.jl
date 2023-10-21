@@ -19,30 +19,30 @@ Random.seed!(1)
     irange, jrange = 1:m, 1:n
     @testset "aca_full" begin
         atol = 1e-5
-        aca = ACA(; atol=atol)
+        aca = ACA(; atol = atol)
         R = aca(K, irange, jrange)
         @test norm(Matrix(R) - M) < atol
         rtol = 1e-5
-        aca = ACA(; rtol=rtol)
+        aca = ACA(; rtol = rtol)
         R = aca(M, irange, jrange)
         norm(Matrix(R) - M)
         @test norm(Matrix(R) - M) < rtol * norm(M)
         r = 10
-        aca = ACA(; rank=r)
+        aca = ACA(; rank = r)
         R = aca(M, irange, jrange)
         @test rank(R) == r
     end
     @testset "aca_partial" begin
         atol = 1e-5
-        aca = PartialACA(; atol=atol)
+        aca = PartialACA(; atol = atol)
         R = aca(M, irange, jrange)
         @test norm(Matrix(R) - M) < atol
         rtol = 1e-5
-        aca = PartialACA(; rtol=rtol)
+        aca = PartialACA(; rtol = rtol)
         R = aca(M, irange, jrange)
         @test norm(Matrix(R) - M) < rtol * norm(M)
         r = 10
-        aca = PartialACA(; rank=r)
+        aca = PartialACA(; rank = r)
         R = aca(M, irange, jrange)
         @test rank(R) == r
 
@@ -62,22 +62,22 @@ Random.seed!(1)
 
         # test simple case where things are not compressible
         A = rand(2, 2)
-        comp = PartialACA(; rtol=1e-5)
+        comp = PartialACA(; rtol = 1e-5)
         @test comp(A, 1:2, 1:2) ≈ A
     end
     @testset "truncated svd" begin
         atol = 1e-5
-        tsvd = TSVD(; atol=atol)
+        tsvd = TSVD(; atol = atol)
         R = tsvd(M, irange, jrange)
         # the inequality below is guaranteed to be true  for  the spectral norm
         # i.e. (the `opnorm` with `p=2`).
         @test opnorm(Matrix(R) - M) < atol
         rtol = 1e-5
-        tsvd = TSVD(; rtol=rtol)
+        tsvd = TSVD(; rtol = rtol)
         R = tsvd(M, irange, jrange)
         @test opnorm(Matrix(R) - M) < rtol * opnorm(M)
         r = 10
-        tsvd = TSVD(; rank=r)
+        tsvd = TSVD(; rank = r)
         R = tsvd(M, irange, jrange)
         @test rank(R) == r
     end
@@ -95,30 +95,30 @@ end
     irange, jrange = 1:m, 1:n
     @testset "aca_full" begin
         atol = 1e-5
-        aca = ACA(; atol=atol)
+        aca = ACA(; atol = atol)
         R = aca(K, irange, jrange)
         @test norm(Matrix(R) - M) < atol
         rtol = 1e-5
-        aca = ACA(; rtol=rtol)
+        aca = ACA(; rtol = rtol)
         R = aca(M, irange, jrange)
         norm(Matrix(R) - M)
         @test norm(Matrix(R) - M) < rtol * norm(M)
         r = 10
-        aca = ACA(; rank=r)
+        aca = ACA(; rank = r)
         R = aca(M, irange, jrange)
         @test rank(R) == r
     end
     @testset "aca_partial" begin
         atol = 1e-5
-        aca = PartialACA(; atol=atol)
+        aca = PartialACA(; atol = atol)
         R = aca(M, irange, jrange)
         @test norm(Matrix(R) - M) < atol
         rtol = 1e-5
-        aca = PartialACA(; rtol=rtol)
+        aca = PartialACA(; rtol = rtol)
         R = aca(M, irange, jrange)
         @test norm(Matrix(R) - M) < rtol * norm(M)
         r = 10
-        aca = PartialACA(; rank=r)
+        aca = PartialACA(; rank = r)
         R = aca(M, irange, jrange)
         @test rank(R) == r
 
@@ -138,7 +138,7 @@ end
 
         # test simple case where things are not compressible
         A = rand(2, 2)
-        comp = PartialACA(; rtol=1e-5)
+        comp = PartialACA(; rtol = 1e-5)
         @test comp(A, 1:2, 1:2) ≈ A
     end
 end

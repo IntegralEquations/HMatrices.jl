@@ -156,7 +156,7 @@ function binary_split!(cluster::ClusterTree{N,T}, predicate::Function) where {N,
         else
             xl_right = min.(xl_right, pt)
             xu_right = max.(xu_right, pt)
-            buff[n - npts_right] = l2g[i]
+            buff[n-npts_right] = l2g[i]
             npts_right += 1
         end
     end
@@ -166,10 +166,11 @@ function binary_split!(cluster::ClusterTree{N,T}, predicate::Function) where {N,
     @assert npts_left + npts_right == length(irange) "elements lost during split"
     # new ranges for children cluster
     copy!(view(l2g, irange), buff)
-    left_indices = (irange.start):((irange.start) + npts_left - 1)
-    right_indices = (irange.start + npts_left):(irange.stop)
+    left_indices = (irange.start):((irange.start)+npts_left-1)
+    right_indices = (irange.start+npts_left):(irange.stop)
     # create children
     clt1 = ClusterTree(els, left_rec, left_indices, l2g, cluster.glob2loc, nothing, cluster)
-    clt2 = ClusterTree(els, right_rec, right_indices, l2g, cluster.glob2loc, nothing, cluster)
+    clt2 =
+        ClusterTree(els, right_rec, right_indices, l2g, cluster.glob2loc, nothing, cluster)
     return clt1, clt2
 end

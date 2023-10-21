@@ -129,8 +129,15 @@ function (paca::PartialACA)(K, rowtree::ClusterTree, coltree::ClusterTree)
     istart = _aca_partial_initial_pivot(rowtree)
     irange = index_range(rowtree)
     jrange = index_range(coltree)
-    return _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol,
-                        istart - irange.start + 1)
+    return _aca_partial(
+        K,
+        irange,
+        jrange,
+        paca.atol,
+        paca.rank,
+        paca.rtol,
+        istart - irange.start + 1,
+    )
 end
 
 function (paca::PartialACA)(K, irange::UnitRange, jrange::UnitRange)
@@ -148,7 +155,7 @@ partial pivoting. The returned `R::RkMatrix` provides an approximation to
 max(atol,rtol*|M|)`, but this inequality may fail to hold due to the various
 errors involved in estimating the error and |M|.
 """
-function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart=1)
+function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart = 1)
     Kadj = adjoint(K)
     # if irange and jrange are Colon, extract the size from `K` directly. This
     # allows for some code reuse with specializations on getindex(i,::Colon) and
@@ -175,7 +182,7 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart=1)
         # remove index i from allowed row
         I[i] = false
         # compute next row by row <-- K[i+ishift,jrange] - R[i,:]
-        adjcol = Kadj[jrange, i + ishift]
+        adjcol = Kadj[jrange, i+ishift]
         for k in 1:r
             axpy!(-adjoint(A[k][i]), B[k], adjcol)
             # for j in eachindex(row)
@@ -195,7 +202,7 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart=1)
             end
             J[j] = false
             # compute next col by col <-- K[irange,j+jshift] - R[:,j]
-            col = K[irange, j + jshift]
+            col = K[irange, j+jshift]
             for k in 1:r
                 axpy!(-adjoint(B[k][j]), A[k], col)
                 # for i in eachindex(col)
@@ -229,7 +236,7 @@ compute the Frobenius norm of `Rₖ₊₁ = A*adjoint(B)` efficiently.
         a = A[end]
         b = B[end]
         out = norm(a)^2 * norm(b)^2
-        for l in 1:(k - 1)
+        for l in 1:(k-1)
             out += 2 * real(dot(A[l], a) * (dot(b, B[l])))
         end
     end

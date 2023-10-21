@@ -25,11 +25,11 @@ end
 Base.size(K::ExponentialKernel) = length(K.X), length(K.Y)
 K = ExponentialKernel(X, X)
 
-splitter = CardinalitySplitter(; nmax=50)
+splitter = CardinalitySplitter(; nmax = 50)
 Xclt = ClusterTree(X, splitter)
 Yclt = ClusterTree(Y, splitter)
-H = assemble_hmatrix(K, Xclt, Yclt; threads=false, distributed=false)
-H_full = Matrix(H; global_index=false)
+H = assemble_hmatrix(K, Xclt, Yclt; threads = false, distributed = false)
+H_full = Matrix(H; global_index = false)
 
 @testset "ldiv!" begin
     B = rand(m, 2)
@@ -51,10 +51,10 @@ H_full = Matrix(H; global_index=false)
     @test exact ≈ Matrix(approx)
 
     ## 3.3
-    compressor = PartialACA(; atol=1e-8)
+    compressor = PartialACA(; atol = 1e-8)
     exact = ldiv!(UnitLowerTriangular(H_full), copy(H_full))
     approx = ldiv!(UnitLowerTriangular(H), deepcopy(H), compressor)
-    @test exact ≈ Matrix(approx; global_index=false)
+    @test exact ≈ Matrix(approx; global_index = false)
 end
 
 @testset "rdiv!" begin
@@ -72,8 +72,8 @@ end
     @test exact ≈ Matrix(approx)
 
     ## 3.3
-    compressor = PartialACA(; atol=1e-10)
+    compressor = PartialACA(; atol = 1e-10)
     exact = rdiv!(deepcopy(H_full), UpperTriangular(H_full))
     approx = rdiv!(deepcopy(H), UpperTriangular(H), compressor)
-    @test exact ≈ Matrix(approx; global_index=false)
+    @test exact ≈ Matrix(approx; global_index = false)
 end

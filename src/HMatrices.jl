@@ -55,28 +55,28 @@ include("triangular.jl")
 include("lu.jl")
 
 export
-# types (re-exported)
-      CardinalitySplitter,
-      ClusterTree,
-      DyadicSplitter,
-      GeometricSplitter,
-      GeometricMinimalSplitter,
-      HyperRectangle,
-# abstract types
-      AbstractKernelMatrix,
-# types
-      HMatrix,
-      KernelMatrix,
-      StrongAdmissibilityStd,
-      WeakAdmissibilityStd,
-      PartialACA,
-      ACA,
-      TSVD,
-# functions
-      compression_ratio,
-      print_tree,
-      assemble_hmatrix,
-# macros
-      @hprofile
+    # types (re-exported)
+    CardinalitySplitter,
+    ClusterTree,
+    DyadicSplitter,
+    GeometricSplitter,
+    GeometricMinimalSplitter,
+    HyperRectangle,
+    # abstract types
+    AbstractKernelMatrix,
+    # types
+    HMatrix,
+    KernelMatrix,
+    StrongAdmissibilityStd,
+    WeakAdmissibilityStd,
+    PartialACA,
+    ACA,
+    TSVD,
+    # functions
+    compression_ratio,
+    print_tree,
+    assemble_hmatrix,
+    # macros
+    @hprofile
 
 end

@@ -3,12 +3,12 @@ const HUpperTriangular = UpperTriangular{<:Any,<:HMatrix}
 
 function Base.show(io::IO, ::MIME"text/plain", U::HUpperTriangular)
     H = parent(U)
-    println(io, "Upper triangular part of $H")
+    return println(io, "Upper triangular part of $H")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", L::HUnitLowerTriangular)
     H = parent(L)
-    println(io, "Unit lower triangular part of $H")
+    return println(io, "Unit lower triangular part of $H")
 end
 
 function ldiv!(L::HUnitLowerTriangular, B::AbstractMatrix)
@@ -25,7 +25,7 @@ function ldiv!(L::HUnitLowerTriangular, B::AbstractMatrix)
         for i in 1:m
             irows = colrange(chdH[i, i]) .- shift[2]
             bi = view(B, irows, :)
-            for j in 1:(i - 1)# j<i
+            for j in 1:(i-1)# j<i
                 jrows = colrange(chdH[i, j]) .- shift[2]
                 bj = view(B, jrows, :)
                 _mul131!(bi, chdH[i, j], bj, -1)
@@ -57,7 +57,7 @@ function ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor)
         @assert m == n
         for k in 1:size(chdX, 2)
             for i in 1:m
-                for j in 1:(i - 1)# j<i
+                for j in 1:(i-1)# j<i
                     @timeit_debug "hmul!" begin
                         hmul!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor)
                     end
@@ -83,7 +83,7 @@ function ldiv!(U::HUpperTriangular, B::AbstractMatrix)
         for i in m:-1:1
             irows = colrange(chdH[i, i]) .- shift[2]
             bi = view(B, irows, :)
-            for j in (i + 1):n # j>i
+            for j in (i+1):n # j>i
                 jrows = colrange(chdH[i, j]) .- shift[2]
                 bj = view(B, jrows, :)
                 _mul131!(bi, chdH[i, j], bj, -1)
@@ -110,7 +110,7 @@ function rdiv!(B::StridedMatrix, U::HUpperTriangular)
         for i in 1:m
             icols = rowrange(chdH[i, i]) .- shift[1]
             bi = view(B, :, icols)
-            for j in 1:(i - 1)
+            for j in 1:(i-1)
                 jcols = rowrange(chdH[j, i]) .- shift[1]
                 bj = view(B, :, jcols)
                 _mul113!(bi, bj, chdH[j, i], -1)
@@ -146,7 +146,7 @@ function rdiv!(X::AbstractHMatrix, U::HUpperTriangular, compressor)
         m, n = size(chdH)
         for k in 1:size(chdX, 1)
             for i in 1:m
-                for j in 1:(i - 1)
+                for j in 1:(i-1)
                     @timeit_debug "hmul!" begin
                         hmul!(chdX[k, i], chdX[k, j], chdH[j, i], -1, 1, compressor)
                     end
