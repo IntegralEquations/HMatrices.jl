@@ -470,8 +470,8 @@ end
 
 # 1.2.1
 function mul!(y::AbstractVector, R::RkMatrix, x::AbstractVector, a::Number, b::Number)
-    # tmp = R.Bt*x
-    tmp = mul!(R.buffer, adjoint(R.B), x)
+    tmp = R.Bt * x
+    # tmp = mul!(R.buffer, adjoint(R.B), x)
     return mul!(y, R.A, tmp, a, b)
 end
 
@@ -484,8 +484,8 @@ function mul!(
     b::Number,
 )
     R = parent(adjR)
-    # tmp = R.At*x
-    tmp = mul!(R.buffer, adjoint(R.A), x)
+    tmp = R.At * x
+    # tmp = mul!(R.buffer, adjoint(R.A), x)
     return mul!(y, R.B, tmp, a, b)
 end
 
