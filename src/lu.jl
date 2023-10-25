@@ -47,7 +47,7 @@ function lu!(
     kwargs...,
 )
     compressor = PartialACA(atol, rank, rtol)
-    return lu!(M, compressor)
+    return lu!(M, compressor, kwargs...)
 end
 
 """
