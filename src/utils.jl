@@ -210,3 +210,36 @@ function _partition_by_depth!(partition, tree, depth)
     end
     return partition
 end
+
+"""
+    @usethreads bool expr
+
+Append `Threads.@threads` if `bool==true` (see
+https://discourse.julialang.org/t/putting-threads-threads-or-any-macro-in-an-if-statement/41406/8)
+"""
+macro usethreads(multithreaded, expr::Expr)
+    ex = quote
+        if $multithreaded
+            Threads.@threads $expr
+        else
+            $expr
+        end
+    end
+    esc(ex)
+end
+
+"""
+    @usespawn bool expr
+
+Append `Threads.@spawn` if `bool==true`.
+"""
+macro usespawn(multithreaded, expr::Expr)
+    ex = quote
+        if $multithreaded
+            Threads.@spawn $expr
+        else
+            $expr
+        end
+    end
+    esc(ex)
+end
