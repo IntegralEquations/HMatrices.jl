@@ -26,9 +26,7 @@ blocks during the multiplication routines.
 """
 function lu!(M::HMatrix, compressor; threads = use_threads())
     # perform the lu decomposition of M in place
-    @timeit_debug "lu factorization" begin
-        _lu!(M, compressor, threads)
-    end
+    _lu!(M, compressor, threads)
     # wrap the result in the LU structure
     return LU(M, LinearAlgebra.BlasInt[], LinearAlgebra.BlasInt(0))
 end
@@ -47,7 +45,7 @@ function lu!(
     kwargs...,
 )
     compressor = PartialACA(atol, rank, rtol)
-    return lu!(M, compressor, kwargs...)
+    return lu!(M, compressor; kwargs...)
 end
 
 """
@@ -61,9 +59,7 @@ function _lu!(M::HMatrix, compressor, threads)
     if isleaf(M)
         d = data(M)
         @assert d isa Matrix
-        @timeit_debug "dense lu factorization" begin
-            lu!(d, NOPIVOT())
-        end
+        lu!(d, NOPIVOT())
     else
         @assert !hasdata(M)
         chdM = children(M)
@@ -72,35 +68,29 @@ function _lu!(M::HMatrix, compressor, threads)
             _lu!(chdM[i, i], compressor, threads)
             for j in (i+1):n
                 @sync begin
-                    @timeit_debug "ldiv! solution" begin
-                        if threads
-                            Threads.@spawn ldiv!(
-                                UnitLowerTriangular(chdM[i, i]),
-                                chdM[i, j],
-                                compressor,
-                            )
-                        else
-                            ldiv!(UnitLowerTriangular(chdM[i, i]), chdM[i, j], compressor)
-                        end
+                    if threads
+                        Threads.@spawn ldiv!(
+                            UnitLowerTriangular(chdM[i, i]),
+                            chdM[i, j],
+                            compressor,
+                        )
+                    else
+                        ldiv!(UnitLowerTriangular(chdM[i, i]), chdM[i, j], compressor)
                     end
-                    @timeit_debug "rdiv! solution" begin
-                        if threads
-                            Threads.@spawn rdiv!(
-                                chdM[j, i],
-                                UpperTriangular(chdM[i, i]),
-                                compressor,
-                            )
-                        else
-                            rdiv!(chdM[j, i], UpperTriangular(chdM[i, i]), compressor)
-                        end
+                    if threads
+                        Threads.@spawn rdiv!(
+                            chdM[j, i],
+                            UpperTriangular(chdM[i, i]),
+                            compressor,
+                        )
+                    else
+                        rdiv!(chdM[j, i], UpperTriangular(chdM[i, i]), compressor)
                     end
                 end
             end
             for j in (i+1):m
                 for k in (i+1):n
-                    @timeit_debug "hmul!" begin
-                        hmul!(chdM[j, k], chdM[j, i], chdM[i, k], -1, 1, compressor)
-                    end
+                    hmul!(chdM[j, k], chdM[j, i], chdM[i, k], -1, 1, compressor)
                 end
             end
         end

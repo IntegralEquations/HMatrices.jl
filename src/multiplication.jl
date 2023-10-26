@@ -8,12 +8,8 @@ admissible blocks after addition is performed.
 """
 function hmul!(C::HMatrix, A::HMatrix, B::HMatrix, a, b, compressor)
     b == true || rmul!(C, b)
-    @timeit_debug "constructing plan" begin
-        plan = plan_hmul(C, A, B, a, 1)
-    end
-    @timeit_debug "executing plan" begin
-        execute!(plan, compressor)
-    end
+    plan = plan_hmul(C, A, B, a, 1)
+    execute!(plan, compressor)
     return C
 end
 
@@ -536,21 +532,15 @@ function mul!(
         #    or row_partition
         #    Right now the hilbert partition is chosen by default without proper
         #    testing.
-        @timeit_debug "partitioning leaves" begin
-            haskey(CACHED_PARTITIONS, A) ||
-                hilbert_partition(A, Threads.nthreads(), _cost_gemv)
-            # haskey(CACHED_PARTITIONS,A) || col_partition(A,Threads.nthreads(),_cost_gemv)
-            # haskey(CACHED_PARTITIONS,A) || row_partition(A,Threads.nthreads(),_cost_gemv)
-        end
-        @timeit_debug "threaded multiplication" begin
-            p = CACHED_PARTITIONS[A]
-            _hgemv_static_partition!(y, x, p.partition, offset)
-            # _hgemv_threads!(y, x, p.partition, offset)  # threaded implementation
-        end
+        haskey(CACHED_PARTITIONS, A) ||
+            hilbert_partition(A, Threads.nthreads(), _cost_gemv)
+        # haskey(CACHED_PARTITIONS,A) || col_partition(A,Threads.nthreads(),_cost_gemv)
+        # haskey(CACHED_PARTITIONS,A) || row_partition(A,Threads.nthreads(),_cost_gemv)
+        p = CACHED_PARTITIONS[A]
+        _hgemv_static_partition!(y, x, p.partition, offset)
+        # _hgemv_threads!(y, x, p.partition, offset)  # threaded implementation
     else
-        @timeit_debug "serial multiplication" begin
-            _hgemv_recursive!(y, A, x, offset) # serial implementation
-        end
+        _hgemv_recursive!(y, A, x, offset) # serial implementation
     end
     # permute output
     global_index && invpermute!(y, rowperm(A))

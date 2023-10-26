@@ -280,20 +280,16 @@ function assemble_hmatrix(
         _assemble_hmat_distributed(K, rowtree, coltree; adm, comp, global_index, threads)
     else
         # create first the structure. No parellelism used as this should be light.
-        @timeit_debug "initilizing block structure" begin
-            hmat = HMatrix{T}(rowtree, coltree, adm)
-        end
+        hmat = HMatrix{T}(rowtree, coltree, adm)
         # if needed permute kernel entries into indexing induced by trees
         global_index && (K = PermutedMatrix(K, loc2glob(rowtree), loc2glob(coltree)))
         # now assemble the data in the blocks
-        @timeit_debug "assembling hmatrix" begin
-            if threads
-                @info "Assembling HMatrix on $(Threads.nthreads()) threads"
-                _assemble_threads!(hmat, K, comp)
-            else
-                @info "Assembling HMatrix on 1 thread"
-                _assemble_cpu!(hmat, K, comp)
-            end
+        if threads
+            @info "Assembling HMatrix on $(Threads.nthreads()) threads"
+            _assemble_threads!(hmat, K, comp)
+        else
+            @info "Assembling HMatrix on 1 thread"
+            _assemble_cpu!(hmat, K, comp)
         end
     end
 end

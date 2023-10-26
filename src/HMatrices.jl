@@ -5,7 +5,6 @@ const PROJECT_ROOT = pkgdir(HMatrices)
 using StaticArrays
 using LinearAlgebra
 using Statistics: median
-using TimerOutputs
 using Printf
 using RecipesBase
 using Distributed
@@ -75,8 +74,5 @@ export
     # functions
     compression_ratio,
     print_tree,
-    assemble_hmatrix,
-    # macros
-    @hprofile
-
+    assemble_hmatrix
 end
