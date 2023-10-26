@@ -33,7 +33,7 @@ eta = 3
 rtol = 1e-5
 radius = 1
 
-X = points_on_cylinder(radius, N)
+X = points_on_cylinder(N, radius)
 splitter = HMatrices.CardinalitySplitter(nmax)
 Xclt = HMatrices.ClusterTree(X, splitter)
 Xp = HMatrices.root_elements(Xclt)

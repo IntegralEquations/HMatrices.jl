@@ -1,0 +1,37 @@
+name: Run benchmarks
+
+on:
+  push:
+    branches:
+      - 'main'
+    tags: '*'
+  pull_request:
+
+jobs:
+  Benchmark:
+    runs-on: self-hosted
+    if: contains(github.event.pull_request.labels.*.name, 'run benchmark')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@latest
+        with:
+          version: 1
+      - uses: julia-actions/julia-buildpkg@latest
+      - name: Install dependencies
+        run: julia -e 'using Pkg; pkg"add PkgBenchmark BenchmarkCI@0.1"'
+      - name: Run benchmarks
+        run: julia -e '
+               using BenchmarkCI;
+               env = Dict("JULIA_NUM_THREADS" => 8, "OPENBLAS_NUM_THREADS" => 1);
+               config = BenchmarkCI.BenchmarkConfig(; juliacmd = `julia -O3`, env);
+               BenchmarkCI.judge(;baseline=nothing, target = config);
+              '
+      - name: Post results
+        run: julia -e 'using BenchmarkCI; BenchmarkCI.postjudge()'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # - name: Push results
+      #   run: julia -e "using BenchmarkCI; BenchmarkCI.pushresult()"
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     SSH_KEY: ${{ secrets.DOCUMENTER_KEY }}

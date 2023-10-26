@@ -8,7 +8,7 @@ using StaticArrays
 
 @testset "Assemble" begin
     m, n = 10_000, 10_000
-    X = Y = points_on_cylinder(1, m)
+    X = Y = points_on_cylinder(m, 1)
     splitter = CardinalitySplitter(; nmax = 100)
     Xclt = Yclt = ClusterTree(X, splitter)
     adm = StrongAdmissibilityStd(; eta = 3)

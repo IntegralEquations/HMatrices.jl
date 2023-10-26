@@ -9,3 +9,5 @@ Manifest.toml
 /.benchmarkci
 /benchmark/*.json
 /sandbox/*
+/.benchmarkci
+/benchmark/*.json

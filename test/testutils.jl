@@ -198,7 +198,7 @@ function points_on_sphere(npts, R = 1)
     return pts
 end
 
-function points_on_cylinder(radius, n, shift = SVector(0, 0, 0))
+function points_on_cylinder(n, radius, shift = SVector(0, 0, 0))
     step = 1.75 * π * radius / sqrt(n)
     result = Vector{SVector{3,Float64}}(undef, n)
     length = 2 * π * radius
