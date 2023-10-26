@@ -10,7 +10,8 @@ on:
 jobs:
   Benchmark:
     runs-on: self-hosted
-    if: contains(github.event.pull_request.labels.*.name, 'run benchmark')
+    # run if PR has `run benchmark` label or if it is a push to main
+    if: contains(github.event.pull_request.labels.*.name, 'run benchmark') || github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@latest
