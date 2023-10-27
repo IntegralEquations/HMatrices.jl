@@ -38,6 +38,36 @@ throughout the package.
 """
 use_global_index() = true
 
+
+"""
+    get_block!(block,K,irange,jrange,[append=false])
+
+Fill `block` with `K[irange,jrange]`. If `append` is `true`, the data is added
+to the current values of `block`; otherwise `block` is overwritten.
+"""
+function get_block!(out,K,irange_,jrange_)
+    irange = irange_ isa Colon ? axes(K,1) : irange_
+    jrange = jrange_ isa Colon ? axes(K,2) : jrange_
+    for (jloc,j) in enumerate(jrange)
+        for (iloc,i) in enumerate(irange)
+            out[iloc,jloc] = K[i,j]
+        end
+    end
+    return out
+end
+
+function get_block!(out, Kadj::Adjoint, irange_, jrange_)
+    irange = irange_ isa Colon ? axes(K,1) : irange_
+    jrange = jrange_ isa Colon ? axes(K,2) : jrange_
+    K = parent(Kadj)
+    for (jloc,j) in enumerate(eachindex(jrange))
+        for (iloc,i) in enumerate(eachindex(irange))
+            out[iloc,jloc] = adjoint(K[j,i])
+        end
+    end
+    return out
+end
+
 include("utils.jl")
 include("hyperrectangle.jl")
 include("clustertree.jl")

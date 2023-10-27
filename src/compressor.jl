@@ -165,7 +165,7 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart = 1)
         ishift, jshift = 0, 0
     else
         m, n = length(irange), length(jrange)
-        ishift, jshift = irange.start - 1, jrange.start - 1
+        ishift, jshift = first(irange) - 1, first(jrange) - 1
         # maps global indices to local indices
     end
     rmax = min(m, n, rmax)
@@ -182,7 +182,9 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart = 1)
         # remove index i from allowed row
         I[i] = false
         # compute next row by row <-- K[i+ishift,jrange] - R[i,:]
+        # adjcol = Vector{T}(undef,n)
         adjcol = Kadj[jrange, i+ishift]
+        # get_block!(adjcol, Kadj, jrange, i+ishift)
         for k in 1:r
             axpy!(-adjoint(A[k][i]), B[k], adjcol)
             # for j in eachindex(row)
@@ -202,7 +204,10 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart = 1)
             end
             J[j] = false
             # compute next col by col <-- K[irange,j+jshift] - R[:,j]
-            col = K[irange, j+jshift]
+            col = K[irange,j+jshift]
+            _col = Vector{T}(undef,m)
+            get_block!(_col, K, irange, j+jshift)
+            _col ≈ col || error()
             for k in 1:r
                 axpy!(-adjoint(B[k][j]), A[k], col)
                 # for i in eachindex(col)
