@@ -140,11 +140,15 @@ function (paca::PartialACA)(K, rowtree::ClusterTree, coltree::ClusterTree)
     )
 end
 
-function (paca::PartialACA)(K, irange::UnitRange, jrange::UnitRange)
+function (paca::PartialACA)(
+    K,
+    irange::Union{<:UnitRange,Colon},
+    jrange::Union{<:UnitRange,Colon},
+)
     return _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol)
 end
 
-(paca::PartialACA)(K::Matrix) = paca(K, 1:size(K, 1), 1:size(K, 2))
+(paca::PartialACA)(K) = paca(K, :, :)
 
 """
     _aca_partial(K,irange,jrange,atol,rmax,rtol,istart=1)
@@ -182,14 +186,10 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart = 1)
         # remove index i from allowed row
         I[i] = false
         # compute next row by row <-- K[i+ishift,jrange] - R[i,:]
-        # adjcol = Vector{T}(undef,n)
-        adjcol = Kadj[jrange, i+ishift]
-        # get_block!(adjcol, Kadj, jrange, i+ishift)
+        adjcol = Vector{T}(undef,n)
+        get_block!(adjcol, Kadj, jrange, i+ishift)
         for k in 1:r
             axpy!(-adjoint(A[k][i]), B[k], adjcol)
-            # for j in eachindex(row)
-            #     row[j] = row[j] - B[k][j]*adjoint(A[k][i])
-            # end
         end
         j = _aca_partial_pivot(adjcol, J)
         δ = adjcol[j]
@@ -204,15 +204,10 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart = 1)
             end
             J[j] = false
             # compute next col by col <-- K[irange,j+jshift] - R[:,j]
-            col = K[irange,j+jshift]
-            _col = Vector{T}(undef,m)
-            get_block!(_col, K, irange, j+jshift)
-            _col ≈ col || error()
+            col = Vector{T}(undef,m)
+            get_block!(col, K, irange, j+jshift)
             for k in 1:r
                 axpy!(-adjoint(B[k][j]), A[k], col)
-                # for i in eachindex(col)
-                #     col[i] = col[i] - A[k][i]*adjoint(B[k][j])
-                # end
             end
             # push new cross and increase rank
             r += 1

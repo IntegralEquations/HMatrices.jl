@@ -68,19 +68,6 @@ coltree(H::AbstractHMatrix) = H.coltree
 
 cluster_type(::HMatrix{R,T}) where {R,T} = R
 
-# getcol for regular matrices
-function getcol!(col, M::Matrix, j)
-    @assert length(col) == size(M, 1)
-    return copyto!(col, view(M, :, j))
-end
-function getcol!(col, adjM::Adjoint{<:Any,<:Matrix}, j)
-    @assert length(col) == size(adjM, 1)
-    return copyto!(col, view(adjM, :, j))
-end
-
-getcol(M::Matrix, j) = M[:, j]
-getcol(adjM::Adjoint{<:Any,<:Matrix}, j) = adjM[:, j]
-
 function getcol(H::HMatrix, j::Int)
     m, n = size(H)
     T = eltype(H)
@@ -99,7 +86,7 @@ function _getcol!(col, H::HMatrix, j, piv)
         shift = pivot(H) .- 1
         jl = j - shift[2]
         irange = rowrange(H) .- (piv[1] - 1)
-        getcol!(view(col, irange), data(H), jl)
+        get_block!(view(col, irange), data(H), :, jl)
     end
     for child in children(H)
         if j ∈ colrange(child)
@@ -108,6 +95,8 @@ function _getcol!(col, H::HMatrix, j, piv)
     end
     return col
 end
+
+get_block!(out, H::HMatrix, ::Colon, j::Int) = getcol!(out, H, j)
 
 function getcol(adjH::Adjoint{<:Any,<:HMatrix}, j::Int)
     # (j ∈ colrange(adjH)) || throw(BoundsError())
@@ -127,7 +116,7 @@ function _getcol!(col, adjH::Adjoint{<:Any,<:HMatrix}, j, piv)
         shift = pivot(adjH) .- 1
         jl = j - shift[2]
         irange = rowrange(adjH) .- (piv[1] - 1)
-        getcol!(view(col, irange), data(adjH), jl)
+        get_block!(view(col, irange), data(adjH), :, jl)
     end
     for child in children(adjH)
         if j ∈ colrange(child)
@@ -136,6 +125,8 @@ function _getcol!(col, adjH::Adjoint{<:Any,<:HMatrix}, j, piv)
     end
     return col
 end
+
+get_block!(out, adjH::Adjoint{<:,HMatrix}, ::Colon, j::Int) = getcol!(out, adjH, j)
 
 # Trees interface
 children(H::AbstractHMatrix) = H.children

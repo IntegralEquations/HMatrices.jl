@@ -2,6 +2,7 @@ module HMatrices
 
 const PROJECT_ROOT = pkgdir(HMatrices)
 
+using TimerOutputs
 using StaticArrays
 using LinearAlgebra
 using Statistics: median
@@ -57,16 +58,30 @@ function get_block!(out,K,irange_,jrange_)
 end
 
 function get_block!(out, Kadj::Adjoint, irange_, jrange_)
-    irange = irange_ isa Colon ? axes(K,1) : irange_
-    jrange = jrange_ isa Colon ? axes(K,2) : jrange_
-    K = parent(Kadj)
-    for (jloc,j) in enumerate(eachindex(jrange))
-        for (iloc,i) in enumerate(eachindex(irange))
-            out[iloc,jloc] = adjoint(K[j,i])
-        end
-    end
-    return out
+    get_block!(transpose(out), parent(Kadj), jrange_, irange_)
+    out .= conj.(out)
 end
+
+function get_block(K, irange, jrange)
+    m = irange isa Colon ? size(K,1) : length(irange)
+    n = jrange isa Colon ? size(K,2) : length(jrange)
+    T = eltype(K)
+    out = zeros(T, m, n)
+    get_block!(out, K, irange, jrange)
+end
+
+# getcol for regular matrices
+function getcol!(col, M::Matrix, j)
+    @assert length(col) == size(M, 1)
+    return copyto!(col, view(M, :, j))
+end
+function getcol!(col, adjM::Adjoint{<:Any,<:Matrix}, j)
+    @assert length(col) == size(adjM, 1)
+    return copyto!(col, view(adjM, :, j))
+end
+
+getcol(M::Matrix, j) = M[:, j]
+getcol(adjM::Adjoint{<:Any,<:Matrix}, j) = adjM[:, j]
 
 include("utils.jl")
 include("hyperrectangle.jl")

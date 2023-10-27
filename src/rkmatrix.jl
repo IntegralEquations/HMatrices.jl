@@ -54,37 +54,14 @@ function Base.getindex(rmat::RkMatrix, i::Int, j::Int)
     return acc
 end
 
-"""
-    getcol!(col,M::AbstractMatrix,j)
-
-Fill the entries of `col` with column `j` of `M`.
-"""
-function getcol!(col, R::RkMatrix, j::Int)
-    return mul!(col, R.A, conj(view(R.B, j, :)))
+function get_block!(block, R::RkMatrix, irange, jrange, append=false)
+    @views mul!(block, R.A[irange,:], adjoint(R.B)[:,jrange], true, append)
+    return block
 end
-
-"""
-    getcol(M::AbstractMatrix,j)
-
-Return a vector containing the `j`-th column of `M`.
-"""
-function getcol(R::RkMatrix, j::Int)
-    m = size(R, 1)
-    T = eltype(R)
-    col = zeros(T, m)
-    return getcol!(col, R, j)
-end
-
-function getcol!(col, Ra::Adjoint{<:Any,<:RkMatrix}, j::Int)
-    R = parent(Ra)
-    return mul!(col, R.B, conj(view(R.A, j, :)))
-end
-
-function getcol(Ra::Adjoint{<:Any,<:RkMatrix}, j::Int)
-    m = size(Ra, 1)
-    T = eltype(Ra)
-    col = zeros(T, m)
-    return getcol!(col, Ra, j)
+function get_block!(block, adjR::Adjoint{T,RkMatrix{T}}, irange, jrange, append=false) where {T}
+    R = parent(adjR)
+    @views mul!(block, R.B[irange,:], adjoint(R.A)[:,jrange], true, append)
+    return block
 end
 
 """
@@ -146,6 +123,25 @@ function Base.hcat(M1::RkMatrix{T}, M2::RkMatrix{T}) where {T}
     B2 = vcat(zeros(T, n, r2), M2.B)
     B = hcat(B1, B2)
     return RkMatrix(A, B)
+end
+
+const RkMatrixBlockView{T} =
+    SubArray{T,2,RkMatrix{T},Tuple{UnitRange{Int64},UnitRange{Int64}},false}
+
+function Base.getproperty(Rv::RkMatrixBlockView, s::Symbol)
+    R    = getfield(Rv, :parent)
+    I, J = getfield(Rv, :indices)
+    if s == :A
+        return view(R.A, I, :)
+    elseif s == :B
+        return view(R.B, J, :)
+    elseif s == :Bt
+        return adjoint(Rv.B)
+    elseif s == :At
+        return adjoint(Rv.A)
+    else
+        return getfield(Rv, s)
+    end
 end
 
 """

@@ -47,7 +47,7 @@ function ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor)
     @assert isclean(H)
     if isleaf(X)
         d = data(X)
-        ldiv!(L, d)
+        @timeit "dense ldiv" ldiv!(L, d)
     elseif isleaf(H) # X not a leaf, but L is a leaf. This should not happen.
         error()
     else
@@ -58,7 +58,7 @@ function ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor)
         for k in 1:size(chdX, 2)
             for i in 1:m
                 for j in 1:(i-1)# j<i
-                    hmul!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor)
+                    @timeit "hmul" hmul!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor)
                 end
                 ldiv!(UnitLowerTriangular(chdH[i, i]), chdX[i, k], compressor)
             end

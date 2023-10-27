@@ -57,9 +57,11 @@ lu(M::HMatrix, args...; kwargs...) = lu!(deepcopy(M), args...; kwargs...)
 
 function _lu!(M::HMatrix, compressor, threads)
     if isleaf(M)
-        d = data(M)
-        @assert d isa Matrix
-        lu!(d, NOPIVOT())
+        @timeit "Dense LU" begin
+            d = data(M)
+            @assert d isa Matrix
+            lu!(d, NOPIVOT())
+        end
     else
         @assert !hasdata(M)
         chdM = children(M)
@@ -68,29 +70,15 @@ function _lu!(M::HMatrix, compressor, threads)
             _lu!(chdM[i, i], compressor, threads)
             for j in (i+1):n
                 @sync begin
-                    if threads
-                        Threads.@spawn ldiv!(
-                            UnitLowerTriangular(chdM[i, i]),
-                            chdM[i, j],
-                            compressor,
-                        )
-                    else
-                        ldiv!(UnitLowerTriangular(chdM[i, i]), chdM[i, j], compressor)
-                    end
-                    if threads
-                        Threads.@spawn rdiv!(
-                            chdM[j, i],
-                            UpperTriangular(chdM[i, i]),
-                            compressor,
-                        )
-                    else
-                        rdiv!(chdM[j, i], UpperTriangular(chdM[i, i]), compressor)
-                    end
+                    @timeit "ldiv" ldiv!(UnitLowerTriangular(chdM[i, i]), chdM[i, j], compressor)
+                    @timeit "rdiv" rdiv!(chdM[j, i], UpperTriangular(chdM[i, i]), compressor)
                 end
             end
-            for j in (i+1):m
-                for k in (i+1):n
-                    hmul!(chdM[j, k], chdM[j, i], chdM[i, k], -1, 1, compressor)
+            @timeit "hmul" begin
+                for j in (i+1):m
+                    for k in (i+1):n
+                        hmul!(chdM[j, k], chdM[j, i], chdM[i, k], -1, 1, compressor)
+                    end
                 end
             end
         end
