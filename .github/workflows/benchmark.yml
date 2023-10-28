@@ -25,7 +25,7 @@ jobs:
                using BenchmarkCI;
                env = Dict("JULIA_NUM_THREADS" => 8, "OPENBLAS_NUM_THREADS" => 1);
                config = BenchmarkCI.BenchmarkConfig(; juliacmd = `julia -O3`, env);
-               BenchmarkCI.judge(;baseline=main, target = config);
+               BenchmarkCI.judge(;baseline="origin/main", target = config);
               '
       - name: Post results
         run: julia -e 'using BenchmarkCI; BenchmarkCI.postjudge()'
