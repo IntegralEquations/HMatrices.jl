@@ -505,7 +505,6 @@ function _cost_gemv(H::HMatrix)
     return acc
 end
 
-
 """
     hmul!(C::HMatrix,A::HMatrix,B::HMatrix,a,b,compressor)
 

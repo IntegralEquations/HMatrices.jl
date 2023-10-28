@@ -54,13 +54,19 @@ function Base.getindex(rmat::RkMatrix, i::Int, j::Int)
     return acc
 end
 
-function get_block!(block, R::RkMatrix, irange, jrange, append=false)
-    @views mul!(block, R.A[irange,:], adjoint(R.B)[:,jrange], true, append)
+function get_block!(block, R::RkMatrix, irange, jrange, append = false)
+    @views mul!(block, R.A[irange, :], adjoint(R.B)[:, jrange], true, append)
     return block
 end
-function get_block!(block, adjR::Adjoint{T,RkMatrix{T}}, irange, jrange, append=false) where {T}
+function get_block!(
+    block,
+    adjR::Adjoint{T,RkMatrix{T}},
+    irange,
+    jrange,
+    append = false,
+) where {T}
     R = parent(adjR)
-    @views mul!(block, R.B[irange,:], adjoint(R.A)[:,jrange], true, append)
+    @views mul!(block, R.B[irange, :], adjoint(R.A)[:, jrange], true, append)
     return block
 end
 

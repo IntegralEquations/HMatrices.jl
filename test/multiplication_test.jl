@@ -32,14 +32,13 @@ H_full = Matrix(H; global_index = false)
 α = rand() - 0.5
 β = rand() - 0.5
 @testset "MulLinearOp" begin
-    L = HMatrices.MulLinearOp(R,P,[(H,H)],1)
-    @test size(L) == (m,n)
-    col = Vector{eltype(H)}(undef,m)
+    L = HMatrices.MulLinearOp(R, P, [(H, H)], 1)
+    @test size(L) == (m, n)
+    col = Vector{eltype(H)}(undef, m)
     j = 7
-    HMatrices.getcol!(col,L,j)
-    @test col ≈ Matrix(P)[:,j] + Matrix(R)[:,j] + H_full*H_full[:,j]
+    HMatrices.getcol!(col, L, j)
+    @test col ≈ Matrix(P)[:, j] + Matrix(R)[:, j] + H_full * H_full[:, j]
 end
-
 
 @testset "hmul!" begin
     C = deepcopy(H)

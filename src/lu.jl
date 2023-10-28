@@ -70,8 +70,16 @@ function _lu!(M::HMatrix, compressor, threads)
             _lu!(chdM[i, i], compressor, threads)
             for j in (i+1):n
                 @sync begin
-                    @timeit "ldiv" ldiv!(UnitLowerTriangular(chdM[i, i]), chdM[i, j], compressor)
-                    @timeit "rdiv" rdiv!(chdM[j, i], UpperTriangular(chdM[i, i]), compressor)
+                    @timeit "ldiv" ldiv!(
+                        UnitLowerTriangular(chdM[i, i]),
+                        chdM[i, j],
+                        compressor,
+                    )
+                    @timeit "rdiv" rdiv!(
+                        chdM[j, i],
+                        UpperTriangular(chdM[i, i]),
+                        compressor,
+                    )
                 end
             end
             @timeit "hmul" begin

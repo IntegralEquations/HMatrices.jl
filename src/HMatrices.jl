@@ -9,10 +9,8 @@ using Statistics: median
 using Printf
 using RecipesBase
 using Distributed
-using Base.Threads
-using AbstractTrees: print_tree
 
-using AbstractTrees: AbstractTrees
+import AbstractTrees
 import LinearAlgebra: mul!, lu!, lu, LU, ldiv!, rdiv!, axpy!, rank, rmul!, lmul!
 import Base: Matrix, adjoint, parent
 
@@ -39,19 +37,18 @@ throughout the package.
 """
 use_global_index() = true
 
-
 """
     get_block!(block,K,irange,jrange,[append=false])
 
 Fill `block` with `K[irange,jrange]`. If `append` is `true`, the data is added
 to the current values of `block`; otherwise `block` is overwritten.
 """
-function get_block!(out,K,irange_,jrange_)
-    irange = irange_ isa Colon ? axes(K,1) : irange_
-    jrange = jrange_ isa Colon ? axes(K,2) : jrange_
-    for (jloc,j) in enumerate(jrange)
-        for (iloc,i) in enumerate(irange)
-            out[iloc,jloc] = K[i,j]
+function get_block!(out, K, irange_, jrange_)
+    irange = irange_ isa Colon ? axes(K, 1) : irange_
+    jrange = jrange_ isa Colon ? axes(K, 2) : jrange_
+    for (jloc, j) in enumerate(jrange)
+        for (iloc, i) in enumerate(irange)
+            out[iloc, jloc] = K[i, j]
         end
     end
     return out
@@ -59,15 +56,15 @@ end
 
 function get_block!(out, Kadj::Adjoint, irange_, jrange_)
     get_block!(transpose(out), parent(Kadj), jrange_, irange_)
-    out .= conj.(out)
+    return out .= conj.(out)
 end
 
 function get_block(K, irange, jrange)
-    m = irange isa Colon ? size(K,1) : length(irange)
-    n = jrange isa Colon ? size(K,2) : length(jrange)
+    m = irange isa Colon ? size(K, 1) : length(irange)
+    n = jrange isa Colon ? size(K, 2) : length(jrange)
     T = eltype(K)
     out = zeros(T, m, n)
-    get_block!(out, K, irange, jrange)
+    return get_block!(out, K, irange, jrange)
 end
 
 # getcol for regular matrices
@@ -117,6 +114,5 @@ export
     TSVD,
     # functions
     compression_ratio,
-    print_tree,
     assemble_hmatrix
 end

@@ -558,7 +558,6 @@ end
     end
 end
 
-
 """
     hilbert_partition(H::HMatrix,np,cost)
 

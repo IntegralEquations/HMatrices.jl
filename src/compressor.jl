@@ -186,8 +186,8 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart = 1)
         # remove index i from allowed row
         I[i] = false
         # compute next row by row <-- K[i+ishift,jrange] - R[i,:]
-        adjcol = Vector{T}(undef,n)
-        get_block!(adjcol, Kadj, jrange, i+ishift)
+        adjcol = Vector{T}(undef, n)
+        get_block!(adjcol, Kadj, jrange, i + ishift)
         for k in 1:r
             axpy!(-adjoint(A[k][i]), B[k], adjcol)
         end
@@ -204,8 +204,8 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart = 1)
             end
             J[j] = false
             # compute next col by col <-- K[irange,j+jshift] - R[:,j]
-            col = Vector{T}(undef,m)
-            get_block!(col, K, irange, j+jshift)
+            col = Vector{T}(undef, m)
+            get_block!(col, K, irange, j + jshift)
             for k in 1:r
                 axpy!(-adjoint(B[k][j]), A[k], col)
             end

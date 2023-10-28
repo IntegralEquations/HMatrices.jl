@@ -204,13 +204,13 @@ struct VectorBuffer{T}
     counter::Ref{Int}
 end
 
-VectorBuffer(T,n) = VectorBuffer{T}(Vector{T}(undef,n),0)
+VectorBuffer(T, n) = VectorBuffer{T}(Vector{T}(undef, n), 0)
 
 function newbuffer!(buf::VectorBuffer{T}, n) where {T}
     is = buf.counter[] + 1
     ie = buf.counter[] + n
     if ie > length(buf.data)
-        resize!(buf.data, 2*length(buf.data))
+        resize!(buf.data, 2 * length(buf.data))
     end
     buf.counter[] = ie
     return view(buf.data, is, ie)
