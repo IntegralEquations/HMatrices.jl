@@ -212,34 +212,6 @@ function _partition_by_depth!(partition, tree, depth)
 end
 
 """
-    struct VectorBuffer{T}
-
-A buffer for vectors of type `T`. You can ask for a new vector of size `n` with
-[`newbuffer(n)`](@ref). Use [`resetbuffer!`](@ref) to reset the buffer counter.
-
-Note that freeing the buffer is done automatically by the garbage collector when
-the buffer and all the vectors returned by `newbuffer` go out of scope.
-"""
-struct VectorBuffer{T}
-    data::Vector{T}
-    counter::Ref{Int}
-end
-
-VectorBuffer(T,n) = VectorBuffer{T}(Vector{T}(undef,n),0)
-
-function newbuffer!(buf::VectorBuffer{T}, n) where {T}
-    is = buf.counter[] + 1
-    ie = buf.counter[] + n
-    if ie > length(buf.data)
-        resize!(buf.data, 2*length(buf.data))
-    end
-    buf.counter[] = ie
-    return view(buf.data, is, ie)
-end
-
-resetbuffer!(buf::VectorBuffer) = (buf.counter[] = 0)
-
-"""
     build_sequence_partition(seq,nq,cost,nmax)
 
 Partition the sequence `seq` into `nq` contiguous subsequences with a maximum of
