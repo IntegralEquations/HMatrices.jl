@@ -104,8 +104,8 @@ function _hmul!(C::HMatrix, compressor, dict, a, R)
         irange = rowrange(chd) .- shift[1]
         jrange = colrange(chd) .- shift[2]
         Rp     = data(C)
-        Rv     = (!isroot(C) && hasdata(C)) ? RkMatrix(Rp.A[irange, :], Rp.B[jrange, :]) : nothing
-        # Rv = (!isroot(C) && hasdata(C)) ? view(Rp,irange,jrange) : nothing
+        Rv   = hasdata(C) ? RkMatrix(Rp.A[irange, :], Rp.B[jrange, :]) : nothing
+        # Rv = hasdata(C) ? view(Rp,irange,jrange) : nothing
         _hmul!(chd, compressor, dict, a, Rv)
     end
     isleaf(C) || (setdata!(C, nothing))

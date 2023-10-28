@@ -29,8 +29,15 @@ function axpy!(a, X::Matrix, Y::HMatrix)
 end
 
 # 2.1
-function axpy!(a, X::RkMatrix, Y::Matrix)
-    return axpy!(a, Matrix(X), Y)
+function axpy!(a, X::Union{RkMatrix,RkMatrixBlockView}, Y::Matrix)
+    # axpy!(a,Matrix(X),Y)
+    r = rank(X)
+    m, n = size(Y)
+    # @turbo warn_check_args=false for i in 1:m
+    @inbounds for i in 1:m, j in 1:n, k in 1:r
+        Y[i,j] += a * X.A[i, k] * adjoint(X.B[j, k])
+    end
+    return Y
 end
 
 #2.2
@@ -52,7 +59,7 @@ end
 
 #3.1
 function axpy!(a, X::HMatrix, Y::Matrix)
-    @debug "calling axpy! with `X` and HMatrix and `Y` a Matrix"
+    error("calling axpy! with `X` and HMatrix and `Y` a Matrix")
     shift = pivot(X) .- 1
     for block in AbstractTrees.PreOrderDFS(X)
         irange = rowrange(block) .- shift[1]
@@ -66,7 +73,7 @@ end
 
 # 3.2
 function axpy!(a, X::HMatrix, Y::RkMatrix)
-    @debug "calling axpby! with `X` and HMatrix and `Y` an RkMatrix"
+    error("calling axpby! with `X` and HMatrix and `Y` an RkMatrix")
     # FIXME: inneficient implementation due to conversion from HMatrix to
     # Matrix. Does it really matter? I don't think this function should be
     # called.

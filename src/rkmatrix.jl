@@ -22,6 +22,9 @@ mutable struct RkMatrix{T} <: AbstractMatrix{T}
 end
 RkMatrix(A, B) = RkMatrix(promote(A, B)...)
 
+const RkMatrixBlockView{T} =
+    SubArray{T,2,RkMatrix{T},Tuple{UnitRange{Int64},UnitRange{Int64}},false}
+
 function Base.setproperty!(R::RkMatrix, s::Symbol, mat::Matrix)
     setfield!(R, s, mat)
     return R
@@ -54,13 +57,13 @@ function Base.getindex(rmat::RkMatrix, i::Int, j::Int)
     return acc
 end
 
-function get_block!(block, R::RkMatrix, irange, jrange, append = false)
+function get_block!(block, R::Union{RkMatrix,RkMatrixBlockView}, irange, jrange, append = false)
     @views mul!(block, R.A[irange, :], adjoint(R.B)[:, jrange], true, append)
     return block
 end
 function get_block!(
     block,
-    adjR::Adjoint{T,RkMatrix{T}},
+    adjR::Union{Adjoint{T,RkMatrix{T}}, Adjoint{T,RkMatrixBlockView{T}}},
     irange,
     jrange,
     append = false,
@@ -131,9 +134,6 @@ function Base.hcat(M1::RkMatrix{T}, M2::RkMatrix{T}) where {T}
     return RkMatrix(A, B)
 end
 
-const RkMatrixBlockView{T} =
-    SubArray{T,2,RkMatrix{T},Tuple{UnitRange{Int64},UnitRange{Int64}},false}
-
 function Base.getproperty(Rv::RkMatrixBlockView, s::Symbol)
     R    = getfield(Rv, :parent)
     I, J = getfield(Rv, :indices)
@@ -149,6 +149,8 @@ function Base.getproperty(Rv::RkMatrixBlockView, s::Symbol)
         return getfield(Rv, s)
     end
 end
+
+rank(Rv::RkMatrixBlockView) = rank(parent(Rv))
 
 """
     vcat(M1::RkMatrix,M2::RkMatrix)
@@ -172,8 +174,8 @@ end
 
 Base.copy(R::RkMatrix) = RkMatrix(copy(R.A), copy(R.B))
 
-function Base.Matrix(R::RkMatrix{<:Number})
-    return Matrix(R.A * R.Bt)
+function Base.Matrix(R::Union{RkMatrix{<:Number}, RkMatrixBlockView{<:Number}})
+    return R.A * R.Bt
 end
 function Base.Matrix(R::RkMatrix{<:SMatrix})
     # collect must be used when we have a matrix of `SMatrix` because of this issue:
