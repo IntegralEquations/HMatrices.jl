@@ -189,3 +189,117 @@ function _partition_by_depth!(partition, tree, depth)
     end
     return partition
 end
+
+"""
+    struct VectorBuffer{T}
+
+A buffer for vectors of type `T`. You can ask for a new vector of size `n` with
+[`newbuffer(n)`](@ref). Use [`resetbuffer!`](@ref) to reset the buffer counter.
+
+Note that freeing the buffer is done automatically by the garbage collector when
+the buffer and all the vectors returned by `newbuffer` go out of scope.
+"""
+struct VectorBuffer{T}
+    data::Vector{T}
+    counter::Ref{Int}
+end
+
+VectorBuffer(T,n) = VectorBuffer{T}(Vector{T}(undef,n),0)
+
+function newbuffer!(buf::VectorBuffer{T}, n) where {T}
+    is = buf.counter[] + 1
+    ie = buf.counter[] + n
+    if ie > length(buf.data)
+        resize!(buf.data, 2*length(buf.data))
+    end
+    buf.counter[] = ie
+    return view(buf.data, is, ie)
+end
+
+resetbuffer!(buf::VectorBuffer) = (buf.counter[] = 0)
+
+"""
+    build_sequence_partition(seq,nq,cost,nmax)
+
+Partition the sequence `seq` into `nq` contiguous subsequences with a maximum of
+cost of `nmax` per set. Note that if `nmax` is too small, this may not be
+possible (see [`has_partition`](@ref)).
+"""
+function build_sequence_partition(seq, np, cost, cmax)
+    acc = 0
+    partition = [empty(seq) for _ in 1:np]
+    k = 1
+    for el in seq
+        c = cost(el)
+        acc += c
+        if acc > cmax
+            k += 1
+            push!(partition[k], el)
+            acc = c
+            @assert k <= np "unable to build sequence partition. Value of  `cmax` may be too small."
+        else
+            push!(partition[k], el)
+        end
+    end
+    return partition
+end
+
+"""
+    find_optimal_cost(seq,nq,cost,tol)
+
+Find an approximation to the cost of an optimal partitioning of `seq` into `nq`
+contiguous segments. The optimal cost is the smallest number `cmax` such that
+`has_partition(seq,nq,cost,cmax)` returns `true`.
+"""
+function find_optimal_cost(seq, np, cost = identity, tol = 1)
+    lbound = Float64(maximum(cost, seq))
+    ubound = Float64(sum(cost, seq))
+    guess = (lbound + ubound) / 2
+    while ubound - lbound ≥ tol
+        if has_partition(seq, np, guess, cost)
+            ubound = guess
+        else
+            lbound = guess
+        end
+        guess = (lbound + ubound) / 2
+    end
+    return ubound
+end
+
+"""
+    find_optimal_partition(seq,nq,cost,tol=1)
+
+Find an approximation to the optimal partition `seq` into `nq` contiguous
+segments according to the `cost` function. The optimal partition is the one
+which minimizes the maximum `cost` over all possible partitions of `seq` into
+`nq` segments.
+
+The generated partition is optimal up to a tolerance `tol`; for integer valued
+`cost`, setting `tol=1` means the partition is optimal.
+"""
+function find_optimal_partition(seq, np, cost = (x) -> 1, tol = 1)
+    cmax = find_optimal_cost(seq, np, cost, tol)
+    p = build_sequence_partition(seq, np, cost, cmax)
+    return p
+end
+
+"""
+    has_partition(v,np,cost,cmax)
+
+Given a vector `v`, determine whether or not a partition into `np` segments is
+possible where the `cost` of each partition does not exceed `cmax`.
+"""
+function has_partition(seq, np, cmax, cost = identity)
+    acc = 0
+    k = 1
+    for el in seq
+        c = cost(el)
+        acc += c
+        if acc > cmax
+            k += 1
+            acc = c
+            k > np && (return false)
+        end
+    end
+    return true
+end

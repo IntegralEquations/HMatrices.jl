@@ -351,11 +351,8 @@ function mul!(
         #    or row_partition
         #    Right now the hilbert partition is chosen by default without proper
         #    testing.
-        haskey(CACHED_PARTITIONS, A) || hilbert_partition(A, Threads.nthreads(), _cost_gemv)
-        # haskey(CACHED_PARTITIONS,A) || col_partition(A,Threads.nthreads(),_cost_gemv)
-        # haskey(CACHED_PARTITIONS,A) || row_partition(A,Threads.nthreads(),_cost_gemv)
-        p = CACHED_PARTITIONS[A]
-        _hgemv_static_partition!(y, x, p.partition, offset)
+        isnothing(A.partition) && (partition!(:hilbert, A))
+        _hgemv_static_partition!(y, x, A.partition.partition, offset)
         # _hgemv_threads!(y, x, p.partition, offset)  # threaded implementation
     else
         _hgemv_recursive!(y, A, x, offset) # serial implementation
@@ -520,7 +517,7 @@ addition is performed.
 function hmul!(C::T, A::T, B::T, a, b, compressor) where {T<:HMatrix}
     @assert isroot(C) || !hasdata(parent(C))
     b == true || rmul!(C, b)
-    dict = Dict{T,Vector{NTuple{2,T}}}()
+    dict = IdDict{T,Vector{NTuple{2,T}}}()
     _plan_dict!(dict, C, A, B)
     @timeit "executing plan" begin
         _hmul!(C, compressor, dict, a, nothing)
