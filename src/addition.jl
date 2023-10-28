@@ -57,29 +57,6 @@ function axpy!(a, X::RkMatrix, Y::HMatrix)
     return Y
 end
 
-#3.1
-function axpy!(a, X::HMatrix, Y::Matrix)
-    error("calling axpy! with `X` and HMatrix and `Y` a Matrix")
-    shift = pivot(X) .- 1
-    for block in AbstractTrees.PreOrderDFS(X)
-        irange = rowrange(block) .- shift[1]
-        jrange = colrange(block) .- shift[2]
-        if hasdata(block)
-            axpy!(a, data(block), view(Y, irange, jrange))
-        end
-    end
-    return Y
-end
-
-# 3.2
-function axpy!(a, X::HMatrix, Y::RkMatrix)
-    error("calling axpby! with `X` and HMatrix and `Y` an RkMatrix")
-    # FIXME: inneficient implementation due to conversion from HMatrix to
-    # Matrix. Does it really matter? I don't think this function should be
-    # called.
-    return axpy!(a, Matrix(X; global_index = false), Y)
-end
-
 # 3.3
 function axpy!(a, X::HMatrix, Y::HMatrix)
     msg = "adding hierarchical matrices requires identical block structure"

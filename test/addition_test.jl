@@ -33,8 +33,6 @@ a = rand()
     @test axpy!(a, R, deepcopy(R)) ≈ a * _R + _R
     tmp = axpy!(a, R, deepcopy(H))
     Matrix(tmp; global_index = false) ≈ a * _R + _H
-    @test axpy!(a, H, deepcopy(M)) ≈ a * _H + _M
-    @test axpy!(a, H, deepcopy(R)) ≈ a * _H + _R
     tmp = axpy!(a, H, deepcopy(H))
     @test Matrix(tmp; global_index = false) ≈ a * _H + _H
 end
