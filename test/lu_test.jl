@@ -26,7 +26,7 @@ H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false, distributed = fa
 H_full = Matrix(H)
 
 ##
-hlu = lu(H; atol = 1e-5)
+hlu = lu(H; atol = 1e-5, threads = true)
 y = rand(m)
 M = Matrix(K)
 exact = M \ y

@@ -518,9 +518,7 @@ function hmul!(C::T, A::T, B::T, a, b, compressor) where {T<:HMatrix}
     b == true || rmul!(C, b)
     dict = IdDict{T,Vector{NTuple{2,T}}}()
     _plan_dict!(dict, C, A, B)
-    @timeit "executing plan" begin
-        _hmul!(C, compressor, dict, a, nothing)
-    end
+    _hmul!(C, compressor, dict, a, nothing)
     return C
 end
 

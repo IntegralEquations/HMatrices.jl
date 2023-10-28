@@ -194,10 +194,13 @@ end
     struct VectorBuffer{T}
 
 A buffer for vectors of type `T`. You can ask for a new vector of size `n` with
-[`newbuffer(n)`](@ref). Use [`resetbuffer!`](@ref) to reset the buffer counter.
+[`get_vector!(buf,n)`](@ref). Use `resetcounter!` to reset the buffer counter,
+and `resetbuffer!` to resize the `buffer`'s internal vector to `0`. The memory
+freed by `resetbuffer!` can be reclaimed by the garbage collector.
 
-Note that freeing the buffer is done automatically by the garbage collector when
-the buffer and all the vectors returned by `newbuffer` go out of scope.
+The main difference between `resetcounter!` and `resetbuffer!` is that the
+former keeps the interval vector allocated, thus speeding up subsequent calls to
+`get_vector!`.
 """
 struct VectorBuffer{T}
     data::Vector{T}
@@ -206,7 +209,13 @@ end
 
 VectorBuffer(T, n) = VectorBuffer{T}(Vector{T}(undef, n), 0)
 
-function newbuffer!(buf::VectorBuffer{T}, n) where {T}
+"""
+    newvector(buf,n)
+
+Return a new vector of size `n` from the buffer `buf`. If the buffer is too
+small, it is resized accordingly. The returned object is a view of a vector.
+"""
+function get_vector!(buf::VectorBuffer{T}, n) where {T}
     is = buf.counter[] + 1
     ie = buf.counter[] + n
     if ie > length(buf.data)
@@ -216,7 +225,9 @@ function newbuffer!(buf::VectorBuffer{T}, n) where {T}
     return view(buf.data, is, ie)
 end
 
-resetbuffer!(buf::VectorBuffer) = (buf.counter[] = 0)
+resetcounter!(buf::VectorBuffer) = (buf.counter[] = 0)
+
+resetbuffer!(buf::VectorBuffer) = (resetcounter!(buf); resize!(buf.data, 0))
 
 """
     build_sequence_partition(seq,nq,cost,nmax)
@@ -302,4 +313,37 @@ function has_partition(seq, np, cmax, cost = identity)
         end
     end
     return true
+end
+
+"""
+    @usethreads bool expr
+
+Append `Threads.@threads` if `bool==true` (see
+https://discourse.julialang.org/t/putting-threads-threads-or-any-macro-in-an-if-statement/41406/8)
+"""
+macro usethreads(multithreaded, expr::Expr)
+    ex = quote
+        if $multithreaded
+            Threads.@threads $expr
+        else
+            $expr
+        end
+    end
+    return esc(ex)
+end
+
+"""
+    @usespawn bool expr
+
+Append `Threads.@spawn` if `bool==true`.
+"""
+macro usespawn(multithreaded, expr::Expr)
+    ex = quote
+        if $multithreaded
+            Threads.@spawn $expr
+        else
+            $expr
+        end
+    end
+    return esc(ex)
 end

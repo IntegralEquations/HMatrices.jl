@@ -5,15 +5,14 @@ Perform `Y <-- a*X + Y` in-place. Note that depending on the types of `X` and
 `Y`, this may require converting from/to different formats during intermediate
 calculations.
 
-In the case where `Y` is an `RkMatrix`, the call `axpy!(a,X,Y)` should
-typically be followed by recompression stage to keep the rank of `Y` under
-control.
+In the case where `Y` is an `RkMatrix`, the call `axpy!(a,X,Y)` should typically
+be followed by recompression stage to keep the rank of `Y` under control.
 
-In the case where `Y` is an `HMatrix`, the call `axpy!(a,X,Y)` sums `X` to the
-data in the node `Y` (and not on the leaves). In case `Y` has no `data`, it will
-simply be assigned `X`. This means that after the call `axpy(a,X,Y)`, the object
-`Y` is in a *dirty* state (see [`isclean`][@ref]) and usually a call to
-[`flush_to_leaves!`](@ref) or [`flush_to_children!`](@ref) follows.
+In the case where `Y` is an `HMatrix`, but `X` is not, the call `axpy!(a,X,Y)`
+sums `X` to the data in the node `Y` (and not on the leaves). This means that
+after the call `axpy(a,X,Y)`, the object `Y` is in a *dirty* state (see
+[`isclean`][@ref]), and the caller is responsible for transfering the data to
+the leaves if needed.
 """
 function axpy!(a, X::Matrix, Y::RkMatrix)
     return axpy!(a, RkMatrix(X), Y)
@@ -76,15 +75,13 @@ end
 
 # 3.3
 function axpy!(a, X::HMatrix, Y::HMatrix)
-    # TODO: assumes X and Y have the same structure. How to reinforce this?
+    msg = "adding hierarchical matrices requires identical block structure"
     if hasdata(X)
-        if hasdata(Y)
-            axpy!(a, data(X), Y)
-        else
-            setdata!(Y, a * data(X))
-        end
+        msg
+        @assert hasdata(Y)
+        axpy!(a, data(X), Y)
     end
-    @assert size(children(X)) == size(children(Y)) "adding hierarchical matrices requires identical block structure"
+    @assert size(children(X)) == size(children(Y)) msg
     for (bx, by) in zip(children(X), children(Y))
         axpy!(a, bx, by)
     end
