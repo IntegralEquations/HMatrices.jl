@@ -34,6 +34,18 @@ function _getindex(H, i::Int, j::Int)
 end
 
 """
+    struct Partition{T}
+
+A partition of the leaves of an `HMatrix`. Used to perform threaded hierarchical
+multiplication.
+"""
+struct Partition{T}
+    root::T
+    partition::Vector{Vector{T}}
+    tag::Symbol
+end
+
+"""
     mutable struct HMatrix{R,T} <: AbstractHMatrix{T}
 
 A hierarchial matrix constructed from a `rowtree` and `coltree` of type `R` and
@@ -46,6 +58,7 @@ mutable struct HMatrix{R,T} <: AbstractHMatrix{T}
     data::Union{Matrix{T},RkMatrix{T},Nothing}
     children::Matrix{HMatrix{R,T}}
     parent::HMatrix{R,T}
+    partition::Union{Nothing,Partition{HMatrix{R,T}}}
     # inner constructor which handles `nothing` fields.
     function HMatrix{R,T}(rowtree, coltree, adm, data, children, parent) where {R,T}
         if data !== nothing
@@ -54,6 +67,7 @@ mutable struct HMatrix{R,T} <: AbstractHMatrix{T}
         hmat = new{R,T}(rowtree, coltree, adm, data)
         hmat.children = isnothing(children) ? Matrix{HMatrix{R,T}}(undef, 0, 0) : children
         hmat.parent = isnothing(parent) ? hmat : parent
+        hmat.partition = nothing
         return hmat
     end
 end
@@ -555,4 +569,88 @@ end
             [x1, x2, x2, x1, x1], [y1, y1, y2, y2, y1]
         end
     end
+end
+
+"""
+    hilbert_partition(H::HMatrix,np,cost)
+
+Partiotion the leaves of `H` into `np` sequences of approximate equal cost (as
+determined by the `cost` function) while also trying to maximize the locality of
+each partition.
+"""
+function hilbert_partition(H::HMatrix, np = Threads.nthreads(), cost = _cost_gemv)
+    # the hilbert curve will be indexed from (0,0) × (N-1,N-1), so set N to be
+    # the smallest power of two larger than max(m,n), where m,n = size(H)
+    m, n = size(H)
+    N = max(m, n)
+    N = nextpow(2, N)
+    # sort the leaves by their hilbert index
+    leaves = collect(AbstractTrees.Leaves(H))
+    hilbert_indices = map(leaves) do leaf
+        # use the center of the leaf as a cartesian index
+        i, j = pivot(leaf) .- 1 .+ size(leaf) .÷ 2
+        return hilbert_cartesian_to_linear(N, i, j)
+    end
+    p = sortperm(hilbert_indices)
+    permute!(leaves, p)
+    # now compute a quasi-optimal partition of leaves based `cost_mv`
+    cmax = find_optimal_cost(leaves, np, cost, 1)
+    return build_sequence_partition(leaves, np, cost, cmax)
+end
+
+"""
+    row_partition(H::HMatrix,np,cost)
+
+Similar to [`hilbert_partition`](@ref), but attempts to partition the leaves of
+`H` by row.
+"""
+function row_partition(H::HMatrix, np = Threads.nthreads(), cost = _cost_gemv)
+    # sort the leaves by their row index
+    leaves = filter_tree(x -> isleaf(x), H)
+    row_indices = map(leaves) do leaf
+        # use the center of the leaf as a cartesian index
+        i, j = pivot(leaf)
+        return i
+    end
+    p = sortperm(row_indices)
+    permute!(leaves, p)
+    # now compute a quasi-optimal partition of leaves based `cost_mv`
+    cmax = find_optimal_cost(leaves, np, cost, 1)
+    return build_sequence_partition(leaves, np, cost, cmax)
+end
+
+"""
+    col_partition(H::HMatrix,np,cost)
+
+Similar to [`hilbert_partition`](@ref), but attempts to partition the leaves of
+`H` by column.
+"""
+function col_partition(H::HMatrix, np = Threads.nthreads(), cost = _cost_gemv)
+    # sort the leaves by their row index
+    leaves = filter_tree(x -> isleaf(x), H)
+    row_indices = map(leaves) do leaf
+        # use the center of the leaf as a cartesian index
+        i, j = pivot(leaf)
+        return j
+    end
+    p = sortperm(row_indices)
+    permute!(leaves, p)
+    # now compute a quasi-optimal partition of leaves based `cost_mv`
+    cmax = find_optimal_cost(leaves, np, cost, 1)
+    return build_sequence_partition(leaves, np, cost, cmax)
+end
+
+function partition!(s::Symbol, H::HMatrix, np = Threads.nthreads(), cost = _cost_gemv)
+    p = if s == :hilbert
+        hilbert_partition(H, np, cost)
+    elseif s == :row
+        row_partition(H, np, cost)
+    elseif s == :col
+        col_partition(H, np, cost)
+    else
+        error("Unknown partitioning strategy: $s")
+    end
+    isnothing(H.partition) || (@warn "overwriting existing partition")
+    H.partition = Partition(H, p, s)
+    return H
 end
