@@ -84,7 +84,7 @@ for (name, K, p) in kernels
             threads = $threads,
             distributed = false,
             global_index = $p,
-        ) samples = 1 evals = 4
+        ) samples = 4 evals = 1
         # LU factorization. The assemble is considered in a setup-phase.
         SUITE[name]["LU threads=$threads"] =
             @benchmarkable lu!(H, $comp; threads = $threads) setup = (
@@ -98,7 +98,7 @@ for (name, K, p) in kernels
                     distributed = false,
                     global_index = $p,
                 )
-            ) samples = 1 evals = 1
+            ) samples = 4 evals = 1
         # Matrix vector product. The assembly is considered in a setup-phase. A
         # single sample but multiple evaluations to amortize the setup cost
         SUITE[name]["gemv threads=$threads"] =
