@@ -300,14 +300,12 @@ function assemble_hmatrix(
         # if needed permute kernel entries into indexing induced by trees
         global_index && (K = PermutedMatrix(K, loc2glob(rowtree), loc2glob(coltree)))
         # now assemble the data in the blocks
-        @timeit_debug "assembling hmatrix" begin
-            if threads
-                @info "Assembling HMatrix on $(Threads.nthreads()) threads"
-                _assemble_threads!(hmat, K, comp)
-            else
-                @info "Assembling HMatrix on 1 thread"
-                _assemble_cpu!(hmat, K, comp)
-            end
+        if threads
+            bufs = [(FlexMatrix(T, 0), FlexMatrix(T, 0)) for _ in 1:Threads.nthreads()]
+            _assemble_threads!(hmat, K, comp, bufs)
+        else
+            bufs = (FlexMatrix(T, 0), FlexMatrix(T, 0))
+            _assemble_cpu!(hmat, K, comp, bufs)
         end
     end
 end
@@ -384,17 +382,17 @@ using the compressor `comp`. This function assumes the structure of `hmat` has
 already been intialized, and therefore should not be called directly. See
 [`HMatrix`](@ref) information on constructors.
 """
-function _assemble_cpu!(hmat, K, comp)
+function _assemble_cpu!(hmat, K, comp, bufs)
     if isleaf(hmat) # base case
         if isadmissible(hmat)
-            _assemble_sparse_block!(hmat, K, comp)
+            _assemble_sparse_block!(hmat, K, comp, bufs)
         else
             _assemble_dense_block!(hmat, K)
         end
     else
         # recurse on children
         for child in hmat.children
-            _assemble_cpu!(child, K, comp)
+            _assemble_cpu!(child, K, comp, bufs)
         end
     end
     return hmat
@@ -407,7 +405,7 @@ Like [`_assemble_cpu!`](@ref), but uses threads to assemble the leaves. Note
 that the threads are spanwned using `Threads.@spawn`, which means they are
 spawned on the same worker as the caller.
 """
-function _assemble_threads!(hmat, K, comp)
+function _assemble_threads!(hmat, K, comp, bufs)
     # FIXME: ideally something like `omp for schedule(guided)` should be used here
     # to avoid spawning too many (small) tasks. In the absece of such scheduling
     # strategy in julia at the moment (v1.6), we resort to manually limiting the size
@@ -419,19 +417,26 @@ function _assemble_threads!(hmat, K, comp)
     sort!(blocks; lt = (x, y) -> length(x) < length(y), rev = true)
     n = length(blocks)
     @sync for i in 1:n
-        Threads.@spawn _assemble_cpu!(blocks[i], K, comp)
+        Threads.@spawn begin
+            tid = Threads.threadid()
+            _assemble_cpu!(blocks[i], K, comp, bufs[tid])
+            tid == Threads.threadid() || (@warn "thread id changed!")
+        end
     end
     return hmat
 end
 
-function _assemble_sparse_block!(hmat, K, comp)
-    return hmat.data = comp(K, hmat.rowtree, hmat.coltree)
+function _assemble_sparse_block!(hmat, K, comp, bufs)
+    return hmat.data = comp(K, hmat.rowtree, hmat.coltree, bufs)
 end
 
 function _assemble_dense_block!(hmat, K)
     irange = rowrange(hmat)
     jrange = colrange(hmat)
-    hmat.data = K[irange, jrange]
+    T = eltype(hmat)
+    out = Matrix{T}(undef, length(irange), length(jrange))
+    getblock!(out, K, irange, jrange)
+    hmat.data = out
     return hmat
 end
 

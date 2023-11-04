@@ -42,7 +42,7 @@ function ldiv!(L::HUnitLowerTriangular, R::RkMatrix)
     return R
 end
 
-function ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor)
+function ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor, bufs = nothing)
     H = parent(L)
     @assert isclean(H)
     if isleaf(X)
@@ -59,10 +59,10 @@ function ldiv!(L::HUnitLowerTriangular, X::HMatrix, compressor)
             for i in 1:m
                 for j in 1:(i-1)# j<i
                     @timeit_debug "hmul!" begin
-                        hmul!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor)
+                        hmul!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor, bufs)
                     end
                 end
-                ldiv!(UnitLowerTriangular(chdH[i, i]), chdX[i, k], compressor)
+                ldiv!(UnitLowerTriangular(chdH[i, i]), chdX[i, k], compressor, bufs)
             end
         end
     end
@@ -130,7 +130,7 @@ function rdiv!(R::RkMatrix, U::HUpperTriangular)
 end
 
 # 3.3
-function rdiv!(X::AbstractHMatrix, U::HUpperTriangular, compressor)
+function rdiv!(X::AbstractHMatrix, U::HUpperTriangular, compressor, bufs = nothing)
     H = parent(U)
     if isleaf(X)
         d = data(X)
@@ -148,10 +148,10 @@ function rdiv!(X::AbstractHMatrix, U::HUpperTriangular, compressor)
             for i in 1:m
                 for j in 1:(i-1)
                     @timeit_debug "hmul!" begin
-                        hmul!(chdX[k, i], chdX[k, j], chdH[j, i], -1, 1, compressor)
+                        hmul!(chdX[k, i], chdX[k, j], chdH[j, i], -1, 1, compressor, bufs)
                     end
                 end
-                rdiv!(chdX[k, i], UpperTriangular(chdH[i, i]), compressor)
+                rdiv!(chdX[k, i], UpperTriangular(chdH[i, i]), compressor, bufs)
             end
         end
     end

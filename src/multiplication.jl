@@ -6,19 +6,21 @@ hierarchical matrices and `compressor` is a function/functor used in the
 intermediate stages of the multiplication to avoid growring the rank of
 admissible blocks after addition is performed.
 """
-function hmul!(C::HMatrix, A::HMatrix, B::HMatrix, a, b, compressor)
+function hmul!(C::HMatrix, A::HMatrix, B::HMatrix, a, b, compressor, bufs_ = nothing)
+    T = eltype(C)
+    bufs = if isnothing(bufs_)
+        [(FlexMatrix(T), FlexMatrix(T)) for _ in 1:Threads.nthreads()]
+    else
+        bufs_
+    end
     b == true || rmul!(C, b)
-    @timeit_debug "constructing plan" begin
-        plan = plan_hmul(C, A, B, a, 1)
-    end
-    @timeit_debug "executing plan" begin
-        execute!(plan, compressor)
-    end
+    plan = plan_hmul(C, A, B, a, 1)
+    execute!(plan, compressor, bufs)
     return C
 end
 
 # disable `mul` of hierarchial matrices
-function mul!(C::HMatrix, A::HMatrix, B::HMatrix, a::Number, b::Number)
+function mul!(::HMatrix, ::HMatrix, ::HMatrix, ::Number, ::Number)
     msg = "use `hmul` to multiply hierarchical matrices"
     return error(msg)
 end
@@ -126,8 +128,12 @@ function Base.show(io::IO, tree::Adjoint{<:Any,<:HMulNode})
 end
 
 # compress the operator L = C + ∑ a*Aᵢ*Bᵢ
-function (paca::PartialACA)(plan::HMulNode)
-    return _aca_partial(plan, :, :, paca.atol, paca.rank, paca.rtol)
+function (paca::PartialACA)(plan::HMulNode, bufs)
+    tid = Threads.threadid()
+    R = _aca_partial(plan, :, :, paca.atol, paca.rank, paca.rtol, 1, bufs[tid])
+    Threads.threadid() == tid ||
+        (@warn "thread id changed from $tid to $(Threads.threadid())")
+    return R
 end
 
 # getters
@@ -144,6 +150,8 @@ isroot(node::HMulNode) = parent(node) === node
 
 # AbstractMatrix interface
 Base.size(node::HMulNode) = size(target(node))
+# Base.axes(node::HMulNode) = axes(target(node))
+# Base.axes(node::HMulNode,i) = axes(target(node),i)
 Base.eltype(node::HMulNode) = eltype(target(node))
 
 Base.getindex(node::HMulNode, ::Colon, j::Int) = getcol(node, j)
@@ -157,6 +165,7 @@ function getcol(node::HMulNode, j)
 end
 
 function getcol!(col, node::HMulNode, j)
+    fill!(col, zero(eltype(col)))
     a = multiplier(node)
     C = target(node)
     m, n = size(C)
@@ -192,6 +201,11 @@ children(adjnode::Adjoint{<:Any,<:HMulNode}) = adjoint(children(adjnode.parent))
 
 Base.getindex(adjnode::Adjoint{<:Any,<:HMulNode}, ::Colon, j::Int) = getcol(adjnode, j)
 
+function getblock!(out, adjnode::Adjoint{<:Any,<:HMulNode}, ::Colon, j::Int)
+    return getcol!(out, adjnode, j)
+end
+getblock!(out, node::HMulNode, ::Colon, j::Int) = getcol!(out, node, j)
+
 function getcol(adjnode::Adjoint{<:Any,<:HMulNode}, j)
     m, n = size(adjnode)
     T = eltype(adjnode)
@@ -201,6 +215,7 @@ function getcol(adjnode::Adjoint{<:Any,<:HMulNode}, j)
 end
 
 function getcol!(col, adjnode::Adjoint{<:Any,<:HMulNode}, j)
+    fill!(col, zero(eltype(col)))
     node = parent(adjnode)
     a = multiplier(node)
     C = target(node)
@@ -232,20 +247,20 @@ function getcol!(col, adjnode::Adjoint{<:Any,<:HMulNode}, j)
     return col
 end
 
-function execute!(node::HMulNode, compressor)
-    execute_node!(node, compressor)
+function execute!(node::HMulNode, compressor, bufs)
+    execute_node!(node, compressor, bufs)
     C = target(node)
     flush_to_children!(C)
     # FIXME: using @threads below breaks things when the `RkMatrix` has its own
     # buffer due to a race condition that I do not yet undestand
     for chd in children(node)
-        execute!(chd, compressor)
+        execute!(chd, compressor, bufs)
     end
     return node
 end
 
 # non-recursive execution
-function execute_node!(node::HMulNode, compressor)
+function execute_node!(node::HMulNode, compressor, bufs)
     C = target(node)
     isempty(sources(node)) && (return node)
     a = multiplier(node)
@@ -256,7 +271,7 @@ function execute_node!(node::HMulNode, compressor)
             _mul_dense!(d, A, B, a)
         end
     else
-        R = compressor(node)
+        R = compressor(node, bufs)
         setdata!(C, R)
     end
     return node

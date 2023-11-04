@@ -8,7 +8,6 @@ const EPS = 1e-8
 # some simple implementation of laplace and helmholtz single layer matrices.
 function laplace_matrix(X, Y)
     f = (x, y) -> begin
-        EPS = 1e-8 # fudge factor to avoid division by zero
         d = norm(x - y) + EPS
         inv(4π * d)
     end
@@ -83,19 +82,12 @@ function LaplaceMatrixVec{T}(
 end
 LaplaceMatrixVec(args...) = LaplaceMatrixVec{Float64}(args...) # default to Float64
 
-function Base.getindex(K::LaplaceMatrixVec{T}, i::Int, j::Int)::T where {T}
-    d2 = (K.X[i, 1] - K.Y[j, 1])^2 + (K.X[i, 2] - K.Y[j, 2])^2 + (K.X[i, 3] - K.Y[j, 3])^2
-    d = sqrt(d2) + EPS
-    return inv(4π * d)
-end
-function Base.getindex(K::LaplaceMatrixVec, I::UnitRange, J::UnitRange)
-    T = eltype(K)
+function HMatrices.getblock!(out, K::LaplaceMatrixVec, I::UnitRange, J::UnitRange)
     m = length(I)
     n = length(J)
     Xv = view(K.X, I, :)
     Yv = view(K.Y, J, :)
-    out = Matrix{T}(undef, m, n)
-    @avx for j in 1:n
+    @turbo for j in 1:n
         for i in 1:m
             d2 = (Xv[i, 1] - Yv[j, 1])^2
             d2 += (Xv[i, 2] - Yv[j, 2])^2
@@ -106,12 +98,16 @@ function Base.getindex(K::LaplaceMatrixVec, I::UnitRange, J::UnitRange)
     end
     return out
 end
-function Base.getindex(K::LaplaceMatrixVec, I::UnitRange, j::Int)
-    return vec(K[I, j:j])
+function HMatrices.getblock!(out, K::LaplaceMatrixVec, I::UnitRange, j::Int)
+    return HMatrices.getblock!(out, K, I, j:j)
 end
-function Base.getindex(adjK::Adjoint{<:Any,LaplaceMatrixVec}, I::UnitRange, j::Int)
-    K = parent(adjK)
-    return vec(K[j:j, I])
+function HMatrices.getblock!(out, K::LaplaceMatrixVec, i::Int, J::UnitRange)
+    return HMatrices.getblock!(out, K, i:i, J)
+end
+function Base.getindex(K::LaplaceMatrixVec{T}, i::Int, j::Int)::T where {T}
+    d2 = (K.X[i, 1] - K.Y[j, 1])^2 + (K.X[i, 2] - K.Y[j, 2])^2 + (K.X[i, 3] - K.Y[j, 3])^2
+    d = sqrt(d2) + EPS
+    return inv(4π * d)
 end
 
 """

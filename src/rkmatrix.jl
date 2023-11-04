@@ -20,7 +20,6 @@ mutable struct RkMatrix{T} <: AbstractMatrix{T}
         return new{T}(A, B)
     end
 end
-RkMatrix(A, B) = RkMatrix(promote(A, B)...)
 
 function Base.setproperty!(R::RkMatrix, s::Symbol, mat::Matrix)
     setfield!(R, s, mat)

@@ -25,6 +25,27 @@ If set to false (default), the `getindex(H,i,j)` method will throw an error on
 const ALLOW_GETINDEX = Ref(false)
 
 """
+    get_block!(block,K,irange,jrange)
+
+Fill `block` with `K[irange,jrange]`.
+"""
+function getblock!(out, K, irange_, jrange_)
+    irange = irange_ isa Colon ? axes(K, 1) : irange_
+    jrange = jrange_ isa Colon ? axes(K, 2) : jrange_
+    for (jloc, j) in enumerate(jrange)
+        for (iloc, i) in enumerate(irange)
+            out[iloc, jloc] = K[i, j]
+        end
+    end
+    return out
+end
+
+function getblock!(out, Kadj::Adjoint, irange_, jrange_)
+    getblock!(transpose(out), parent(Kadj), jrange_, irange_)
+    return out .= conj.(out)
+end
+
+"""
     use_threads()::Bool
 
 Default choice of whether threads will be used or not throughout the package.

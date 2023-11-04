@@ -42,11 +42,7 @@ end
 
 #===========================================================================================
 
-In what follows, we benchmark Laplace and Helmholtz single-layer operators for
-points on a cylinder. For each kernel, we benchmark:
-- time to assemble
-- time to do a gemv operation
-- time to do an lu factorization
+Problem parameters
 
 ===========================================================================================#
 
@@ -66,12 +62,13 @@ comp = HMatrices.PartialACA(; rtol)
 step = 1.75 * π * radius / sqrt(N)
 k = 2 * π / (10 * step) # 10 pts per wavelength
 
-kernels = [
-    ("Laplace", laplace_matrix(X, X), true),
-    # ("Helmholtz", helmholtz_matrix(X, X, k), true),
-]
+kernels = Dict(
+    "Laplace" => (kernel = laplace_matrix(X, X), global_index = true),
+    "Laplace permuted" => (kernel = laplace_matrix(Xp, Xp), global_index = false),
+    "Laplace vectorized" => (kernel = LaplaceMatrixVec(Xp, Xp), global_index = false),
+)
 
-for (name, K, p) in kernels
+for (name, (K, p)) in kernels
     SUITE[name] = BenchmarkGroup([name, N])
     for threads in (true, false)
         # assemble
@@ -85,36 +82,41 @@ for (name, K, p) in kernels
             distributed = false,
             global_index = $p,
         ) samples = 4 evals = 1
-        # LU factorization. The assemble is considered in a setup-phase.
-        SUITE[name]["LU threads=$threads"] =
-            @benchmarkable lu!(H, $comp; threads = $threads) setup = (
-                H = assemble_hmatrix(
-                    $K,
-                    $Xclt,
-                    $Xclt;
-                    adm = $adm,
-                    comp = $comp,
-                    threads = true,
-                    distributed = false,
-                    global_index = $p,
-                )
-            ) samples = 4 evals = 1
-        # Matrix vector product. The assembly is considered in a setup-phase. A
-        # single sample but multiple evaluations to amortize the setup cost
-        SUITE[name]["gemv threads=$threads"] =
-            @benchmarkable mul!(y, H, x; threads = $threads) setup = (
-                H = assemble_hmatrix(
-                    $K,
-                    $Xclt,
-                    $Xclt;
-                    adm = $adm,
-                    comp = $comp,
-                    threads = true,
-                    distributed = false,
-                    global_index = $p,
-                );
-                x = randn($N);
-                y = zeros($N)
-            ) samples = 1 evals = 50
+        # gemv and LU times for the same kernel should be the same (it only
+        # cares about the hmatrix), so benchmark only one of them
+        if occursin("vectorized", name)
+            # Matrix vector product. The assembly is considered in a
+            # setup-phase. A single sample but multiple evaluations to amortize
+            # the setup cost
+            SUITE[name]["gemv threads=$threads"] =
+                @benchmarkable mul!(y, H, x; threads = $threads) setup = (
+                    H = assemble_hmatrix(
+                        $K,
+                        $Xclt,
+                        $Xclt;
+                        adm = $adm,
+                        comp = $comp,
+                        threads = true,
+                        distributed = false,
+                        global_index = $p,
+                    );
+                    x = randn($N);
+                    y = zeros($N)
+                ) samples = 1 evals = 50
+            # LU factorization. The assemble is considered in a setup-phase.
+            SUITE[name]["LU threads=$threads"] =
+                @benchmarkable lu!(H, $comp; threads = $threads) setup = (
+                    H = assemble_hmatrix(
+                        $K,
+                        $Xclt,
+                        $Xclt;
+                        adm = $adm,
+                        comp = $comp,
+                        threads = true,
+                        distributed = false,
+                        global_index = $p,
+                    )
+                ) samples = 4 evals = 1
+        end
     end
 end
