@@ -72,7 +72,7 @@ end
     @test exact ≈ Matrix(approx)
 
     ## 3.3
-    compressor = PartialACA(; atol = 1e-10)
+    compressor = PartialACA(; atol = 1e-8)
     exact = rdiv!(deepcopy(H_full), UpperTriangular(H_full))
     approx = rdiv!(deepcopy(H), UpperTriangular(H), compressor)
     @test exact ≈ Matrix(approx; global_index = false)

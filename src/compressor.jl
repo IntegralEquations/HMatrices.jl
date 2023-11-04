@@ -42,15 +42,13 @@ end
 function (aca::ACA)(K, rowtree::ClusterTree, coltree::ClusterTree)
     irange = index_range(rowtree)
     jrange = index_range(coltree)
-    return aca(K, irange, jrange)
+    return aca(K, irange, jrange, bufs)
 end
 
 function (aca::ACA)(K, irange, jrange)
     M = K[irange, jrange] # computes the entire matrix.
     return _aca_full!(M, aca.atol, aca.rank, aca.rtol)
 end
-
-(comp::ACA)(K::Matrix) = comp(K, 1:size(K, 1), 1:size(K, 2))
 
 """
     _aca_full!(M,atol,rmax,rtol)
@@ -104,7 +102,7 @@ comp = PartialACA(;rtol)
 A = rand(10,2)
 B = rand(10,2)
 M = A*adjoint(B) # a low-rank matrix
-R = comp(M) # compress the entire matrix `M`
+R = comp(M, axes(M)...) # compress the entire matrix `M`
 norm(Matrix(R) - M) < rtol*norm(M) # true
 
 # output
@@ -124,7 +122,7 @@ Base.@kwdef struct PartialACA
     rtol::Float64 = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64))
 end
 
-function (paca::PartialACA)(K, rowtree::ClusterTree, coltree::ClusterTree)
+function (paca::PartialACA)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs = nothing)
     # find initial column pivot for partial ACA
     istart = _aca_partial_initial_pivot(rowtree)
     irange = index_range(rowtree)
@@ -137,14 +135,13 @@ function (paca::PartialACA)(K, rowtree::ClusterTree, coltree::ClusterTree)
         paca.rank,
         paca.rtol,
         istart - irange.start + 1,
+        bufs,
     )
 end
 
-function (paca::PartialACA)(K, irange::UnitRange, jrange::UnitRange)
-    return _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol)
+function (paca::PartialACA)(K, irange::AbstractRange, jrange::AbstractRange, bufs = nothing)
+    return _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol, 1, bufs)
 end
-
-(paca::PartialACA)(K::Matrix) = paca(K, 1:size(K, 1), 1:size(K, 2))
 
 """
     _aca_partial(K,irange,jrange,atol,rmax,rtol,istart=1)
@@ -155,8 +152,9 @@ partial pivoting. The returned `R::RkMatrix` provides an approximation to
 max(atol,rtol*|M|)`, but this inequality may fail to hold due to the various
 errors involved in estimating the error and |M|.
 """
-function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart = 1)
+function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffers = nothing)
     Kadj = adjoint(K)
+    T = Base.eltype(K)
     # if irange and jrange are Colon, extract the size from `K` directly. This
     # allows for some code reuse with specializations on getindex(i,::Colon) and
     # getindex(::Colon,j) for when `K` is a `RkMatrix`
@@ -165,13 +163,17 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart = 1)
         ishift, jshift = 0, 0
     else
         m, n = length(irange), length(jrange)
-        ishift, jshift = irange.start - 1, jrange.start - 1
+        ishift, jshift = first(irange) - 1, first(jrange) - 1
         # maps global indices to local indices
     end
+    A, B = if isnothing(buffers)
+        (FlexMatrix(eltype(K), m), FlexMatrix(eltype(K), n))
+    else
+        buffers[1], buffers[2]
+    end
+    @assert A.k[] == 0 && B.k[] == 0 "buffers must be empty"
+    A.m[], B.m[] = m, n
     rmax = min(m, n, rmax)
-    T = Base.eltype(K)
-    A = Vector{Vector{T}}()
-    B = Vector{Vector{T}}()
     I = BitVector(true for i in 1:m)
     J = BitVector(true for i in 1:n)
     i = istart # initial pivot
@@ -181,47 +183,57 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart = 1)
     while er > max(atol, rtol * est_norm) && r < rmax
         # remove index i from allowed row
         I[i] = false
+        # pre-allocate row and column
+        a = newcol!(A)
+        A.k[] -= 1
+        b = newcol!(B)
+        B.k[] -= 1
         # compute next row by row <-- K[i+ishift,jrange] - R[i,:]
-        adjcol = Kadj[jrange, i+ishift]
+        getblock!(b, Kadj, jrange, i + ishift)
         for k in 1:r
-            axpy!(-adjoint(A[k][i]), B[k], adjcol)
+            axpy!(-adjoint(A[k][i]), B[k], b)
             # for j in eachindex(row)
             #     row[j] = row[j] - B[k][j]*adjoint(A[k][i])
             # end
         end
-        j = _aca_partial_pivot(adjcol, J)
-        δ = adjcol[j]
+        j = _aca_partial_pivot(b, J)
+        δ = b[j]
         if svdvals(δ)[end] == 0
             @debug "zero pivot found during partial aca"
             i = findfirst(x -> x == true, I)
         else # δ != 0
             iδ = inv(δ)
             # rdiv!(b,δ) # b <-- b/δ
-            for k in eachindex(adjcol)
-                adjcol[k] = adjcol[k] * iδ
+            for k in eachindex(b)
+                b[k] = b[k] * iδ
             end
             J[j] = false
             # compute next col by col <-- K[irange,j+jshift] - R[:,j]
-            col = K[irange, j+jshift]
+            getblock!(a, K, irange, j + jshift)
             for k in 1:r
-                axpy!(-adjoint(B[k][j]), A[k], col)
+                axpy!(-adjoint(B[k][j]), A[k], a)
                 # for i in eachindex(col)
                 #     col[i] = col[i] - A[k][i]*adjoint(B[k][j])
                 # end
             end
-            # push new cross and increase rank
+            # increase rank and push cross
             r += 1
-            push!(A, col)
-            push!(B, adjcol)
+            A.k[] += 1
+            B.k[] += 1
             # estimate the error by || R_{k} - R_{k-1} || = ||a|| ||b||
-            er = norm(col) * norm(adjcol)
+            er = norm(a) * norm(b)
             # estimate the norm by || K || ≈ || R_k ||
             est_norm = _update_frob_norm(est_norm, A, B)
-            i = _aca_partial_pivot(col, I)
-            # @show r, er
+            i = _aca_partial_pivot(a, I)
+            @debug r, er, m, n
         end
     end
-    return RkMatrix(A, B)
+    # copy from buffer to matrix and create Rk matrix
+    R_ = RkMatrix(Matrix(A), Matrix(B))
+    # # indicate that `A` and `B` can be reused
+    reset!(A)
+    reset!(B)
+    return R_
 end
 
 """
@@ -233,8 +245,8 @@ compute the Frobenius norm of `Rₖ₊₁ = A*adjoint(B)` efficiently.
 @inline function _update_frob_norm(cur, A, B)
     @timeit_debug "Update Frobenius norm" begin
         k = length(A)
-        a = A[end]
-        b = B[end]
+        a = A[k]
+        b = B[k]
         out = norm(a)^2 * norm(b)^2
         for l in 1:(k-1)
             out += 2 * real(dot(A[l], a) * (dot(b, B[l])))

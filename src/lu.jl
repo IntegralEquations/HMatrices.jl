@@ -26,9 +26,9 @@ blocks during the multiplication routines.
 """
 function lu!(M::HMatrix, compressor; threads = use_threads())
     # perform the lu decomposition of M in place
-    @timeit_debug "lu factorization" begin
-        _lu!(M, compressor, threads)
-    end
+    T = eltype(M)
+    buffers = [(FlexMatrix(T), FlexMatrix(T)) for _ in 1:Threads.nthreads()]
+    _lu!(M, compressor, threads, buffers)
     # wrap the result in the LU structure
     return LU(M, LinearAlgebra.BlasInt[], LinearAlgebra.BlasInt(0))
 end
@@ -47,7 +47,7 @@ function lu!(
     kwargs...,
 )
     compressor = PartialACA(atol, rank, rtol)
-    return lu!(M, compressor, kwargs...)
+    return lu!(M, compressor; kwargs...)
 end
 
 """
@@ -57,7 +57,7 @@ Hierarchical LU factorization. See [`lu!`](@ref) for the available options.
 """
 lu(M::HMatrix, args...; kwargs...) = lu!(deepcopy(M), args...; kwargs...)
 
-function _lu!(M::HMatrix, compressor, threads)
+function _lu!(M::HMatrix, compressor, threads, bufs = nothing)
     if isleaf(M)
         d = data(M)
         @assert d isa Matrix
@@ -69,38 +69,14 @@ function _lu!(M::HMatrix, compressor, threads)
         chdM = children(M)
         m, n = size(chdM)
         for i in 1:m
-            _lu!(chdM[i, i], compressor, threads)
+            _lu!(chdM[i, i], compressor, threads, bufs)
             for j in (i+1):n
-                @sync begin
-                    @timeit_debug "ldiv! solution" begin
-                        if threads
-                            Threads.@spawn ldiv!(
-                                UnitLowerTriangular(chdM[i, i]),
-                                chdM[i, j],
-                                compressor,
-                            )
-                        else
-                            ldiv!(UnitLowerTriangular(chdM[i, i]), chdM[i, j], compressor)
-                        end
-                    end
-                    @timeit_debug "rdiv! solution" begin
-                        if threads
-                            Threads.@spawn rdiv!(
-                                chdM[j, i],
-                                UpperTriangular(chdM[i, i]),
-                                compressor,
-                            )
-                        else
-                            rdiv!(chdM[j, i], UpperTriangular(chdM[i, i]), compressor)
-                        end
-                    end
-                end
+                ldiv!(UnitLowerTriangular(chdM[i, i]), chdM[i, j], compressor, bufs)
+                rdiv!(chdM[j, i], UpperTriangular(chdM[i, i]), compressor, bufs)
             end
             for j in (i+1):m
                 for k in (i+1):n
-                    @timeit_debug "hmul!" begin
-                        hmul!(chdM[j, k], chdM[j, i], chdM[i, k], -1, 1, compressor)
-                    end
+                    hmul!(chdM[j, k], chdM[j, i], chdM[i, k], -1, 1, compressor, bufs)
                 end
             end
         end
