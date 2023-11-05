@@ -15,12 +15,12 @@ simply be assigned `X`. This means that after the call `axpy(a,X,Y)`, the object
 `Y` is in a *dirty* state (see [`isclean`][@ref]) and usually a call to
 [`flush_to_leaves!`](@ref) or [`flush_to_children!`](@ref) follows.
 """
-function axpy!(a, X::Matrix, Y::RkMatrix)
+function LinearAlgebra.axpy!(a, X::Matrix, Y::RkMatrix)
     return axpy!(a, RkMatrix(X), Y)
 end
 
 # 1.3
-function axpy!(a, X::Matrix, Y::HMatrix)
+function LinearAlgebra.axpy!(a, X::Matrix, Y::HMatrix)
     if hasdata(Y)
         axpy!(a, X, data(Y))
     else
@@ -30,19 +30,19 @@ function axpy!(a, X::Matrix, Y::HMatrix)
 end
 
 # 2.1
-function axpy!(a, X::RkMatrix, Y::Matrix)
+function LinearAlgebra.axpy!(a, X::RkMatrix, Y::Matrix)
     return axpy!(a, Matrix(X), Y)
 end
 
 #2.2
-function axpy!(a, X::RkMatrix, Y::RkMatrix)
+function LinearAlgebra.axpy!(a, X::RkMatrix, Y::RkMatrix)
     Y.A = hcat(a * X.A, Y.A)
     Y.B = hcat(X.B, Y.B)
     return Y
 end
 
 # 2.3
-function axpy!(a, X::RkMatrix, Y::HMatrix)
+function LinearAlgebra.axpy!(a, X::RkMatrix, Y::HMatrix)
     if hasdata(Y)
         axpy!(a, X, data(Y))
     else
@@ -52,7 +52,7 @@ function axpy!(a, X::RkMatrix, Y::HMatrix)
 end
 
 #3.1
-function axpy!(a, X::HMatrix, Y::Matrix)
+function LinearAlgebra.axpy!(a, X::HMatrix, Y::Matrix)
     @debug "calling axpy! with `X` and HMatrix and `Y` a Matrix"
     shift = pivot(X) .- 1
     for block in AbstractTrees.PreOrderDFS(X)
@@ -66,7 +66,7 @@ function axpy!(a, X::HMatrix, Y::Matrix)
 end
 
 # 3.2
-function axpy!(a, X::HMatrix, Y::RkMatrix)
+function LinearAlgebra.axpy!(a, X::HMatrix, Y::RkMatrix)
     @debug "calling axpby! with `X` and HMatrix and `Y` an RkMatrix"
     # FIXME: inneficient implementation due to conversion from HMatrix to
     # Matrix. Does it really matter? I don't think this function should be
@@ -75,7 +75,7 @@ function axpy!(a, X::HMatrix, Y::RkMatrix)
 end
 
 # 3.3
-function axpy!(a, X::HMatrix, Y::HMatrix)
+function LinearAlgebra.axpy!(a, X::HMatrix, Y::HMatrix)
     # TODO: assumes X and Y have the same structure. How to reinforce this?
     if hasdata(X)
         if hasdata(Y)
@@ -92,7 +92,7 @@ function axpy!(a, X::HMatrix, Y::HMatrix)
 end
 
 # add a unifor scaling to an HMatrix return an HMatrix
-function axpy!(a, X::UniformScaling, Y::HMatrix)
+function LinearAlgebra.axpy!(a, X::UniformScaling, Y::HMatrix)
     @assert isclean(Y)
     if hasdata(Y)
         d = data(Y)

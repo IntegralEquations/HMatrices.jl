@@ -10,11 +10,7 @@ using Printf
 using RecipesBase
 using Distributed
 using Base.Threads
-using AbstractTrees: print_tree
-
-using AbstractTrees: AbstractTrees
-import LinearAlgebra: mul!, lu!, lu, LU, ldiv!, rdiv!, axpy!, rank, rmul!, lmul!
-import Base: Matrix, adjoint, parent
+using AbstractTrees
 
 """
     const ALLOW_GETINDEX
@@ -94,7 +90,6 @@ export
     TSVD,
     # functions
     compression_ratio,
-    print_tree,
     assemble_hmatrix,
     # macros
     @hprofile

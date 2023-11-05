@@ -154,7 +154,7 @@ end
 # Trees interface
 children(H::AbstractHMatrix) = H.children
 children(H::AbstractHMatrix, idxs...) = H.children[idxs]
-parent(H::AbstractHMatrix) = H.parent
+Base.parent(H::AbstractHMatrix) = H.parent
 isleaf(H::AbstractHMatrix) = isempty(children(H))
 isroot(H::AbstractHMatrix) = parent(H) === H
 
@@ -240,7 +240,7 @@ given in the global indexing system (see [`HMatrix`](@ref) for more
 information); otherwise the *local* indexing system induced by the row and
 columns trees are used.
 """
-Matrix(hmat::HMatrix; global_index = true) = Matrix{eltype(hmat)}(hmat; global_index)
+Base.Matrix(hmat::HMatrix; global_index = true) = Matrix{eltype(hmat)}(hmat; global_index)
 function Base.Matrix{T}(hmat::HMatrix; global_index) where {T}
     M = zeros(T, size(hmat)...)
     piv = pivot(hmat)

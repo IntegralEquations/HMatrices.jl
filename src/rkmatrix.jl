@@ -115,7 +115,7 @@ function Base.isapprox(rmat::RkMatrix, B::AbstractArray, args...; kwargs...)
     return isapprox(Matrix(rmat), B, args...; kwargs...)
 end
 
-rank(M::RkMatrix) = size(M.A, 2)
+LinearAlgebra.rank(M::RkMatrix) = size(M.A, 2)
 
 function Base.getproperty(R::RkMatrix, s::Symbol)
     if s == :Bt
@@ -222,7 +222,7 @@ compression_ratio(R::RkMatrix) = prod(size(R)) / num_stored_elements(R)
 # problem in LinearAlgebra for the generic mulplication mul!(C,A,B,a,b) when
 # C and B are a vectors of static matrices, and A is a matrix of static
 # matrices. Should eventually be removed.
-function mul!(
+function LinearAlgebra.mul!(
     C::AbstractVector,
     Rk::RkMatrix{T},
     F::AbstractVector,

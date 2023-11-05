@@ -24,7 +24,7 @@ end
 Hierarhical LU facotrization of `M`, using `comp` to generate the compressed
 blocks during the multiplication routines.
 """
-function lu!(M::HMatrix, compressor; threads = use_threads())
+function LinearAlgebra.lu!(M::HMatrix, compressor; threads = use_threads())
     # perform the lu decomposition of M in place
     T = eltype(M)
     buffers = [(FlexMatrix(T), FlexMatrix(T)) for _ in 1:Threads.nthreads()]
@@ -39,7 +39,7 @@ end
 
 Hierarhical LU facotrization of `M`, using the `PartialACA(;atol,rtol;rank)` compressor.
 """
-function lu!(
+function LinearAlgebra.lu!(
     M::HMatrix;
     atol = 0,
     rank = typemax(Int),
@@ -51,11 +51,11 @@ function lu!(
 end
 
 """
-    lu(M::HMatrix,args...;kwargs...)
+    LinearAlgebra.lu(M::HMatrix,args...;kwargs...)
 
 Hierarchical LU factorization. See [`lu!`](@ref) for the available options.
 """
-lu(M::HMatrix, args...; kwargs...) = lu!(deepcopy(M), args...; kwargs...)
+LinearAlgebra.lu(M::HMatrix, args...; kwargs...) = lu!(deepcopy(M), args...; kwargs...)
 
 function _lu!(M::HMatrix, compressor, threads, bufs = nothing)
     if isleaf(M)
@@ -84,7 +84,7 @@ function _lu!(M::HMatrix, compressor, threads, bufs = nothing)
     return M
 end
 
-function ldiv!(A::LU{<:Any,<:HMatrix}, y::AbstractVector; global_index = true)
+function LinearAlgebra.ldiv!(A::LU{<:Any,<:HMatrix}, y::AbstractVector; global_index = true)
     p = A.factors # underlying data
     ctree = coltree(p)
     rtree = rowtree(p)
@@ -100,7 +100,7 @@ function ldiv!(A::LU{<:Any,<:HMatrix}, y::AbstractVector; global_index = true)
     return y
 end
 
-function ldiv!(L::HUnitLowerTriangular, y::AbstractVector)
+function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, y::AbstractVector)
     H = parent(L)
     if isleaf(H)
         d = data(H)
@@ -126,7 +126,7 @@ function ldiv!(L::HUnitLowerTriangular, y::AbstractVector)
     return y
 end
 
-function ldiv!(U::HUpperTriangular, y::AbstractVector)
+function LinearAlgebra.ldiv!(U::HUpperTriangular, y::AbstractVector)
     H = parent(U)
     if isleaf(H)
         d = data(H)

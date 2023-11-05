@@ -20,7 +20,7 @@ function hmul!(C::HMatrix, A::HMatrix, B::HMatrix, a, b, compressor, bufs_ = not
 end
 
 # disable `mul` of hierarchial matrices
-function mul!(::HMatrix, ::HMatrix, ::HMatrix, ::Number, ::Number)
+function LinearAlgebra.mul!(::HMatrix, ::HMatrix, ::HMatrix, ::Number, ::Number)
     msg = "use `hmul` to multiply hierarchical matrices"
     return error(msg)
 end
@@ -144,7 +144,7 @@ multiplier(node::HMulNode) = node.multiplier
 # Trees interface
 children(node::HMulNode) = node.children
 children(node::HMulNode, idxs...) = node.children[idxs]
-parent(node::HMulNode) = node.parent
+Base.parent(node::HMulNode) = node.parent
 isleaf(node::HMulNode) = isempty(children(node))
 isroot(node::HMulNode) = parent(node) === node
 
@@ -195,7 +195,7 @@ function getcol!(col, node::HMulNode, j)
     return col
 end
 
-adjoint(node::HMulNode) = Adjoint(node)
+Base.adjoint(node::HMulNode) = Adjoint(node)
 Base.size(adjnode::Adjoint{<:Any,<:HMulNode}) = reverse(size(adjnode.parent))
 children(adjnode::Adjoint{<:Any,<:HMulNode}) = adjoint(children(adjnode.parent))
 
@@ -484,14 +484,20 @@ end
 ############################################################################################
 
 # 1.2.1
-function mul!(y::AbstractVector, R::RkMatrix, x::AbstractVector, a::Number, b::Number)
+function LinearAlgebra.mul!(
+    y::AbstractVector,
+    R::RkMatrix,
+    x::AbstractVector,
+    a::Number,
+    b::Number,
+)
     tmp = R.Bt * x
     # tmp = mul!(R.buffer, adjoint(R.B), x)
     return mul!(y, R.A, tmp, a, b)
 end
 
 # 1.2.1
-function mul!(
+function LinearAlgebra.mul!(
     y::AbstractVector,
     adjR::Adjoint{<:Any,<:RkMatrix},
     x::AbstractVector,
@@ -510,7 +516,7 @@ end
 
 Perform `y <-- H*x*a + y*b` in place.
 """
-function mul!(
+function LinearAlgebra.mul!(
     y::AbstractVector,
     A::HMatrix,
     x::AbstractVector,
@@ -567,7 +573,7 @@ end
 # FIXME: for matrix multiplication, we slice into columns and call the gemv
 # routine. This is a somewhat inneficient way of doing things, but it is simple
 # enough.
-function mul!(
+function LinearAlgebra.mul!(
     Y::AbstractMatrix,
     A::HMatrix,
     X::AbstractMatrix,
@@ -663,7 +669,7 @@ function _hgemv_static_partition!(C::AbstractVector, B::AbstractVector, partitio
     return C
 end
 
-function rmul!(R::RkMatrix, b::Number)
+function LinearAlgebra.rmul!(R::RkMatrix, b::Number)
     m, n = size(R)
     if m > n
         rmul!(R.B, conj(b))
@@ -673,7 +679,7 @@ function rmul!(R::RkMatrix, b::Number)
     return R
 end
 
-function rmul!(H::HMatrix, b::Number)
+function LinearAlgebra.rmul!(H::HMatrix, b::Number)
     b == true && (return H) # short circuit. If inlined, rmul!(H,true) --> no-op
     if hasdata(H)
         rmul!(data(H), b)
