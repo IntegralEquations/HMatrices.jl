@@ -239,3 +239,46 @@ end
 
 # scalar multiplication
 Base.:*(a::Number, R::RkMatrix) = (A = a * R.A; B = copy(R.B); RkMatrix(A, B))
+
+"""
+    struct FlexMatrix{T}
+
+
+"""
+mutable struct FlexMatrix{T}
+    const data::Vector{T}
+    m::Int
+    k::Int
+end
+
+FlexMatrix(T, m = 0, k = 0) = FlexMatrix{T}(Vector{T}(undef, m * k), Ref(m), Ref(k))
+
+"""
+    newcol!(A::FlexMatrix)
+
+Append a new (unitialized) column to `A`, and return it.
+"""
+function newcol!(A::FlexMatrix)
+    m, k = A.m[], A.k[]
+    is = m * k + 1
+    ie = m * (k + 1)
+    if ie > length(A.data)
+        resize!(A.data, ie)
+    end
+    A.k[] += 1
+    return view(A.data, is:ie)
+end
+
+reset!(A::FlexMatrix) = (A.m[] = 0; A.k[] = 0)
+
+function Base.getindex(A::FlexMatrix, i)
+    i <= A.k[] || throw(BoundsError(A, i))
+    return view(A.data, (i-1)*A.m[]+1:i*A.m[])
+end
+
+function Base.Matrix(A::FlexMatrix{T}) where {T}
+    out = Matrix{T}(undef, A.m[], A.k[])
+    return copyto!(out, 1, A.data, 1, length(out))
+end
+
+Base.length(A::FlexMatrix) = A.k[]
