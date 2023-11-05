@@ -5,7 +5,6 @@ const PROJECT_ROOT = pkgdir(HMatrices)
 using StaticArrays
 using LinearAlgebra
 using Statistics: median
-using TimerOutputs
 using Printf
 using RecipesBase
 using Distributed
@@ -67,10 +66,8 @@ include("multiplication.jl")
 include("triangular.jl")
 include("lu.jl")
 
-export
-    # types (re-exported)
+export ClusterTree,
     CardinalitySplitter,
-    ClusterTree,
     DyadicSplitter,
     GeometricSplitter,
     GeometricMinimalSplitter,

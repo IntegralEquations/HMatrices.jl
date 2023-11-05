@@ -561,9 +561,7 @@ function LinearAlgebra.mul!(
         _hgemv_static_partition!(y, x, A.partition.partition, offset)
         # _hgemv_threads!(y, x, p.partition, offset)  # threaded implementation
     else
-        @timeit_debug "serial multiplication" begin
-            _hgemv_recursive!(y, A, x, offset) # serial implementation
-        end
+        _hgemv_recursive!(y, A, x, offset) # serial implementation
     end
     # permute output
     global_index && invpermute!(y, rowperm(A))

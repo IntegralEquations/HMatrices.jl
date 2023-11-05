@@ -61,9 +61,7 @@ function _lu!(M::HMatrix, compressor, threads, bufs = nothing)
     if isleaf(M)
         d = data(M)
         @assert d isa Matrix
-        @timeit_debug "dense lu factorization" begin
-            lu!(d, NOPIVOT())
-        end
+        lu!(d, NOPIVOT())
     else
         @assert !hasdata(M)
         chdM = children(M)

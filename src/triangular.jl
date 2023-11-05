@@ -52,7 +52,7 @@ function LinearAlgebra.ldiv!(
     @assert isclean(H)
     if isleaf(X)
         d = data(X)
-        @timeit_debug "dense ldiv!" ldiv!(L, d)
+        ldiv!(L, d)
     elseif isleaf(H) # X not a leaf, but L is a leaf. This should not happen.
         error()
     else
@@ -63,9 +63,7 @@ function LinearAlgebra.ldiv!(
         for k in 1:size(chdX, 2)
             for i in 1:m
                 for j in 1:(i-1)# j<i
-                    @timeit_debug "hmul!" begin
-                        hmul!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor, bufs)
-                    end
+                    hmul!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor, bufs)
                 end
                 ldiv!(UnitLowerTriangular(chdH[i, i]), chdX[i, k], compressor, bufs)
             end
@@ -144,9 +142,7 @@ function LinearAlgebra.rdiv!(
     H = parent(U)
     if isleaf(X)
         d = data(X)
-        @timeit_debug "dense rdiv!" begin
-            rdiv!(d, U) # b <-- b/L
-        end
+        rdiv!(d, U) # b <-- b/L
     elseif isleaf(H)
         error()
     else
@@ -157,9 +153,7 @@ function LinearAlgebra.rdiv!(
         for k in 1:size(chdX, 1)
             for i in 1:m
                 for j in 1:(i-1)
-                    @timeit_debug "hmul!" begin
-                        hmul!(chdX[k, i], chdX[k, j], chdH[j, i], -1, 1, compressor, bufs)
-                    end
+                    hmul!(chdX[k, i], chdX[k, j], chdH[j, i], -1, 1, compressor, bufs)
                 end
                 rdiv!(chdX[k, i], UpperTriangular(chdH[i, i]), compressor, bufs)
             end

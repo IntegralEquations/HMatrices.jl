@@ -1,25 +1,4 @@
 """
-    @hprofile
-
-A macro which
-- resets the default `TimerOutputs.get_defaulttimer` to zero
-- execute the code block
-- print the profiling details
-
-This is useful as a coarse-grained profiling strategy in `HMatrices`
-to get a rough idea of where time is spent. Note that this relies on
-`TimerOutputs` annotations manually inserted in the code.
-"""
-macro hprofile(block)
-    return quote
-        TimerOutputs.enable_debug_timings(HMatrices)
-        reset_timer!()
-        $(esc(block))
-        print_timer()
-    end
-end
-
-"""
     PermutedMatrix{K,T} <: AbstractMatrix{T}
 
 Structured used to reprensent the permutation of a matrix-like object. The

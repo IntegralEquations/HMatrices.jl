@@ -274,9 +274,7 @@ function assemble_hmatrix(
         _assemble_hmat_distributed(K, rowtree, coltree; adm, comp, global_index, threads)
     else
         # create first the structure. No parellelism used as this should be light.
-        @timeit_debug "initilizing block structure" begin
-            hmat = HMatrix{T}(rowtree, coltree, adm)
-        end
+        hmat = HMatrix{T}(rowtree, coltree, adm)
         # if needed permute kernel entries into indexing induced by trees
         global_index && (K = PermutedMatrix(K, loc2glob(rowtree), loc2glob(coltree)))
         # now assemble the data in the blocks

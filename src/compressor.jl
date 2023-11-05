@@ -243,14 +243,12 @@ Given the Frobenius norm of `Rₖ = A[1:end-1]*adjoint(B[1:end-1])` in `acc`,
 compute the Frobenius norm of `Rₖ₊₁ = A*adjoint(B)` efficiently.
 """
 @inline function _update_frob_norm(cur, A, B)
-    @timeit_debug "Update Frobenius norm" begin
-        k = length(A)
-        a = A[k]
-        b = B[k]
-        out = norm(a)^2 * norm(b)^2
-        for l in 1:(k-1)
-            out += 2 * real(dot(A[l], a) * (dot(b, B[l])))
-        end
+    k = length(A)
+    a = A[k]
+    b = B[k]
+    out = norm(a)^2 * norm(b)^2
+    for l in 1:(k-1)
+        out += 2 * real(dot(A[l], a) * (dot(b, B[l])))
     end
     return sqrt(cur^2 + out)
 end
