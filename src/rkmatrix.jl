@@ -40,17 +40,12 @@ function Base.show(io::IO, ::MIME"text/plain", R::RkMatrix)
     )
 end
 
-function Base.getindex(rmat::RkMatrix, i::Int, j::Int)
-    if ALLOW_GETINDEX[]
-        r = rank(rmat)
-        acc = zero(eltype(rmat))
-        for k in 1:r
-            acc += rmat.A[i, k] * conj(rmat.B[j, k])
-        end
-    else
-        error(GET_INDEX_ERROR_MSG)
-    end
-    return acc
+function Base.getindex(::RkMatrix, args...)
+    msg = """method `getindex(::RkMatrix,args...)` has been disabled to avoid
+    performance pitfalls. Unless you made an explicit call to `getindex`, this
+    error usually means that a linear algebra routine involving an
+    `RkMatrix` has fallen back to a generic implementation."""
+    return error(msg)
 end
 
 """

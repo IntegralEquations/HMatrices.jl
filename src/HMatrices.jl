@@ -13,14 +13,6 @@ using Base.Threads
 using AbstractTrees
 
 """
-    const ALLOW_GETINDEX
-
-If set to false (default), the `getindex(H,i,j)` method will throw an error on
-[`AbstractHMatrix`](@ref) and [`RkMatrix`](@ref).
-"""
-const ALLOW_GETINDEX = Ref(false)
-
-"""
     getblock!(block,K,irange,jrange)
 
 Fill `block` with `K[i,j]` for `i ∈ irange`, `j ∈ jrange`, where `block` is of
@@ -49,7 +41,7 @@ end
 """
     use_threads()::Bool
 
-Default choice of whether threads will be used or not throughout the package.
+Default choice of whether threads will be used throughout the package.
 """
 use_threads() = true
 

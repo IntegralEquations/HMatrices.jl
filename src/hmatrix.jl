@@ -5,32 +5,12 @@ Abstract type for hierarchical matrices.
 """
 abstract type AbstractHMatrix{T} <: AbstractMatrix{T} end
 
-function Base.getindex(H::AbstractHMatrix, i::Int, j::Int)
-    if ALLOW_GETINDEX[]
-        iloc = glob2loc(rowtree(H))[i]
-        jloc = glob2loc(coltree(H))[j]
-        shift = pivot(H) .- 1
-        _getindex(H, iloc + shift[1], jloc + shift[2])
-    else
-        error(GET_INDEX_ERROR_MSG)
-    end
-end
-
-function _getindex(H, i::Int, j::Int)
-    (i ∈ rowrange(H)) && (j ∈ colrange(H)) || throw(BoundsError(H, (i, j)))
-    acc = zero(eltype(H))
-    shift = pivot(H) .- 1
-    if hasdata(H)
-        il = i - shift[1]
-        jl = j - shift[2]
-        acc += data(H)[il, jl]
-    end
-    for child in children(H)
-        if (i ∈ rowrange(child)) && (j ∈ colrange(child))
-            acc += _getindex(child, i, j)
-        end
-    end
-    return acc
+function Base.getindex(::AbstractHMatrix, args...)
+    msg = """method `getindex(::AbstractHMatrix,args...)` has been disabled to
+    avoid performance pitfalls. Unless you made an explicit call to `getindex`,
+    this error usually means that a linear algebra routine involving an
+    `AbstractHMatrix` has fallen back to a generic implementation."""
+    return error(msg)
 end
 
 """
