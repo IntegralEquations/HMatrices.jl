@@ -167,12 +167,12 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffers = not
         # maps global indices to local indices
     end
     A, B = if isnothing(buffers)
-        (FlexMatrix(eltype(K), m), FlexMatrix(eltype(K), n))
+        (VectorOfVectors(eltype(K), m), VectorOfVectors(eltype(K), n))
     else
         buffers[1], buffers[2]
     end
-    @assert A.k[] == 0 && B.k[] == 0 "buffers must be empty"
-    A.m[], B.m[] = m, n
+    @assert A.k == 0 && B.k == 0 "buffers must be empty"
+    A.m, B.m = m, n
     rmax = min(m, n, rmax)
     I = BitVector(true for i in 1:m)
     J = BitVector(true for i in 1:n)
@@ -185,9 +185,9 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffers = not
         I[i] = false
         # pre-allocate row and column
         a = newcol!(A)
-        A.k[] -= 1
+        A.k -= 1
         b = newcol!(B)
-        B.k[] -= 1
+        B.k -= 1
         # compute next row by row <-- K[i+ishift,jrange] - R[i,:]
         getblock!(b, Kadj, jrange, i + ishift)
         for k in 1:r
@@ -218,8 +218,8 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffers = not
             end
             # increase rank and push cross
             r += 1
-            A.k[] += 1
-            B.k[] += 1
+            A.k += 1
+            B.k += 1
             # estimate the error by || R_{k} - R_{k-1} || = ||a|| ||b||
             er = norm(a) * norm(b)
             # estimate the norm by || K || ≈ || R_k ||

@@ -279,10 +279,12 @@ function assemble_hmatrix(
         global_index && (K = PermutedMatrix(K, loc2glob(rowtree), loc2glob(coltree)))
         # now assemble the data in the blocks
         if threads
-            bufs = [(FlexMatrix(T, 0), FlexMatrix(T, 0)) for _ in 1:Threads.nthreads()]
+            bufs = [
+                (VectorOfVectors(T, 0), VectorOfVectors(T, 0)) for _ in 1:Threads.nthreads()
+            ]
             _assemble_threads!(hmat, K, comp, bufs)
         else
-            bufs = (FlexMatrix(T, 0), FlexMatrix(T, 0))
+            bufs = (VectorOfVectors(T, 0), VectorOfVectors(T, 0))
             _assemble_cpu!(hmat, K, comp, bufs)
         end
     end

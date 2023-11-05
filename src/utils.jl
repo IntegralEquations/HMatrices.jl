@@ -230,3 +230,60 @@ function has_partition(seq, np, cmax, cost = identity)
     end
     return true
 end
+
+"""
+    struct VectorOfVectors{T}
+
+A simple structure which behaves as a `Vector{Vector{T}}` but stores the entries
+in a contiguous `data::Vector{T}` field. All vectors in the `VectorOfVectors`
+are assumed to be of size `m`, and there are `k` of them, meaning this structure
+can be used to represent a `m × k` matrix.
+
+Similar to a vector-of-vectors, calling `A[i]` returns a view to the `i`-th
+column.
+
+See also: [`newcol!`](@ref)
+"""
+mutable struct VectorOfVectors{T}
+    const data::Vector{T}
+    m::Int
+    k::Int
+end
+
+VectorOfVectors(T, m = 0, k = 0) = VectorOfVectors{T}(Vector{T}(undef, m * k), m, k)
+
+"""
+    newcol!(A::VectorOfVectors)
+
+Append a new (unitialized) column to `A`, and return a view of it.
+"""
+function newcol!(A::VectorOfVectors)
+    m, k = A.m, A.k
+    is = m * k + 1
+    ie = m * (k + 1)
+    if ie > length(A.data)
+        resize!(A.data, ie)
+    end
+    A.k += 1
+    return view(A.data, is:ie)
+end
+
+"""
+    reset!(A::VectorOfVectors)
+
+Set the number of columns of `A` to zero, and the number of rows to zero, but
+does not `resize!` the underlying data vector.
+"""
+reset!(A::VectorOfVectors) = (A.m = 0; A.k = 0)
+
+function Base.getindex(A::VectorOfVectors, i)
+    i <= A.k || throw(BoundsError(A, i))
+    return view(A.data, (i-1)*A.m+1:i*A.m)
+end
+
+function Base.Matrix(A::VectorOfVectors{T}) where {T}
+    out = Matrix{T}(undef, A.m, A.k)
+    return copyto!(out, 1, A.data, 1, length(out))
+end
+
+Base.length(A::VectorOfVectors) = A.k

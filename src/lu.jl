@@ -27,7 +27,7 @@ blocks during the multiplication routines.
 function LinearAlgebra.lu!(M::HMatrix, compressor; threads = use_threads())
     # perform the lu decomposition of M in place
     T = eltype(M)
-    buffers = [(FlexMatrix(T), FlexMatrix(T)) for _ in 1:Threads.nthreads()]
+    buffers = [(VectorOfVectors(T), VectorOfVectors(T)) for _ in 1:Threads.nthreads()]
     _lu!(M, compressor, threads, buffers)
     # wrap the result in the LU structure
     return LU(M, LinearAlgebra.BlasInt[], LinearAlgebra.BlasInt(0))

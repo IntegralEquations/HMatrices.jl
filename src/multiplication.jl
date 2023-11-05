@@ -9,7 +9,7 @@ admissible blocks after addition is performed.
 function hmul!(C::HMatrix, A::HMatrix, B::HMatrix, a, b, compressor, bufs_ = nothing)
     T = eltype(C)
     bufs = if isnothing(bufs_)
-        [(FlexMatrix(T), FlexMatrix(T)) for _ in 1:Threads.nthreads()]
+        [(VectorOfVectors(T), VectorOfVectors(T)) for _ in 1:Threads.nthreads()]
     else
         bufs_
     end
