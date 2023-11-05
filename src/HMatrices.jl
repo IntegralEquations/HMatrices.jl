@@ -21,9 +21,14 @@ If set to false (default), the `getindex(H,i,j)` method will throw an error on
 const ALLOW_GETINDEX = Ref(false)
 
 """
-    get_block!(block,K,irange,jrange)
+    getblock!(block,K,irange,jrange)
 
-Fill `block` with `K[irange,jrange]`.
+Fill `block` with `K[i,j]` for `i ∈ irange`, `j ∈ jrange`, where `block` is of
+size `length(irange) × length(jrange)`.
+
+A default implementation exists which relies on `getindex(K,i,j)`, but this
+method can be overloaded for better performance if e.g. a vectorized way of
+computing a block is available.
 """
 function getblock!(out, K, irange_, jrange_)
     irange = irange_ isa Colon ? axes(K, 1) : irange_
@@ -36,8 +41,8 @@ function getblock!(out, K, irange_, jrange_)
     return out
 end
 
-function getblock!(out, Kadj::Adjoint, irange_, jrange_)
-    getblock!(transpose(out), parent(Kadj), jrange_, irange_)
+function getblock!(out, Kadj::Adjoint, irange_, j::Int)
+    getblock!(transpose(out), parent(Kadj), j:j, irange_)
     return out .= conj.(out)
 end
 
