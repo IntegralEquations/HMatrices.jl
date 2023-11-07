@@ -146,11 +146,11 @@ function getcol!(col, L::MulLinearOp, j)
     # add R and P (if they exist)
     R = L.R
     if !isnothing(R)
-        getcol!(col, R, j, true)
+        getcol!(col, R, j, Val(true))
     end
     P = L.P
     if !isnothing(P)
-        getcol!(col, P, j, true)
+        getcol!(col, P, j, Val(true))
     end
     return col
 end
@@ -178,11 +178,11 @@ function getcol!(col, adjL::Adjoint{<:Any,<:MulLinearOp}, j)
     # add the j-th column of Ct if it has data
     R = L.R
     if !isnothing(R)
-        getcol!(col, adjoint(R), j, true)
+        getcol!(col, adjoint(R), j, Val(true))
     end
     P = L.P
     if !isnothing(P)
-        getcol!(col, adjoint(P), j, true)
+        getcol!(col, adjoint(P), j, Val(true))
     end
     return col
 end
