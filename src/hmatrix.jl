@@ -639,3 +639,25 @@ function partition!(s::Symbol, H::HMatrix, np = Threads.nthreads(), cost = _cost
     H.partition = Partition(H, p, s)
     return H
 end
+
+# add a unifor scaling to an HMatrix return an HMatrix
+function LinearAlgebra.axpy!(a, X::UniformScaling, Y::HMatrix)
+    @assert isclean(Y)
+    if hasdata(Y)
+        d = data(Y)
+        @assert d isa Matrix
+        n = min(size(d)...)
+        for i in 1:n
+            d[i, i] += a * X.λ
+        end
+    else
+        n = min(blocksize(Y)...)
+        for i in 1:n
+            axpy!(a, X, children(Y)[i, i])
+        end
+    end
+    return Y
+end
+
+Base.:(+)(X::UniformScaling, Y::HMatrix) = axpy!(true, X, deepcopy(Y))
+Base.:(+)(X::HMatrix, Y::UniformScaling) = Y + X
