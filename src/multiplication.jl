@@ -49,7 +49,7 @@ function _hmul!(C::HMatrix, compressor, dict, a, R, bufs)
         irange = rowrange(chd) .- shift[1]
         jrange = colrange(chd) .- shift[2]
         Rp     = data(C)
-        Rv   = hasdata(C) ? RkMatrix(Rp.A[irange, :], Rp.B[jrange, :]) : nothing
+        Rv     = hasdata(C) ? RkMatrix(Rp.A[irange, :], Rp.B[jrange, :]) : nothing
         # Rv = hasdata(C) ? view(Rp,irange,jrange) : nothing
         _hmul!(chd, compressor, dict, a, Rv, bufs)
     end
@@ -73,8 +73,9 @@ function execute_node!(C::HMatrix, compressor, dict, a, R, bufs)
     else
         L = MulLinearOp(data(C), R, pairs, a)
         id = Threads.threadid()
-        R = compressor(L,axes(L,1),axes(L,2),bufs[id])
-        id == Threads.threadid() || (@warn "thread id changed from $id to $(Threads.threadid())")
+        R = compressor(L, axes(L, 1), axes(L, 2), bufs[id])
+        id == Threads.threadid() ||
+            (@warn "thread id changed from $id to $(Threads.threadid())")
         setdata!(C, R)
     end
     return C
@@ -113,7 +114,7 @@ function Base.size(L::MulLinearOp)
 end
 
 function Base.getindex(L::Union{MulLinearOp,Adjoint{<:Any,<:MulLinearOp}}, args...)
-    error("calling `getindex` of a `MulLinearOp` has been disabled")
+    return error("calling `getindex` of a `MulLinearOp` has been disabled")
 end
 
 function getcol!(col, L::MulLinearOp, j)
@@ -146,7 +147,7 @@ end
 
 function getblock!(out, L::MulLinearOp, irange, j::Int)
     @assert irange == 1:size(L, 1)
-    getcol!(out, L, j)
+    return getcol!(out, L, j)
 end
 
 function getcol!(col, adjL::Adjoint{<:Any,<:MulLinearOp}, j)
@@ -178,7 +179,7 @@ end
 
 function getblock!(out, L::Adjoint{<:Any,<:MulLinearOp}, irange, j::Int)
     @assert irange == 1:size(L, 1)
-    getcol!(out, L, j)
+    return getcol!(out, L, j)
 end
 
 #=
@@ -482,7 +483,8 @@ function _hgemv_threads!(C::AbstractVector, B::AbstractVector, partition, offset
                 # it is OK, but it should be either fixed or removed.
                 tid = Threads.threadid()
                 _hgemv_recursive!(buffers[tid], block, B, offset)
-                tid == Threads.threadid() || (@warn "thread id changed from $tid to $(Threads.threadid())")
+                tid == Threads.threadid() ||
+                    (@warn "thread id changed from $tid to $(Threads.threadid())")
             end
         end
     end

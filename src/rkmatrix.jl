@@ -56,14 +56,27 @@ Fill the entries of `col` with column `j` of `M`.
 function getcol!(col, R::RkMatrix, j::Int, ::Val{T} = Val(false)) where {T}
     # NOTE: using a `Val` argument to dispatch on the type of `T` is important
     # for performance
-    T ? mul!(col, R.A, view(adjoint(R.B), :, j), true, true) : mul!(col, R.A, view(adjoint(R.B), :, j))
+    return if T
+        mul!(col, R.A, view(adjoint(R.B), :, j), true, true)
+    else
+        mul!(col, R.A, view(adjoint(R.B), :, j))
+    end
 end
 
-function getcol!(col, Ra::Adjoint{<:Any,<:RkMatrix}, j::Int, ::Val{T} = Val(false)) where {T}
+function getcol!(
+    col,
+    Ra::Adjoint{<:Any,<:RkMatrix},
+    j::Int,
+    ::Val{T} = Val(false),
+) where {T}
     # NOTE: using a `Val` argument to dispatch on the type of `T` is important
     # for performance
     R = parent(Ra)
-    T ? mul!(col, R.B, view(adjoint(R.A), :,j), true, true) : mul!(col, R.B, view(adjoint(R.A), :,j))
+    return if T
+        mul!(col, R.B, view(adjoint(R.A), :, j), true, true)
+    else
+        mul!(col, R.B, view(adjoint(R.A), :, j))
+    end
 end
 
 """
