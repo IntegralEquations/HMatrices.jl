@@ -12,13 +12,13 @@ end
     include("clustertree_test.jl")
 end
 
-# @safetestset "RkMatrix" begin
-#     include("rkmatrix_test.jl")
-# end
+@safetestset "RkMatrix" begin
+    include("rkmatrix_test.jl")
+end
 
-# @safetestset "Compressors" begin
-#     include("compressor_test.jl")
-# end
+@safetestset "Compressors" begin
+    include("compressor_test.jl")
+end
 
 @safetestset "HMatrix" begin
     include("hmatrix_test.jl")

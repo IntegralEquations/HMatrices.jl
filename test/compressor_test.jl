@@ -2,7 +2,7 @@ using HMatrices
 using Test
 using StaticArrays
 using LinearAlgebra
-using HMatrices: ACA, PartialACA, TSVD, RkMatrix
+using HMatrices: ACA, PartialACA, TSVD, RkMatrix, VectorOfVectors
 
 include(joinpath(HMatrices.PROJECT_ROOT, "test", "testutils.jl"))
 
@@ -17,21 +17,6 @@ Random.seed!(1)
     K = helmholtz_matrix(X, Y, 1.0)
     M = Matrix(K)
     irange, jrange = 1:m, 1:n
-    @testset "aca_full" begin
-        atol = 1e-5
-        aca = ACA(; atol = atol)
-        R = aca(K, irange, jrange)
-        @test norm(Matrix(R) - M) < atol
-        rtol = 1e-5
-        aca = ACA(; rtol = rtol)
-        R = aca(M, irange, jrange)
-        norm(Matrix(R) - M)
-        @test norm(Matrix(R) - M) < rtol * norm(M)
-        r = 10
-        aca = ACA(; rank = r)
-        R = aca(M, irange, jrange)
-        @test rank(R) == r
-    end
     @testset "aca_partial" begin
         atol = 1e-5
         aca = PartialACA(; atol = atol)
@@ -49,15 +34,16 @@ Random.seed!(1)
         # test fast update of frobenius norm
         m, n = 10000, 1000
         r = 10
-        T = ComplexF64
-        A = [rand(T, m) for _ in 1:r]
-        B = [rand(T, n) for _ in 1:r]
-        R = RkMatrix(A, B)
-        old_norm = norm(Matrix(R), 2)
-        push!(A, rand(T, m))
-        push!(B, rand(T, n))
-        Rnew = RkMatrix(A, B)
-        new_norm = norm(Matrix(Rnew), 2)
+        A = VectorOfVectors(T,m,r)
+        B = VectorOfVectors(T,n,r)
+        A.data .= rand(T, m*r)
+        B.data .= rand(T, n*r)
+        old_norm = norm(Matrix(A)*adjoint(Matrix(B)), 2)
+        a = HMatrices.newcol!(A)
+        a .= rand(T,m)
+        b = HMatrices.newcol!(B)
+        b .= rand(T,n)
+        new_norm = norm(Matrix(A)*adjoint(Matrix(B)), 2)
         @test new_norm ≈ HMatrices._update_frob_norm(old_norm, A, B)
 
         # test simple case where things are not compressible
@@ -80,6 +66,11 @@ Random.seed!(1)
         tsvd = TSVD(; rank = r)
         R = tsvd(M, irange, jrange)
         @test rank(R) == r
+        # test recompression using QR-SVD
+        R2 = RkMatrix(hcat(R.A,R.A),hcat(R.B,R.B))
+        @test rank(R2) == 2r
+        HMatrices.compress!(R2,tsvd)
+        @test rank(R2) == r
     end
 end
 
@@ -93,21 +84,7 @@ end
     # K = ElastostaticMatrix(X,Y,1.0,2.0)
     M = Matrix(K)
     irange, jrange = 1:m, 1:n
-    @testset "aca_full" begin
-        atol = 1e-5
-        aca = ACA(; atol = atol)
-        R = aca(K, irange, jrange)
-        @test norm(Matrix(R) - M) < atol
-        rtol = 1e-5
-        aca = ACA(; rtol = rtol)
-        R = aca(M, irange, jrange)
-        norm(Matrix(R) - M)
-        @test norm(Matrix(R) - M) < rtol * norm(M)
-        r = 10
-        aca = ACA(; rank = r)
-        R = aca(M, irange, jrange)
-        @test rank(R) == r
-    end
+
     @testset "aca_partial" begin
         atol = 1e-5
         aca = PartialACA(; atol = atol)
@@ -123,22 +100,20 @@ end
         @test rank(R) == r
 
         # test fast update of frobenius norm
-        m, n = 10000, 1000
-        r = 10
-        T = ComplexF64
-        A = [rand(T, m) for _ in 1:r]
-        B = [rand(T, n) for _ in 1:r]
-        R = RkMatrix(A, B)
-        old_norm = norm(Matrix(R), 2)
-        push!(A, rand(T, m))
-        push!(B, rand(T, n))
-        Rnew = RkMatrix(A, B)
-        new_norm = norm(Matrix(Rnew), 2)
-        @test new_norm ≈ HMatrices._update_frob_norm(old_norm, A, B)
-
-        # test simple case where things are not compressible
-        A = rand(2, 2)
-        comp = PartialACA(; rtol = 1e-5)
-        @test comp(A, 1:2, 1:2) ≈ A
+        T = SMatrix{3,3,Float64,9}
+        A = VectorOfVectors(T,m,r)
+        B = VectorOfVectors(T,n,r)
+        A.data .= rand(T, m*r)
+        B.data .= rand(T, n*r)
+        R = Matrix(A)*collect(adjoint(Matrix(B)))
+        old_norm = norm(R, 2)
+        a = HMatrices.newcol!(A)
+        a .= rand(T,m)
+        b = HMatrices.newcol!(B)
+        b .= rand(T,n)
+        R = Matrix(A)*collect(adjoint(Matrix(B)))
+        new_norm = norm(R, 2)
+        HMatrices._update_frob_norm(old_norm, A, B)
+        @test_broken new_norm ≈ HMatrices._update_frob_norm(old_norm, A, B)
     end
 end

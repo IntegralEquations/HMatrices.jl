@@ -120,48 +120,6 @@ function Base.getproperty(R::RkMatrix, s::Symbol)
     end
 end
 
-"""
-    hcat(M1::RkMatrix,M2::RkMatrix)
-
-Concatenated `M1` and `M2` horizontally to produce a new `RkMatrix` of rank
-`rank(M1)+rank(M2)`.
-"""
-function Base.hcat(M1::RkMatrix{T}, M2::RkMatrix{T}) where {T}
-    m, n = size(M1)
-    s, t = size(M2)
-    (m == s) ||
-        throw(ArgumentError("number of rows of each array must match: got  ($m,$s)"))
-    r1 = size(M1.A, 2)
-    r2 = size(M2.A, 2)
-    A = hcat(M1.A, M2.A)
-    B1 = vcat(M1.B, zeros(T, t, r1))
-    B2 = vcat(zeros(T, n, r2), M2.B)
-    B = hcat(B1, B2)
-    return RkMatrix(A, B)
-end
-
-"""
-    vcat(M1::RkMatrix,M2::RkMatrix)
-
-Concatenated `M1` and `M2` vertically to produce a new `RkMatrix` of rank
-`rank(M1)+rank(M2)`
-"""
-function Base.vcat(M1::RkMatrix{T}, M2::RkMatrix{T}) where {T}
-    m, n = size(M1)
-    s, t = size(M2)
-    n == t ||
-        throw(ArgumentError("number of columns of each array must match (got  ($n,$t))"))
-    r1 = size(M1.A, 2)
-    r2 = size(M2.A, 2)
-    A1 = vcat(M1.A, zeros(T, s, r1))
-    A2 = vcat(zeros(T, m, r2), M2.A)
-    A = hcat(A1, A2)
-    B = hcat(M1.B, M2.B)
-    return RkMatrix(A, B)
-end
-
-Base.copy(R::RkMatrix) = RkMatrix(copy(R.A), copy(R.B))
-
 function Base.Matrix(R::RkMatrix{<:Number})
     return R.A * R.Bt
 end

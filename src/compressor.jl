@@ -6,90 +6,6 @@ Types used to compress matrices.
 abstract type AbstractCompressor end
 
 """
-    struct ACA
-
-Adaptive cross approximation algorithm with full pivoting. This structure can be
-used to generate an [`RkMatrix`](@ref) from a matrix-like object `M`. The
-keywork arguments `rtol`, `atol`, and `rank` can be used to control the quality
-of the approximation. Note that because `ACA` uses full pivoting, the linear
-operator `M` has to be evaluated at every `i,j`.
-
-# See also: `[PartialACA](@ref)`
-
-# Examples
-```jldoctest
-using LinearAlgebra
-rtol = 1e-6
-comp = ACA(;rtol)
-A = rand(10,2)
-B = rand(10,2)
-M = A*adjoint(B) # a low-rank matrix
-R = comp(M,:,:) # compress the entire matrix `M`
-norm(Matrix(R) - M) < rtol*norm(M) # true
-
-# output
-
-true
-
-```
-"""
-Base.@kwdef struct ACA
-    atol::Float64 = 0
-    rank::Int = typemax(Int)
-    rtol::Float64 = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64))
-end
-
-function (aca::ACA)(K, rowtree::ClusterTree, coltree::ClusterTree)
-    irange = index_range(rowtree)
-    jrange = index_range(coltree)
-    return aca(K, irange, jrange, bufs)
-end
-
-function (aca::ACA)(K, irange, jrange)
-    M = K[irange, jrange] # computes the entire matrix.
-    return _aca_full!(M, aca.atol, aca.rank, aca.rtol)
-end
-
-"""
-    _aca_full!(M,atol,rmax,rtol)
-
-Internal function implementing the adaptive cross-approximation algorithm with
-full pivoting. The matrix `M` is modified in place. The returned `RkMatrix` has
-rank at most `rmax`, and is expected to satisfy `|M - R| < max(atol,rtol*|M|)`.
-"""
-function _aca_full!(M, atol, rmax, rtol)
-    Madj = adjoint(M)
-    T = eltype(M)
-    m, n = size(M)
-    A = Vector{Vector{T}}()
-    B = Vector{Vector{T}}()
-    er = Inf
-    exact_norm = norm(M, 2) # exact norm
-    r = 0 # current rank
-    while er > max(atol, rtol * exact_norm) && r < rmax
-        I = _aca_full_pivot(M)
-        i, j = Tuple(I)
-        δ = M[I]
-        if svdvals(δ)[end] == 0
-            return RkMatrix(A, B)
-        else
-            iδ = inv(δ)
-            col = M[:, j]
-            adjcol = Madj[:, i]
-            for k in eachindex(adjcol)
-                adjcol[k] = adjcol[k] * adjoint(iδ)
-            end
-            r += 1
-            push!(A, col)
-            push!(B, adjcol)
-            axpy!(-1, col * adjoint(adjcol), M) # M <-- M - col*row'
-            er = norm(M, 2) # exact error
-        end
-    end
-    return RkMatrix(A, B)
-end
-
-"""
     struct PartialACA
 
 Adaptive cross approximation algorithm with partial pivoting. This structure can be
@@ -283,30 +199,6 @@ function _aca_partial_pivot(v, J)
     return idx
 end
 
-"""
-    _aca_full_pivot(M)
-
-Find the index of the element `x ∈ M` maximizing its smallest singular value.
-This is equivalent to minimizing the spectral norm of the inverse of `x`.
-
-When `x` is a scalar, this is simply the element with largest absolute value.
-
-# See also: [`_aca_partial_pivot`](@ref).
-"""
-function _aca_full_pivot(M)
-    idxs = CartesianIndices(M)
-    idx = first(idxs)
-    val = -Inf
-    for I in idxs
-        x = M[I]
-        σ = svdvals(x)[end]
-        σ < val && continue
-        idx = I
-        val = σ
-    end
-    return idx
-end
-
 function _aca_partial_initial_pivot(rowtree)
     # the method below is suggested in Bebendorf, but it does not seem to
     # improve the  error. The idea is that the initial pivot is the closesest
@@ -388,7 +280,7 @@ end
 Recompress the matrix `M` using a truncated svd and output an `RkMatrix`. The
 data in `M` is invalidated in the process.
 """
-function compress!(M::Matrix, tsvd::TSVD)
+function compress!(M::Base.Matrix, tsvd::TSVD)
     m, n = size(M)
     F = svd!(M)
     sp_norm = F.S[1] # spectral norm
