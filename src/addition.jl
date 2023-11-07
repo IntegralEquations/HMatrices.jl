@@ -31,7 +31,14 @@ end
 
 # 2.1
 function LinearAlgebra.axpy!(a, X::RkMatrix, Y::Matrix)
-    return axpy!(a, Matrix(X), Y)
+    # axpy!(a,Matrix(X),Y)
+    r = rank(X)
+    m, n = size(Y)
+    # @turbo warn_check_args=false for i in 1:m
+    @inbounds for i in 1:m, j in 1:n, k in 1:r
+        Y[i,j] += a * X.A[i, k] * adjoint(X.B[j, k])
+    end
+    return Y
 end
 
 #2.2
