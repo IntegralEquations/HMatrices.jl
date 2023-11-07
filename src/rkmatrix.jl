@@ -53,13 +53,13 @@ end
 
 Fill the entries of `col` with column `j` of `M`.
 """
-function getcol!(col, R::RkMatrix, j::Int)
-    return mul!(col, R.A, view(adjoint(R.B), :, j))
+function getcol!(col, R::RkMatrix, j::Int, append=false)
+    return mul!(col, R.A, view(adjoint(R.B), :, j), true, append)
 end
 
-function getcol!(col, Ra::Adjoint{<:Any,<:RkMatrix}, j::Int)
+function getcol!(col, Ra::Adjoint{<:Any,<:RkMatrix}, j::Int, append=false)
     R = parent(Ra)
-    return mul!(col, R.B, view(adjoint(R.A), :,j))
+    return mul!(col, R.B, view(adjoint(R.A), :,j), true, append)
 end
 
 """

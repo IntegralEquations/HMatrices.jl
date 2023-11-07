@@ -143,6 +143,8 @@ function (paca::PartialACA)(K, irange::AbstractRange, jrange::AbstractRange, buf
     return _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol, 1, bufs)
 end
 
+(paca::PartialACA)(K::AbstractMatrix) = paca(K, axes(K,1), axes(K,2))
+
 """
     _aca_partial(K,irange,jrange,atol,rmax,rtol,istart=1)
 

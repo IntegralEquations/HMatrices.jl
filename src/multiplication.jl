@@ -1,22 +1,195 @@
 """
     hmul!(C::HMatrix,A::HMatrix,B::HMatrix,a,b,compressor)
 
-Similar to `mul!` : compute `C <-- A*B*a + B*b`, where `A,B,C` are
-hierarchical matrices and `compressor` is a function/functor used in the
-intermediate stages of the multiplication to avoid growring the rank of
-admissible blocks after addition is performed.
+Similar to `mul!` : compute `C <-- A*B*a + B*b`, where `A,B,C` are hierarchical
+matrices and `compressor` is a function/functor used in the intermediate stages
+of the multiplication to avoid growring the rank of admissible blocks after
+addition is performed.
 """
-function hmul!(C::HMatrix, A::HMatrix, B::HMatrix, a, b, compressor, bufs_ = nothing)
-    T = eltype(C)
+function hmul!(C::T, A::T, B::T, a, b, compressor, bufs_ = nothing) where {T<:HMatrix}
     bufs = if isnothing(bufs_)
-        [(VectorOfVectors(T), VectorOfVectors(T)) for _ in 1:Threads.nthreads()]
+        S = eltype(C)
+        [(VectorOfVectors(S), VectorOfVectors(S)) for _ in 1:Threads.nthreads()]
     else
         bufs_
     end
+    @assert isroot(C) || !hasdata(parent(C))
     b == true || rmul!(C, b)
-    plan = plan_hmul(C, A, B, a, 1)
-    execute!(plan, compressor, bufs)
+    dict = IdDict{T,Vector{NTuple{2,T}}}()
+    _plan_dict!(dict, C, A, B)
+    _hmul!(C, compressor, dict, a, nothing, bufs)
     return C
+end
+
+function _plan_dict!(dict, C::T, A::T, B::T) where {T<:HMatrix}
+    pairs = get!(dict, C, Tuple{T,T}[])
+    if isleaf(A) || isleaf(B) || isleaf(C)
+        push!(pairs, (A, B))
+    else
+        ni, nj = blocksize(C)
+        _, nk = blocksize(A)
+        A_children = children(A)
+        B_children = children(B)
+        C_children = children(C)
+        for i in 1:ni
+            for j in 1:nj
+                for k in 1:nk
+                    _plan_dict!(dict, C_children[i, j], A_children[i, k], B_children[k, j])
+                end
+            end
+        end
+    end
+    return dict
+end
+
+function _hmul!(C::HMatrix, compressor, dict, a, R, bufs)
+    execute_node!(C, compressor, dict, a, R, bufs)
+    shift = pivot(C) .- 1
+    for chd in children(C)
+        irange = rowrange(chd) .- shift[1]
+        jrange = colrange(chd) .- shift[2]
+        Rp     = data(C)
+        Rv   = hasdata(C) ? RkMatrix(Rp.A[irange, :], Rp.B[jrange, :]) : nothing
+        # Rv = hasdata(C) ? view(Rp,irange,jrange) : nothing
+        _hmul!(chd, compressor, dict, a, Rv, bufs)
+    end
+    isleaf(C) || (setdata!(C, nothing))
+    return C
+end
+
+# non-recursive execution
+function execute_node!(C::HMatrix, compressor, dict, a, R, bufs)
+    T = typeof(C)
+    pairs = get(dict, C, Tuple{T,T}[])
+    isnothing(R) && isempty(pairs) && (return C)
+    if isleaf(C) && !isadmissible(C)
+        d = data(C)
+        for (A, B) in pairs
+            _mul_dense!(d, A, B, a)
+        end
+        isnothing(R) || axpy!(true, R, d)
+    else
+        L = MulLinearOp(data(C), R, pairs, a)
+        id = Threads.threadid()
+        R = compressor(L,axes(L,1),axes(L,2),bufs[id])
+        id == Threads.threadid() || (@warn "thread id changed from $id to $(Threads.threadid())")
+        setdata!(C, R)
+    end
+    return C
+end
+
+# function hmul!(C::HMatrix, A::HMatrix, B::HMatrix, a, b, compressor, bufs_ = nothing)
+#     T = eltype(C)
+#     bufs = if isnothing(bufs_)
+#         [(VectorOfVectors(T), VectorOfVectors(T)) for _ in 1:Threads.nthreads()]
+#     else
+#         bufs_
+#     end
+#     b == true || rmul!(C, b)
+#     plan = plan_hmul(C, A, B, a, 1)
+#     execute!(plan, compressor, bufs)
+#     return C
+# end
+
+"""
+    struct MulLinearOp{R,T} <: AbstractMatrix{T}
+
+Abstract matrix representing the following linear operator:
+```
+    L = R + P + a * ∑ᵢ Aᵢ * Bᵢ
+```
+where `R` and `P` are of type `RkMatrix{T}`, `Aᵢ,Bᵢ` are of type `HMatrix{R,T}`
+and `a` is scalar multiplier. Calling `compressor(L)` produces a low-rank
+approximation of `L`, where `compressor` is an [`AbstractCompressor`](@ref).
+
+Note: this structure is used to group the operations required when multiplying
+hierarchical matrices so that they can later be executed in a way that minimizes
+recompression of intermediate computations.
+"""
+struct MulLinearOp{R,T,S} <: AbstractMatrix{T}
+    R::Union{RkMatrix{T},Nothing}
+    # P::Union{RkMatrixBlockView{T},Nothing}
+    P::Union{RkMatrix{T},Nothing}
+    pairs::Vector{NTuple{2,HMatrix{R,T}}}
+    multiplier::S
+end
+
+# AbstractMatrix interface
+function Base.size(L::MulLinearOp)
+    isnothing(L.R) || (return size(L.R))
+    isnothing(L.P) || (return size(L.P))
+    isempty(L.pairs) && (return (0, 0))
+    A, B = first(L.pairs)
+    return (size(A, 1), size(B, 2))
+end
+
+function Base.getindex(L::Union{MulLinearOp,Adjoint{<:Any,<:MulLinearOp}}, args...)
+    error("calling `getindex(L,i,j)` of a `MulLinearOp` has been disabled")
+end
+
+function getcol!(col, L::MulLinearOp, j)
+    fill!(col, zero(eltype(col)))
+    m, n = size(L)
+    T = eltype(L)
+    # compute j-th column of ∑ Aᵢ Bᵢ
+    for (A, B) in L.pairs
+        m, k = size(A)
+        k, n = size(B)
+        tmp = zeros(T, k)
+        jg = j + offset(B)[2] # global index on hierarchical matrix B
+        getcol!(tmp, B, jg)
+        _hgemv_recursive!(col, A, tmp, offset(A))
+    end
+    # multiply the columns by a
+    a = L.multiplier
+    rmul!(col, a)
+    # add R and P (if they exist)
+    R = L.R
+    if !isnothing(R)
+        getcol!(col, R, j, true)
+    end
+    P = L.P
+    if !isnothing(P)
+        getcol!(col, P, j, true)
+    end
+    return col
+end
+
+function getblock!(out, L::MulLinearOp, irange, j::Int)
+    @assert irange == 1:size(L, 1)
+    getcol!(out, L, j)
+end
+
+function getcol!(col, adjL::Adjoint{<:Any,<:MulLinearOp}, j)
+    fill!(col, zero(eltype(col)))
+    L = parent(adjL)
+    T = eltype(L)
+    # compute j-th column of ∑ adjoint(Bᵢ)*adjoint(Aᵢ)
+    for (A, B) in L.pairs
+        At, Bt = adjoint(A), adjoint(B)
+        tmp = zeros(T, size(At, 1))
+        jg = j + offset(At)[2]
+        getcol!(tmp, At, jg)
+        _hgemv_recursive!(col, Bt, tmp, offset(Bt))
+    end
+    # multiply by a
+    a = L.multiplier
+    rmul!(col, conj(a))
+    # add the j-th column of Ct if it has data
+    R = L.R
+    if !isnothing(R)
+        getcol!(col, adjoint(R), j, true)
+    end
+    P = L.P
+    if !isnothing(P)
+        getcol!(col, adjoint(P), j, true)
+    end
+    return col
+end
+
+function getblock!(out, L::Adjoint{<:Any,<:MulLinearOp}, irange, j::Int)
+    @assert irange == 1:size(L, 1)
+    getcol!(out, L, j)
 end
 
 """
