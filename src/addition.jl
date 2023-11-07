@@ -15,12 +15,12 @@ simply be assigned `X`. This means that after the call `axpy(a,X,Y)`, the object
 `Y` is in a *dirty* state (see [`isclean`][@ref]) and usually a call to
 [`flush_to_leaves!`](@ref) or [`flush_to_children!`](@ref) follows.
 """
-function LinearAlgebra.axpy!(a, X::Matrix, Y::RkMatrix)
+function LinearAlgebra.axpy!(a, X::Base.Matrix, Y::RkMatrix)
     return axpy!(a, RkMatrix(X), Y)
 end
 
 # 1.3
-function LinearAlgebra.axpy!(a, X::Matrix, Y::HMatrix)
+function LinearAlgebra.axpy!(a, X::Base.Matrix, Y::HMatrix)
     if hasdata(Y)
         axpy!(a, X, data(Y))
     else
@@ -30,7 +30,7 @@ function LinearAlgebra.axpy!(a, X::Matrix, Y::HMatrix)
 end
 
 # 2.1
-function LinearAlgebra.axpy!(a, X::RkMatrix, Y::Matrix)
+function LinearAlgebra.axpy!(a, X::RkMatrix, Y::Base.Matrix)
     # axpy!(a,Matrix(X),Y)
     r = rank(X)
     m, n = size(Y)
