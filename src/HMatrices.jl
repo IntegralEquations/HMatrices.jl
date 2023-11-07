@@ -79,7 +79,6 @@ export ClusterTree,
     StrongAdmissibilityStd,
     WeakAdmissibilityStd,
     PartialACA,
-    ACA,
     TSVD,
     # functions
     compression_ratio,

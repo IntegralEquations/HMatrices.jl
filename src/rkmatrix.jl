@@ -79,27 +79,7 @@ function getcol!(
     end
 end
 
-"""
-    RkMatrix(A::Vector{<:Vector},B::Vector{<:Vector})
-
-Construct an `RkMatrix` from a vector of vectors. Assumes that `length(A) ==
-length(B)`, which determines the rank, and that all vectors in `A` (resp. `B`) have the same length `m`
-(resp. `n`).
-"""
-function RkMatrix(_A::Vector{V}, _B::Vector{V}) where {V<:AbstractVector}
-    T = eltype(V)
-    @assert length(_A) == length(_B)
-    k = length(_A)
-    m = length(first(_A))
-    n = length(first(_B))
-    A = Matrix{T}(undef, m, k)
-    B = Matrix{T}(undef, n, k)
-    for i in 1:k
-        copyto!(view(A, :, i), _A[i])
-        copyto!(view(B, :, i), _B[i])
-    end
-    return RkMatrix(A, B)
-end
+Base.copy(R::RkMatrix) = RkMatrix(copy(R.A), copy(R.B))
 
 Base.eltype(::RkMatrix{T}) where {T} = T
 Base.size(rmat::RkMatrix) = (size(rmat.A, 1), size(rmat.B, 1))
@@ -127,28 +107,6 @@ function Base.Matrix(R::RkMatrix{<:SMatrix})
     # collect must be used when we have a matrix of `SMatrix` because of this issue:
     # https://github.com/JuliaArrays/StaticArrays.jl/issues/966#issuecomment-943679214
     return R.A * collect(R.Bt)
-end
-
-"""
-    RkMatrix(F::SVD)
-
-Construct an [`RkMatrix`](@ref) from an `SVD` factorization.
-"""
-function RkMatrix(F::SVD)
-    A = F.U * Diagonal(F.S)
-    B = copy(F.V)
-    return RkMatrix(A, B)
-end
-
-"""
-    RkMatrix(M::Matrix)
-
-Construct an [`RkMatrix`](@ref) from a `Matrix` by passing through the full
-`svd` of `M`.
-"""
-function RkMatrix(M::Matrix)
-    F = svd(M)
-    return RkMatrix(F)
 end
 
 """

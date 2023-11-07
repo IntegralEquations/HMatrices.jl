@@ -2,7 +2,7 @@ using HMatrices
 using Test
 using StaticArrays
 using LinearAlgebra
-using HMatrices: ACA, PartialACA, TSVD, RkMatrix, VectorOfVectors
+using HMatrices: PartialACA, TSVD, RkMatrix, VectorOfVectors
 
 include(joinpath(HMatrices.PROJECT_ROOT, "test", "testutils.jl"))
 

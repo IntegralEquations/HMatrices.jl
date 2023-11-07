@@ -28,7 +28,7 @@ true
 ```
 
 Because it uses partial pivoting, the linear operator does not have to be
-evaluated at every `i,j`. This is usually much faster than [`ACA`](@ref), but
+evaluated at every `i,j`. This is usually much faster than [`TSVD`](@ref), but
 due to the pivoting strategy the algorithm may fail in special cases, even when
 the underlying linear operator is of low rank.
 """
