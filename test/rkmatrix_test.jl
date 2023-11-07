@@ -10,7 +10,9 @@ using HMatrices: RkMatrix, compression_ratio
         n = 30
         r = 5
         A = rand(ComplexF64, m, r)
+        a = rand(ComplexF64, m)
         B = rand(ComplexF64, n, r)
+        b = rand(ComplexF64, n)
         R = RkMatrix(A, B)
         Ra = adjoint(R)
         M = A * adjoint(B)
@@ -21,8 +23,8 @@ using HMatrices: RkMatrix, compression_ratio
         @test rank(R) == r
         @test Matrix(R) ≈ M
         @test compression_ratio(R) ≈ m * n / (r * (m + n))
-        @test HMatrices.getcol(R, 5) ≈ M[:, 5]
-        @test HMatrices.getcol(Ra, 5) ≈ Ma[:, 5]
+        @test HMatrices.getcol!(a, R, 5) ≈ M[:, 5]
+        @test HMatrices.getcol!(b, Ra, 5) ≈ Ma[:, 5]
     end
 
     @testset "Matrix entries" begin

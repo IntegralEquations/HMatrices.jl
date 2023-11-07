@@ -19,12 +19,6 @@ function hmul!(C::HMatrix, A::HMatrix, B::HMatrix, a, b, compressor, bufs_ = not
     return C
 end
 
-# disable `mul` of hierarchial matrices
-function LinearAlgebra.mul!(::HMatrix, ::HMatrix, ::HMatrix, ::Number, ::Number)
-    msg = "use `hmul` to multiply hierarchical matrices"
-    return error(msg)
-end
-
 """
     struct HMulNode{S,T}
 
@@ -189,7 +183,8 @@ function getcol!(col, node::HMulNode, j)
     # axpy!(1,cj,col)
     if hasdata(C)
         d = data(C)
-        cj = getcol(d, j)
+        cj = Vector{T}(undef, size(d, 1))
+        getcol!(cj, d, j)
         axpy!(1, cj, col)
     end
     return col
@@ -241,7 +236,8 @@ function getcol!(col, adjnode::Adjoint{<:Any,<:HMulNode}, j)
     # axpy!(1,cj,col)
     if hasdata(Ct)
         d = data(Ct)
-        cj = getcol(d, j)
+        cj = Vector{T}(undef, size(d, 1))
+        getcol!(cj, d, j)
         axpy!(1, cj, col)
     end
     return col

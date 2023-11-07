@@ -54,31 +54,12 @@ end
 Fill the entries of `col` with column `j` of `M`.
 """
 function getcol!(col, R::RkMatrix, j::Int)
-    return mul!(col, R.A, conj(view(R.B, j, :)))
-end
-
-"""
-    getcol(M::AbstractMatrix,j)
-
-Return a vector containing the `j`-th column of `M`.
-"""
-function getcol(R::RkMatrix, j::Int)
-    m = size(R, 1)
-    T = eltype(R)
-    col = zeros(T, m)
-    return getcol!(col, R, j)
+    return mul!(col, R.A, view(adjoint(R.B), :, j))
 end
 
 function getcol!(col, Ra::Adjoint{<:Any,<:RkMatrix}, j::Int)
     R = parent(Ra)
-    return mul!(col, R.B, conj(view(R.A, j, :)))
-end
-
-function getcol(Ra::Adjoint{<:Any,<:RkMatrix}, j::Int)
-    m = size(Ra, 1)
-    T = eltype(Ra)
-    col = zeros(T, m)
-    return getcol!(col, Ra, j)
+    return mul!(col, R.B, view(adjoint(R.A), :,j))
 end
 
 """
@@ -165,7 +146,7 @@ end
 Base.copy(R::RkMatrix) = RkMatrix(copy(R.A), copy(R.B))
 
 function Base.Matrix(R::RkMatrix{<:Number})
-    return Matrix(R.A * R.Bt)
+    return R.A * R.Bt
 end
 function Base.Matrix(R::RkMatrix{<:SMatrix})
     # collect must be used when we have a matrix of `SMatrix` because of this issue:
