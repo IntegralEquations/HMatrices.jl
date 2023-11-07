@@ -60,14 +60,16 @@ end
 # non-recursive execution
 function execute_node!(C::HMatrix, compressor, dict, a, R, bufs)
     T = typeof(C)
+    S = eltype(C)
     pairs = get(dict, C, Tuple{T,T}[])
     isnothing(R) && isempty(pairs) && (return C)
     if isleaf(C) && !isadmissible(C)
-        d = data(C)
+        d = data(C)::Matrix{S}
         for (A, B) in pairs
             _mul_dense!(d, A, B, a)
         end
-        isnothing(R) || axpy!(true, R, d)
+        # isnothing(R) || axpy!(true, R, d)
+        isnothing(R) || mul!(d, R.A, adjoint(R.B), true, true)
     else
         L = MulLinearOp(data(C), R, pairs, a)
         id = Threads.threadid()
@@ -478,8 +480,9 @@ function _hgemv_threads!(C::AbstractVector, B::AbstractVector, partition, offset
                 # suspend execution and the buffer may be overwritten by another
                 # task on the same thread. For now this function is not used, so
                 # it is OK, but it should be either fixed or removed.
-                buffer = buffers[Threads.threadid()] # local buffer
-                _hgemv_recursive!(buffer, block, B, offset)
+                tid = Threads.threadid()
+                _hgemv_recursive!(buffers[tid], block, B, offset)
+                tid == Threads.threadid() || (@warn "thread id changed from $tid to $(Threads.threadid())")
             end
         end
     end
