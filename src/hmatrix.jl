@@ -5,32 +5,12 @@ Abstract type for hierarchical matrices.
 """
 abstract type AbstractHMatrix{T} <: AbstractMatrix{T} end
 
-function Base.getindex(H::AbstractHMatrix, i::Int, j::Int)
-    if ALLOW_GETINDEX[]
-        iloc = glob2loc(rowtree(H))[i]
-        jloc = glob2loc(coltree(H))[j]
-        shift = pivot(H) .- 1
-        _getindex(H, iloc + shift[1], jloc + shift[2])
-    else
-        error(GET_INDEX_ERROR_MSG)
-    end
-end
-
-function _getindex(H, i::Int, j::Int)
-    (i ∈ rowrange(H)) && (j ∈ colrange(H)) || throw(BoundsError(H, (i, j)))
-    acc = zero(eltype(H))
-    shift = pivot(H) .- 1
-    if hasdata(H)
-        il = i - shift[1]
-        jl = j - shift[2]
-        acc += data(H)[il, jl]
-    end
-    for child in children(H)
-        if (i ∈ rowrange(child)) && (j ∈ colrange(child))
-            acc += _getindex(child, i, j)
-        end
-    end
-    return acc
+function Base.getindex(::AbstractHMatrix, args...)
+    msg = """method `getindex(::AbstractHMatrix,args...)` has been disabled to
+    avoid performance pitfalls. Unless you made an explicit call to `getindex`,
+    this error usually means that a linear algebra routine involving an
+    `AbstractHMatrix` has fallen back to a generic implementation."""
+    return error(msg)
 end
 
 """
@@ -154,7 +134,7 @@ end
 # Trees interface
 children(H::AbstractHMatrix) = H.children
 children(H::AbstractHMatrix, idxs...) = H.children[idxs]
-parent(H::AbstractHMatrix) = H.parent
+Base.parent(H::AbstractHMatrix) = H.parent
 isleaf(H::AbstractHMatrix) = isempty(children(H))
 isroot(H::AbstractHMatrix) = parent(H) === H
 
@@ -240,7 +220,7 @@ given in the global indexing system (see [`HMatrix`](@ref) for more
 information); otherwise the *local* indexing system induced by the row and
 columns trees are used.
 """
-Matrix(hmat::HMatrix; global_index = true) = Matrix{eltype(hmat)}(hmat; global_index)
+Base.Matrix(hmat::HMatrix; global_index = true) = Matrix{eltype(hmat)}(hmat; global_index)
 function Base.Matrix{T}(hmat::HMatrix; global_index) where {T}
     M = zeros(T, size(hmat)...)
     piv = pivot(hmat)
@@ -294,17 +274,17 @@ function assemble_hmatrix(
         _assemble_hmat_distributed(K, rowtree, coltree; adm, comp, global_index, threads)
     else
         # create first the structure. No parellelism used as this should be light.
-        @timeit_debug "initilizing block structure" begin
-            hmat = HMatrix{T}(rowtree, coltree, adm)
-        end
+        hmat = HMatrix{T}(rowtree, coltree, adm)
         # if needed permute kernel entries into indexing induced by trees
         global_index && (K = PermutedMatrix(K, loc2glob(rowtree), loc2glob(coltree)))
         # now assemble the data in the blocks
         if threads
-            bufs = [(FlexMatrix(T, 0), FlexMatrix(T, 0)) for _ in 1:Threads.nthreads()]
+            bufs = [
+                (VectorOfVectors(T, 0), VectorOfVectors(T, 0)) for _ in 1:Threads.nthreads()
+            ]
             _assemble_threads!(hmat, K, comp, bufs)
         else
-            bufs = (FlexMatrix(T, 0), FlexMatrix(T, 0))
+            bufs = (VectorOfVectors(T, 0), VectorOfVectors(T, 0))
             _assemble_cpu!(hmat, K, comp, bufs)
         end
     end
@@ -659,3 +639,25 @@ function partition!(s::Symbol, H::HMatrix, np = Threads.nthreads(), cost = _cost
     H.partition = Partition(H, p, s)
     return H
 end
+
+# add a unifor scaling to an HMatrix return an HMatrix
+function LinearAlgebra.axpy!(a, X::UniformScaling, Y::HMatrix)
+    @assert isclean(Y)
+    if hasdata(Y)
+        d = data(Y)
+        @assert d isa Matrix
+        n = min(size(d)...)
+        for i in 1:n
+            d[i, i] += a * X.λ
+        end
+    else
+        n = min(blocksize(Y)...)
+        for i in 1:n
+            axpy!(a, X, children(Y)[i, i])
+        end
+    end
+    return Y
+end
+
+Base.:(+)(X::UniformScaling, Y::HMatrix) = axpy!(true, X, deepcopy(Y))
+Base.:(+)(X::HMatrix, Y::UniformScaling) = Y + X

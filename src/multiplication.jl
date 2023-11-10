@@ -1,84 +1,30 @@
 """
     hmul!(C::HMatrix,A::HMatrix,B::HMatrix,a,b,compressor)
 
-Similar to `mul!` : compute `C <-- A*B*a + B*b`, where `A,B,C` are
-hierarchical matrices and `compressor` is a function/functor used in the
-intermediate stages of the multiplication to avoid growring the rank of
-admissible blocks after addition is performed.
+Similar to `mul!` : compute `C <-- A*B*a + B*b`, where `A,B,C` are hierarchical
+matrices and `compressor` is a function/functor used in the intermediate stages
+of the multiplication to avoid growring the rank of admissible blocks after
+addition is performed.
 """
-function hmul!(C::HMatrix, A::HMatrix, B::HMatrix, a, b, compressor, bufs_ = nothing)
-    T = eltype(C)
+function hmul!(C::T, A::T, B::T, a, b, compressor, bufs_ = nothing) where {T<:HMatrix}
     bufs = if isnothing(bufs_)
-        [(FlexMatrix(T), FlexMatrix(T)) for _ in 1:Threads.nthreads()]
+        S = eltype(C)
+        [(VectorOfVectors(S), VectorOfVectors(S)) for _ in 1:Threads.nthreads()]
     else
         bufs_
     end
+    @assert isroot(C) || !hasdata(parent(C))
     b == true || rmul!(C, b)
-    plan = plan_hmul(C, A, B, a, 1)
-    execute!(plan, compressor, bufs)
+    dict = IdDict{T,Vector{NTuple{2,T}}}()
+    _plan_dict!(dict, C, A, B)
+    _hmul!(C, compressor, dict, a, nothing, bufs)
     return C
 end
 
-# disable `mul` of hierarchial matrices
-function mul!(::HMatrix, ::HMatrix, ::HMatrix, ::Number, ::Number)
-    msg = "use `hmul` to multiply hierarchical matrices"
-    return error(msg)
-end
-
-"""
-    struct HMulNode{S,T}
-
-Tree data structure representing the following computation:
-```
-    C <-- C + a * ∑ᵢ Aᵢ * Bᵢ
-```
-where `C = target(node)`, `Aᵢ,Bᵢ` are pairs stored in `sources(node)`, and `a`
-is stored in the `multiplier` field.
-
-This structure is used to group the operations required when multiplying
-hierarchical matrices so that they can later be executed in a way that minimizes
-recompression of intermediate computations.
-"""
-mutable struct HMulNode{T}
-    target::T
-    children::Matrix{HMulNode{T}}
-    sources::Vector{Tuple{T,T}}
-    multiplier::Float64
-end
-
-function HMulNode(C::HMatrix, a::Number)
-    T = typeof(C)
-    chdC = children(C)
-    m, n = size(chdC)
-    return HMulNode{T}(C, Matrix{HMulNode{T}}(undef, m, n), T[], a)
-end
-
-function build_HMulNode_structure(C::HMatrix, a)
-    node = HMulNode(C, a)
-    chdC = children(C)
-    m, n = size(chdC)
-    for i in 1:m
-        for j in 1:n
-            child = build_HMulNode_structure(chdC[i, j], a)
-            node.children[i, j] = child
-        end
-    end
-    return node
-end
-
-function plan_hmul(C::T, A::T, B::T, a, b) where {T<:HMatrix}
-    @assert b == 1
-    # root = HMulNode(C)
-    root = build_HMulNode_structure(C, a)
-    # recurse
-    _build_hmul_tree!(root, A, B)
-    return root
-end
-
-function _build_hmul_tree!(tree::HMulNode, A::HMatrix, B::HMatrix)
-    C = tree.target
+function _plan_dict!(dict, C::T, A::T, B::T) where {T<:HMatrix}
+    pairs = get!(dict, C, Tuple{T,T}[])
     if isleaf(A) || isleaf(B) || isleaf(C)
-        push!(tree.sources, (A, B))
+        push!(pairs, (A, B))
     else
         ni, nj = blocksize(C)
         _, nk = blocksize(A)
@@ -87,197 +33,164 @@ function _build_hmul_tree!(tree::HMulNode, A::HMatrix, B::HMatrix)
         C_children = children(C)
         for i in 1:ni
             for j in 1:nj
-                child = tree.children[i, j]
                 for k in 1:nk
-                    _build_hmul_tree!(child, A_children[i, k], B_children[k, j])
+                    _plan_dict!(dict, C_children[i, j], A_children[i, k], B_children[k, j])
                 end
             end
         end
     end
-    return tree
+    return dict
 end
 
-function Base.show(io::IO, ::MIME"text/plain", tree::HMulNode)
-    return print(
-        io,
-        "HMulNode with $(size(children(tree))) children and $(length(sources(tree))) pairs",
-    )
+function _hmul!(C::HMatrix, compressor, dict, a, R, bufs)
+    execute_node!(C, compressor, dict, a, R, bufs)
+    shift = pivot(C) .- 1
+    for chd in children(C)
+        irange = rowrange(chd) .- shift[1]
+        jrange = colrange(chd) .- shift[2]
+        Rp     = data(C)
+        Rv     = hasdata(C) ? RkMatrix(Rp.A[irange, :], Rp.B[jrange, :]) : nothing
+        # Rv = hasdata(C) ? view(Rp,irange,jrange) : nothing
+        _hmul!(chd, compressor, dict, a, Rv, bufs)
+    end
+    isleaf(C) || (setdata!(C, nothing))
+    return C
 end
 
-function Base.show(io::IO, tree::HMulNode)
-    return print(
-        io,
-        "HMulNode with $(size(children(tree))) children and $(length(sources(tree))) pairs",
-    )
+# non-recursive execution
+function execute_node!(C::HMatrix, compressor, dict, a, R, bufs)
+    T = typeof(C)
+    S = eltype(C)
+    pairs = get(dict, C, Tuple{T,T}[])
+    isnothing(R) && isempty(pairs) && (return C)
+    if isleaf(C) && !isadmissible(C)
+        d = data(C)::Matrix{S}
+        for (A, B) in pairs
+            _mul_dense!(d, A, B, a)
+        end
+        # isnothing(R) || axpy!(true, R, d)
+        isnothing(R) || mul!(d, R.A, adjoint(R.B), true, true)
+    else
+        L = MulLinearOp(data(C), R, pairs, a)
+        id = Threads.threadid()
+        R = compressor(L, axes(L, 1), axes(L, 2), bufs[id])
+        id == Threads.threadid() ||
+            (@warn "thread id changed from $id to $(Threads.threadid())")
+        setdata!(C, R)
+    end
+    return C
 end
 
-function Base.show(io::IO, ::MIME"text/plain", tree::Adjoint{<:Any,<:HMulNode})
-    p = parent(tree)
-    return print(
-        io,
-        "adjoint HMulNode with $(size(children(p))) children and $(length(sources(p))) pairs",
-    )
+"""
+    struct MulLinearOp{R,T} <: AbstractMatrix{T}
+
+Abstract matrix representing the following linear operator:
+```
+    L = R + P + a * ∑ᵢ Aᵢ * Bᵢ
+```
+where `R` and `P` are of type `RkMatrix{T}`, `Aᵢ,Bᵢ` are of type `HMatrix{R,T}`
+and `a` is scalar multiplier. Calling `compressor(L)` produces a low-rank
+approximation of `L`, where `compressor` is an [`AbstractCompressor`](@ref).
+
+Note: this structure is used to group the operations required when multiplying
+hierarchical matrices so that they can later be executed in a way that minimizes
+recompression of intermediate computations.
+"""
+struct MulLinearOp{R,T,S} <: AbstractMatrix{T}
+    R::Union{RkMatrix{T},Nothing}
+    # P::Union{RkMatrixBlockView{T},Nothing}
+    P::Union{RkMatrix{T},Nothing}
+    pairs::Vector{NTuple{2,HMatrix{R,T}}}
+    multiplier::S
 end
-
-function Base.show(io::IO, tree::Adjoint{<:Any,<:HMulNode})
-    p = parent(tree)
-    return print(
-        io,
-        "adjoint HMulNode with $(size(children(p))) children and $(length(sources(p))) pairs",
-    )
-end
-
-# compress the operator L = C + ∑ a*Aᵢ*Bᵢ
-function (paca::PartialACA)(plan::HMulNode, bufs)
-    tid = Threads.threadid()
-    R = _aca_partial(plan, :, :, paca.atol, paca.rank, paca.rtol, 1, bufs[tid])
-    Threads.threadid() == tid ||
-        (@warn "thread id changed from $tid to $(Threads.threadid())")
-    return R
-end
-
-# getters
-target(node::HMulNode) = node.target
-sources(node::HMulNode) = node.sources
-multiplier(node::HMulNode) = node.multiplier
-
-# Trees interface
-children(node::HMulNode) = node.children
-children(node::HMulNode, idxs...) = node.children[idxs]
-parent(node::HMulNode) = node.parent
-isleaf(node::HMulNode) = isempty(children(node))
-isroot(node::HMulNode) = parent(node) === node
 
 # AbstractMatrix interface
-Base.size(node::HMulNode) = size(target(node))
-# Base.axes(node::HMulNode) = axes(target(node))
-# Base.axes(node::HMulNode,i) = axes(target(node),i)
-Base.eltype(node::HMulNode) = eltype(target(node))
-
-Base.getindex(node::HMulNode, ::Colon, j::Int) = getcol(node, j)
-
-function getcol(node::HMulNode, j)
-    m, n = size(node)
-    T = eltype(node)
-    col = zeros(T, m)
-    getcol!(col, node, j)
-    return col
+function Base.size(L::MulLinearOp)
+    isnothing(L.R) || (return size(L.R))
+    isnothing(L.P) || (return size(L.P))
+    isempty(L.pairs) && (return (0, 0))
+    A, B = first(L.pairs)
+    return (size(A, 1), size(B, 2))
 end
 
-function getcol!(col, node::HMulNode, j)
+function Base.getindex(L::Union{MulLinearOp,Adjoint{<:Any,<:MulLinearOp}}, args...)
+    return error("calling `getindex` of a `MulLinearOp` has been disabled")
+end
+
+function getcol!(col, L::MulLinearOp, j)
     fill!(col, zero(eltype(col)))
-    a = multiplier(node)
-    C = target(node)
-    m, n = size(C)
-    T = eltype(C)
-    ej = zeros(T, n)
-    ej[j] = 1
+    m, n = size(L)
+    T = eltype(L)
     # compute j-th column of ∑ Aᵢ Bᵢ
-    for (A, B) in sources(node)
+    for (A, B) in L.pairs
         m, k = size(A)
         k, n = size(B)
         tmp = zeros(T, k)
-        jg = j + offset(B)[2] # global index on hierarchila matrix B
+        jg = j + offset(B)[2] # global index on hierarchical matrix B
         getcol!(tmp, B, jg)
         _hgemv_recursive!(col, A, tmp, offset(A))
     end
-    # multiply by a
+    # multiply the columns by a
+    a = L.multiplier
     rmul!(col, a)
-    # add the j-th column of C if C has data
-    # jg  = j + offset(C)[2] # global index on hierarchila matrix B
-    # cj  = getcol(C,jg)
-    # axpy!(1,cj,col)
-    if hasdata(C)
-        d = data(C)
-        cj = getcol(d, j)
-        axpy!(1, cj, col)
+    # add R and P (if they exist)
+    R = L.R
+    if !isnothing(R)
+        getcol!(col, R, j, Val(true))
+    end
+    P = L.P
+    if !isnothing(P)
+        getcol!(col, P, j, Val(true))
     end
     return col
 end
 
-adjoint(node::HMulNode) = Adjoint(node)
-Base.size(adjnode::Adjoint{<:Any,<:HMulNode}) = reverse(size(adjnode.parent))
-children(adjnode::Adjoint{<:Any,<:HMulNode}) = adjoint(children(adjnode.parent))
-
-Base.getindex(adjnode::Adjoint{<:Any,<:HMulNode}, ::Colon, j::Int) = getcol(adjnode, j)
-
-function getblock!(out, adjnode::Adjoint{<:Any,<:HMulNode}, ::Colon, j::Int)
-    return getcol!(out, adjnode, j)
-end
-getblock!(out, node::HMulNode, ::Colon, j::Int) = getcol!(out, node, j)
-
-function getcol(adjnode::Adjoint{<:Any,<:HMulNode}, j)
-    m, n = size(adjnode)
-    T = eltype(adjnode)
-    col = zeros(T, m)
-    getcol!(col, adjnode, j)
-    return col
+function getblock!(out, L::MulLinearOp, irange, j::Int)
+    @assert irange == 1:size(L, 1)
+    return getcol!(out, L, j)
 end
 
-function getcol!(col, adjnode::Adjoint{<:Any,<:HMulNode}, j)
+function getcol!(col, adjL::Adjoint{<:Any,<:MulLinearOp}, j)
     fill!(col, zero(eltype(col)))
-    node = parent(adjnode)
-    a = multiplier(node)
-    C = target(node)
-    T = eltype(C)
-    Ct = adjoint(C)
-    m, n = size(Ct)
-    ej = zeros(T, n)
-    ej[j] = 1
+    L = parent(adjL)
+    T = eltype(L)
     # compute j-th column of ∑ adjoint(Bᵢ)*adjoint(Aᵢ)
-    for (A, B) in sources(node)
+    for (A, B) in L.pairs
         At, Bt = adjoint(A), adjoint(B)
         tmp = zeros(T, size(At, 1))
-        # _hgemv_recursive!(tmp,At,ej,offset(At))
-        jg = j + offset(At)[2] # global index on hierarchila matrix B
+        jg = j + offset(At)[2]
         getcol!(tmp, At, jg)
         _hgemv_recursive!(col, Bt, tmp, offset(Bt))
     end
     # multiply by a
+    a = L.multiplier
     rmul!(col, conj(a))
     # add the j-th column of Ct if it has data
-    # jg  = j + offset(Ct)[2] # global index on hierarchila matrix B
-    # cj  = getcol(Ct,jg)
-    # axpy!(1,cj,col)
-    if hasdata(Ct)
-        d = data(Ct)
-        cj = getcol(d, j)
-        axpy!(1, cj, col)
+    R = L.R
+    if !isnothing(R)
+        getcol!(col, adjoint(R), j, Val(true))
+    end
+    P = L.P
+    if !isnothing(P)
+        getcol!(col, adjoint(P), j, Val(true))
     end
     return col
 end
 
-function execute!(node::HMulNode, compressor, bufs)
-    execute_node!(node, compressor, bufs)
-    C = target(node)
-    flush_to_children!(C)
-    # FIXME: using @threads below breaks things when the `RkMatrix` has its own
-    # buffer due to a race condition that I do not yet undestand
-    for chd in children(node)
-        execute!(chd, compressor, bufs)
-    end
-    return node
+function getblock!(out, L::Adjoint{<:Any,<:MulLinearOp}, irange, j::Int)
+    @assert irange == 1:size(L, 1)
+    return getcol!(out, L, j)
 end
 
-# non-recursive execution
-function execute_node!(node::HMulNode, compressor, bufs)
-    C = target(node)
-    isempty(sources(node)) && (return node)
-    a = multiplier(node)
-    if isleaf(C) && !isadmissible(C)
-        d = data(C)
-        for (A, B) in sources(node)
-            # _mul_leaf!(C,A,B,a,compressor)
-            _mul_dense!(d, A, B, a)
-        end
-    else
-        R = compressor(node, bufs)
-        setdata!(C, R)
-    end
-    return node
-end
+#=
+Multiplication when the target is a dense matrix. The numbering system in the following
+`_mulxyz` methods use the following convention
+1 --> Matrix (dense)
+2 --> RkMatrix (sparse)
+3 --> HMatrix (hierarchical)
+=#
 
-function _mul_dense!(C::Matrix, A, B, a)
+function _mul_dense!(C::Base.Matrix, A, B, a)
     Adata = isleaf(A) ? A.data : A
     Bdata = isleaf(B) ? B.data : B
     if Adata isa HMatrix
@@ -301,68 +214,6 @@ function _mul_dense!(C::Matrix, A, B, a)
             _mul122!(C, Adata, Bdata, a)
         elseif Bdata isa HMatrix
             _mul123!(C, Adata, Bdata, a)
-        end
-    end
-end
-
-"""
-    flush_to_children!(H::HMatrix,compressor)
-
-Transfer the blocks `data` to its children. At the end, set `H.data` to `nothing`.
-"""
-function flush_to_children!(H::HMatrix)
-    T = eltype(H)
-    isleaf(H) && (return H)
-    hasdata(H) || (return H)
-    R::RkMatrix{T} = data(H)
-    _add_to_children!(H, R)
-    setdata!(H, nothing)
-    return H
-end
-
-function _add_to_children!(H, R::RkMatrix)
-    shift = pivot(H) .- 1
-    for block in children(H)
-        irange = rowrange(block) .- shift[1]
-        jrange = colrange(block) .- shift[2]
-        bdata = data(block)
-        tmp = RkMatrix(R.A[irange, :], R.B[jrange, :])
-        if bdata === nothing
-            setdata!(block, tmp)
-        else
-            axpy!(true, tmp, bdata)
-        end
-    end
-end
-
-"""
-    flush_to_leaves!(H::HMatrix,compressor)
-
-Transfer the blocks `data` to its leaves. At the end, set `H.data` to `nothing`.
-
-# See also: [`flush_to_children!`](@ref)
-"""
-function flush_to_leaves!(H::HMatrix)
-    T = eltype(H)
-    isleaf(H) && (return H)
-    hasdata(H) || (return H)
-    R::RkMatrix{T} = data(H)
-    _add_to_leaves!(H, R)
-    setdata!(H, nothing)
-    return H
-end
-
-function _add_to_leaves!(H, R::RkMatrix)
-    shift = pivot(H) .- 1
-    for block in AbstractTrees.Leaves(H)
-        irange = rowrange(block) .- shift[1]
-        jrange = colrange(block) .- shift[2]
-        bdata = data(block)
-        tmp = RkMatrix(R.A[irange, :], R.B[jrange, :])
-        if bdata === nothing
-            setdata!(block, tmp)
-        else
-            axpy!(true, tmp, bdata)
         end
     end
 end
@@ -484,14 +335,20 @@ end
 ############################################################################################
 
 # 1.2.1
-function mul!(y::AbstractVector, R::RkMatrix, x::AbstractVector, a::Number, b::Number)
+function LinearAlgebra.mul!(
+    y::AbstractVector,
+    R::RkMatrix,
+    x::AbstractVector,
+    a::Number,
+    b::Number,
+)
     tmp = R.Bt * x
     # tmp = mul!(R.buffer, adjoint(R.B), x)
     return mul!(y, R.A, tmp, a, b)
 end
 
 # 1.2.1
-function mul!(
+function LinearAlgebra.mul!(
     y::AbstractVector,
     adjR::Adjoint{<:Any,<:RkMatrix},
     x::AbstractVector,
@@ -510,7 +367,7 @@ end
 
 Perform `y <-- H*x*a + y*b` in place.
 """
-function mul!(
+function LinearAlgebra.mul!(
     y::AbstractVector,
     A::HMatrix,
     x::AbstractVector,
@@ -555,9 +412,7 @@ function mul!(
         _hgemv_static_partition!(y, x, A.partition.partition, offset)
         # _hgemv_threads!(y, x, p.partition, offset)  # threaded implementation
     else
-        @timeit_debug "serial multiplication" begin
-            _hgemv_recursive!(y, A, x, offset) # serial implementation
-        end
+        _hgemv_recursive!(y, A, x, offset) # serial implementation
     end
     # permute output
     global_index && invpermute!(y, rowperm(A))
@@ -567,7 +422,7 @@ end
 # FIXME: for matrix multiplication, we slice into columns and call the gemv
 # routine. This is a somewhat inneficient way of doing things, but it is simple
 # enough.
-function mul!(
+function LinearAlgebra.mul!(
     Y::AbstractMatrix,
     A::HMatrix,
     X::AbstractMatrix,
@@ -626,8 +481,10 @@ function _hgemv_threads!(C::AbstractVector, B::AbstractVector, partition, offset
                 # suspend execution and the buffer may be overwritten by another
                 # task on the same thread. For now this function is not used, so
                 # it is OK, but it should be either fixed or removed.
-                buffer = buffers[Threads.threadid()] # local buffer
-                _hgemv_recursive!(buffer, block, B, offset)
+                tid = Threads.threadid()
+                _hgemv_recursive!(buffers[tid], block, B, offset)
+                tid == Threads.threadid() ||
+                    (@warn "thread id changed from $tid to $(Threads.threadid())")
             end
         end
     end
@@ -663,7 +520,7 @@ function _hgemv_static_partition!(C::AbstractVector, B::AbstractVector, partitio
     return C
 end
 
-function rmul!(R::RkMatrix, b::Number)
+function LinearAlgebra.rmul!(R::RkMatrix, b::Number)
     m, n = size(R)
     if m > n
         rmul!(R.B, conj(b))
@@ -673,7 +530,7 @@ function rmul!(R::RkMatrix, b::Number)
     return R
 end
 
-function rmul!(H::HMatrix, b::Number)
+function LinearAlgebra.rmul!(H::HMatrix, b::Number)
     b == true && (return H) # short circuit. If inlined, rmul!(H,true) --> no-op
     if hasdata(H)
         rmul!(data(H), b)

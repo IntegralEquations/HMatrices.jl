@@ -6,90 +6,6 @@ Types used to compress matrices.
 abstract type AbstractCompressor end
 
 """
-    struct ACA
-
-Adaptive cross approximation algorithm with full pivoting. This structure can be
-used to generate an [`RkMatrix`](@ref) from a matrix-like object `M`. The
-keywork arguments `rtol`, `atol`, and `rank` can be used to control the quality
-of the approximation. Note that because `ACA` uses full pivoting, the linear
-operator `M` has to be evaluated at every `i,j`.
-
-# See also: `[PartialACA](@ref)`
-
-# Examples
-```jldoctest
-using LinearAlgebra
-rtol = 1e-6
-comp = ACA(;rtol)
-A = rand(10,2)
-B = rand(10,2)
-M = A*adjoint(B) # a low-rank matrix
-R = comp(M,:,:) # compress the entire matrix `M`
-norm(Matrix(R) - M) < rtol*norm(M) # true
-
-# output
-
-true
-
-```
-"""
-Base.@kwdef struct ACA
-    atol::Float64 = 0
-    rank::Int = typemax(Int)
-    rtol::Float64 = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64))
-end
-
-function (aca::ACA)(K, rowtree::ClusterTree, coltree::ClusterTree)
-    irange = index_range(rowtree)
-    jrange = index_range(coltree)
-    return aca(K, irange, jrange, bufs)
-end
-
-function (aca::ACA)(K, irange, jrange)
-    M = K[irange, jrange] # computes the entire matrix.
-    return _aca_full!(M, aca.atol, aca.rank, aca.rtol)
-end
-
-"""
-    _aca_full!(M,atol,rmax,rtol)
-
-Internal function implementing the adaptive cross-approximation algorithm with
-full pivoting. The matrix `M` is modified in place. The returned `RkMatrix` has
-rank at most `rmax`, and is expected to satisfy `|M - R| < max(atol,rtol*|M|)`.
-"""
-function _aca_full!(M, atol, rmax, rtol)
-    Madj = adjoint(M)
-    T = eltype(M)
-    m, n = size(M)
-    A = Vector{Vector{T}}()
-    B = Vector{Vector{T}}()
-    er = Inf
-    exact_norm = norm(M, 2) # exact norm
-    r = 0 # current rank
-    while er > max(atol, rtol * exact_norm) && r < rmax
-        I = _aca_full_pivot(M)
-        i, j = Tuple(I)
-        δ = M[I]
-        if svdvals(δ)[end] == 0
-            return RkMatrix(A, B)
-        else
-            iδ = inv(δ)
-            col = M[:, j]
-            adjcol = Madj[:, i]
-            for k in eachindex(adjcol)
-                adjcol[k] = adjcol[k] * adjoint(iδ)
-            end
-            r += 1
-            push!(A, col)
-            push!(B, adjcol)
-            axpy!(-1, col * adjoint(adjcol), M) # M <-- M - col*row'
-            er = norm(M, 2) # exact error
-        end
-    end
-    return RkMatrix(A, B)
-end
-
-"""
     struct PartialACA
 
 Adaptive cross approximation algorithm with partial pivoting. This structure can be
@@ -112,7 +28,7 @@ true
 ```
 
 Because it uses partial pivoting, the linear operator does not have to be
-evaluated at every `i,j`. This is usually much faster than [`ACA`](@ref), but
+evaluated at every `i,j`. This is usually much faster than [`TSVD`](@ref), but
 due to the pivoting strategy the algorithm may fail in special cases, even when
 the underlying linear operator is of low rank.
 """
@@ -143,6 +59,8 @@ function (paca::PartialACA)(K, irange::AbstractRange, jrange::AbstractRange, buf
     return _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol, 1, bufs)
 end
 
+(paca::PartialACA)(K::AbstractMatrix) = paca(K, axes(K, 1), axes(K, 2))
+
 """
     _aca_partial(K,irange,jrange,atol,rmax,rtol,istart=1)
 
@@ -167,12 +85,12 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffers = not
         # maps global indices to local indices
     end
     A, B = if isnothing(buffers)
-        (FlexMatrix(eltype(K), m), FlexMatrix(eltype(K), n))
+        (VectorOfVectors(eltype(K), m), VectorOfVectors(eltype(K), n))
     else
         buffers[1], buffers[2]
     end
-    @assert A.k[] == 0 && B.k[] == 0 "buffers must be empty"
-    A.m[], B.m[] = m, n
+    @assert A.k == 0 && B.k == 0 "buffers must be empty"
+    A.m, B.m = m, n
     rmax = min(m, n, rmax)
     I = BitVector(true for i in 1:m)
     J = BitVector(true for i in 1:n)
@@ -185,9 +103,9 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffers = not
         I[i] = false
         # pre-allocate row and column
         a = newcol!(A)
-        A.k[] -= 1
+        A.k -= 1
         b = newcol!(B)
-        B.k[] -= 1
+        B.k -= 1
         # compute next row by row <-- K[i+ishift,jrange] - R[i,:]
         getblock!(b, Kadj, jrange, i + ishift)
         for k in 1:r
@@ -218,8 +136,8 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffers = not
             end
             # increase rank and push cross
             r += 1
-            A.k[] += 1
-            B.k[] += 1
+            A.k += 1
+            B.k += 1
             # estimate the error by || R_{k} - R_{k-1} || = ||a|| ||b||
             er = norm(a) * norm(b)
             # estimate the norm by || K || ≈ || R_k ||
@@ -243,14 +161,12 @@ Given the Frobenius norm of `Rₖ = A[1:end-1]*adjoint(B[1:end-1])` in `acc`,
 compute the Frobenius norm of `Rₖ₊₁ = A*adjoint(B)` efficiently.
 """
 @inline function _update_frob_norm(cur, A, B)
-    @timeit_debug "Update Frobenius norm" begin
-        k = length(A)
-        a = A[k]
-        b = B[k]
-        out = norm(a)^2 * norm(b)^2
-        for l in 1:(k-1)
-            out += 2 * real(dot(A[l], a) * (dot(b, B[l])))
-        end
+    k = length(A)
+    a = A[k]
+    b = B[k]
+    out = norm(a)^2 * norm(b)^2
+    for l in 1:(k-1)
+        out += 2 * real(dot(A[l], a) * (dot(b, B[l])))
     end
     return sqrt(cur^2 + out)
 end
@@ -278,30 +194,6 @@ function _aca_partial_pivot(v, J)
         σ = svdvals(x)[end]
         σ < val && continue
         idx = n
-        val = σ
-    end
-    return idx
-end
-
-"""
-    _aca_full_pivot(M)
-
-Find the index of the element `x ∈ M` maximizing its smallest singular value.
-This is equivalent to minimizing the spectral norm of the inverse of `x`.
-
-When `x` is a scalar, this is simply the element with largest absolute value.
-
-# See also: [`_aca_partial_pivot`](@ref).
-"""
-function _aca_full_pivot(M)
-    idxs = CartesianIndices(M)
-    idx = first(idxs)
-    val = -Inf
-    for I in idxs
-        x = M[I]
-        σ = svdvals(x)[end]
-        σ < val && continue
-        idx = I
         val = σ
     end
     return idx
@@ -388,7 +280,7 @@ end
 Recompress the matrix `M` using a truncated svd and output an `RkMatrix`. The
 data in `M` is invalidated in the process.
 """
-function compress!(M::Matrix, tsvd::TSVD)
+function compress!(M::Base.Matrix, tsvd::TSVD)
     m, n = size(M)
     F = svd!(M)
     sp_norm = F.S[1] # spectral norm

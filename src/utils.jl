@@ -1,25 +1,4 @@
 """
-    @hprofile
-
-A macro which
-- resets the default `TimerOutputs.get_defaulttimer` to zero
-- execute the code block
-- print the profiling details
-
-This is useful as a coarse-grained profiling strategy in `HMatrices`
-to get a rough idea of where time is spent. Note that this relies on
-`TimerOutputs` annotations manually inserted in the code.
-"""
-macro hprofile(block)
-    return quote
-        TimerOutputs.enable_debug_timings(HMatrices)
-        reset_timer!()
-        $(esc(block))
-        print_timer()
-    end
-end
-
-"""
     PermutedMatrix{K,T} <: AbstractMatrix{T}
 
 Structured used to reprensent the permutation of a matrix-like object. The
@@ -122,26 +101,6 @@ function hilbert_points(n::Integer)
 end
 
 """
-    allow_getindex(bool)
-
-Call this function to enable/disable the `getindex` method on `AbstractHMatrix`
-and `RkMatrix`.
-
-By default, calling `getindex` on these types will error to avoid performance
-pitfalls associated with linear algebra methods falling back to a generic
-implementation which uses the `getindex` method.
-"""
-allow_getindex(bool) = (ALLOW_GETINDEX[] = bool)
-
-const GET_INDEX_ERROR_MSG = """
-method `getindex(::Union{AbstractHMatrix,RkMatrix},args...)` has been disabled
-to avoid performance pitfalls. Unless you made an explicit call to `getindex`,
-this error usually means that a linear algebra routine involving an
-`AbstractHMatrix` has fallen back to a generic implementation. Calling
-`allow_getindex(true)` fixes this error.
-"""
-
-"""
     filter_tree(f,tree,isterminal=true)
 
 Return a vector containing all the nodes of `tree` such that
@@ -184,31 +143,6 @@ function depth(tree, acc = 0)
     else
         depth(parent(tree), acc + 1)
     end
-end
-
-"""
-    partition_by_depth(tree)
-
-Given a `tree`, return a `partition` vector whose `i`-th entry stores all the nodes in
-`tree` with `depth=i-1`. Empty nodes are not added to the partition.
-"""
-function partition_by_depth(tree)
-    T = typeof(tree)
-    partition = Vector{Vector{T}}()
-    depth = 0
-    return _partition_by_depth!(partition, tree, depth)
-end
-
-function _partition_by_depth!(partition, tree, depth)
-    T = typeof(tree)
-    if length(partition) < depth + 1
-        push!(partition, [])
-    end
-    length(tree) > 0 && push!(partition[depth+1], tree)
-    for chd in children(tree)
-        _partition_by_depth!(partition, chd, depth + 1)
-    end
-    return partition
 end
 
 """
@@ -298,42 +232,58 @@ function has_partition(seq, np, cmax, cost = identity)
 end
 
 """
-    struct FlexMatrix{T}
+    struct VectorOfVectors{T}
+
+A simple structure which behaves as a `Vector{Vector{T}}` but stores the entries
+in a contiguous `data::Vector{T}` field. All vectors in the `VectorOfVectors`
+are assumed to be of size `m`, and there are `k` of them, meaning this structure
+can be used to represent a `m × k` matrix.
+
+Similar to a vector-of-vectors, calling `A[i]` returns a view to the `i`-th
+column.
+
+See also: [`newcol!`](@ref)
 """
-struct FlexMatrix{T}
-    data::Vector{T}
-    m::Base.RefValue{Int}
-    k::Base.RefValue{Int}
+mutable struct VectorOfVectors{T}
+    const data::Vector{T}
+    m::Int
+    k::Int
 end
 
-FlexMatrix(T, m = 0, k = 0) = FlexMatrix{T}(Vector{T}(undef, m * k), Ref(m), Ref(k))
+VectorOfVectors(T, m = 0, k = 0) = VectorOfVectors{T}(Vector{T}(undef, m * k), m, k)
 
 """
-    newcol!(A::FlexMatrix)
+    newcol!(A::VectorOfVectors)
 
-Append a new (unitialized) column to `A`, and return it.
+Append a new (unitialized) column to `A`, and return a view of it.
 """
-function newcol!(A::FlexMatrix)
-    m, k = A.m[], A.k[]
+function newcol!(A::VectorOfVectors)
+    m, k = A.m, A.k
     is = m * k + 1
     ie = m * (k + 1)
     if ie > length(A.data)
         resize!(A.data, ie)
     end
-    A.k[] += 1
+    A.k += 1
     return view(A.data, is:ie)
 end
 
-reset!(A::FlexMatrix) = (A.m[] = 0; A.k[] = 0)
+"""
+    reset!(A::VectorOfVectors)
 
-function Base.getindex(A::FlexMatrix, i)
-    i <= A.k[] || throw(BoundsError(A, i))
-    return view(A.data, (i-1)*A.m[]+1:i*A.m[])
+Set the number of columns of `A` to zero, and the number of rows to zero, but
+does not `resize!` the underlying data vector.
+"""
+reset!(A::VectorOfVectors) = (A.m = 0; A.k = 0)
+
+function Base.getindex(A::VectorOfVectors, i)
+    i <= A.k || throw(BoundsError(A, i))
+    return view(A.data, (i-1)*A.m+1:i*A.m)
 end
 
-function Base.Matrix(A::FlexMatrix{T}) where {T}
-    out = Matrix{T}(undef, A.m[], A.k[])
+function Base.Matrix(A::VectorOfVectors{T}) where {T}
+    out = Matrix{T}(undef, A.m, A.k)
     return copyto!(out, 1, A.data, 1, length(out))
 end
 
-Base.length(A::FlexMatrix) = A.k[]
+Base.length(A::VectorOfVectors) = A.k

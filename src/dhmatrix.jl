@@ -168,7 +168,7 @@ function _assemble_hmat_distributed(
     return root
 end
 
-function mul!(
+function LinearAlgebra.mul!(
     y::AbstractVector,
     A::DHMatrix,
     x::AbstractVector,

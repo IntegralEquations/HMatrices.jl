@@ -40,17 +40,12 @@ function Base.show(io::IO, ::MIME"text/plain", R::RkMatrix)
     )
 end
 
-function Base.getindex(rmat::RkMatrix, i::Int, j::Int)
-    if ALLOW_GETINDEX[]
-        r = rank(rmat)
-        acc = zero(eltype(rmat))
-        for k in 1:r
-            acc += rmat.A[i, k] * conj(rmat.B[j, k])
-        end
-    else
-        error(GET_INDEX_ERROR_MSG)
-    end
-    return acc
+function Base.getindex(::RkMatrix, args...)
+    msg = """method `getindex(::RkMatrix,args...)` has been disabled to avoid
+    performance pitfalls. Unless you made an explicit call to `getindex`, this
+    error usually means that a linear algebra routine involving an
+    `RkMatrix` has fallen back to a generic implementation."""
+    return error(msg)
 end
 
 """
@@ -58,55 +53,33 @@ end
 
 Fill the entries of `col` with column `j` of `M`.
 """
-function getcol!(col, R::RkMatrix, j::Int)
-    return mul!(col, R.A, conj(view(R.B, j, :)))
-end
-
-"""
-    getcol(M::AbstractMatrix,j)
-
-Return a vector containing the `j`-th column of `M`.
-"""
-function getcol(R::RkMatrix, j::Int)
-    m = size(R, 1)
-    T = eltype(R)
-    col = zeros(T, m)
-    return getcol!(col, R, j)
-end
-
-function getcol!(col, Ra::Adjoint{<:Any,<:RkMatrix}, j::Int)
-    R = parent(Ra)
-    return mul!(col, R.B, conj(view(R.A, j, :)))
-end
-
-function getcol(Ra::Adjoint{<:Any,<:RkMatrix}, j::Int)
-    m = size(Ra, 1)
-    T = eltype(Ra)
-    col = zeros(T, m)
-    return getcol!(col, Ra, j)
-end
-
-"""
-    RkMatrix(A::Vector{<:Vector},B::Vector{<:Vector})
-
-Construct an `RkMatrix` from a vector of vectors. Assumes that `length(A) ==
-length(B)`, which determines the rank, and that all vectors in `A` (resp. `B`) have the same length `m`
-(resp. `n`).
-"""
-function RkMatrix(_A::Vector{V}, _B::Vector{V}) where {V<:AbstractVector}
-    T = eltype(V)
-    @assert length(_A) == length(_B)
-    k = length(_A)
-    m = length(first(_A))
-    n = length(first(_B))
-    A = Matrix{T}(undef, m, k)
-    B = Matrix{T}(undef, n, k)
-    for i in 1:k
-        copyto!(view(A, :, i), _A[i])
-        copyto!(view(B, :, i), _B[i])
+function getcol!(col, R::RkMatrix, j::Int, ::Val{T} = Val(false)) where {T}
+    # NOTE: using a `Val` argument to dispatch on the type of `T` is important
+    # for performance
+    return if T
+        mul!(col, R.A, view(adjoint(R.B), :, j), true, true)
+    else
+        mul!(col, R.A, view(adjoint(R.B), :, j))
     end
-    return RkMatrix(A, B)
 end
+
+function getcol!(
+    col,
+    Ra::Adjoint{<:Any,<:RkMatrix},
+    j::Int,
+    ::Val{T} = Val(false),
+) where {T}
+    # NOTE: using a `Val` argument to dispatch on the type of `T` is important
+    # for performance
+    R = parent(Ra)
+    return if T
+        mul!(col, R.B, view(adjoint(R.A), :, j), true, true)
+    else
+        mul!(col, R.B, view(adjoint(R.A), :, j))
+    end
+end
+
+Base.copy(R::RkMatrix) = RkMatrix(copy(R.A), copy(R.B))
 
 Base.eltype(::RkMatrix{T}) where {T} = T
 Base.size(rmat::RkMatrix) = (size(rmat.A, 1), size(rmat.B, 1))
@@ -115,7 +88,7 @@ function Base.isapprox(rmat::RkMatrix, B::AbstractArray, args...; kwargs...)
     return isapprox(Matrix(rmat), B, args...; kwargs...)
 end
 
-rank(M::RkMatrix) = size(M.A, 2)
+LinearAlgebra.rank(M::RkMatrix) = size(M.A, 2)
 
 function Base.getproperty(R::RkMatrix, s::Symbol)
     if s == :Bt
@@ -127,77 +100,13 @@ function Base.getproperty(R::RkMatrix, s::Symbol)
     end
 end
 
-"""
-    hcat(M1::RkMatrix,M2::RkMatrix)
-
-Concatenated `M1` and `M2` horizontally to produce a new `RkMatrix` of rank
-`rank(M1)+rank(M2)`.
-"""
-function Base.hcat(M1::RkMatrix{T}, M2::RkMatrix{T}) where {T}
-    m, n = size(M1)
-    s, t = size(M2)
-    (m == s) ||
-        throw(ArgumentError("number of rows of each array must match: got  ($m,$s)"))
-    r1 = size(M1.A, 2)
-    r2 = size(M2.A, 2)
-    A = hcat(M1.A, M2.A)
-    B1 = vcat(M1.B, zeros(T, t, r1))
-    B2 = vcat(zeros(T, n, r2), M2.B)
-    B = hcat(B1, B2)
-    return RkMatrix(A, B)
-end
-
-"""
-    vcat(M1::RkMatrix,M2::RkMatrix)
-
-Concatenated `M1` and `M2` vertically to produce a new `RkMatrix` of rank
-`rank(M1)+rank(M2)`
-"""
-function Base.vcat(M1::RkMatrix{T}, M2::RkMatrix{T}) where {T}
-    m, n = size(M1)
-    s, t = size(M2)
-    n == t ||
-        throw(ArgumentError("number of columns of each array must match (got  ($n,$t))"))
-    r1 = size(M1.A, 2)
-    r2 = size(M2.A, 2)
-    A1 = vcat(M1.A, zeros(T, s, r1))
-    A2 = vcat(zeros(T, m, r2), M2.A)
-    A = hcat(A1, A2)
-    B = hcat(M1.B, M2.B)
-    return RkMatrix(A, B)
-end
-
-Base.copy(R::RkMatrix) = RkMatrix(copy(R.A), copy(R.B))
-
 function Base.Matrix(R::RkMatrix{<:Number})
-    return Matrix(R.A * R.Bt)
+    return R.A * R.Bt
 end
 function Base.Matrix(R::RkMatrix{<:SMatrix})
     # collect must be used when we have a matrix of `SMatrix` because of this issue:
     # https://github.com/JuliaArrays/StaticArrays.jl/issues/966#issuecomment-943679214
     return R.A * collect(R.Bt)
-end
-
-"""
-    RkMatrix(F::SVD)
-
-Construct an [`RkMatrix`](@ref) from an `SVD` factorization.
-"""
-function RkMatrix(F::SVD)
-    A = F.U * Diagonal(F.S)
-    B = copy(F.V)
-    return RkMatrix(A, B)
-end
-
-"""
-    RkMatrix(M::Matrix)
-
-Construct an [`RkMatrix`](@ref) from a `Matrix` by passing through the full
-`svd` of `M`.
-"""
-function RkMatrix(M::Matrix)
-    F = svd(M)
-    return RkMatrix(F)
 end
 
 """
@@ -222,7 +131,7 @@ compression_ratio(R::RkMatrix) = prod(size(R)) / num_stored_elements(R)
 # problem in LinearAlgebra for the generic mulplication mul!(C,A,B,a,b) when
 # C and B are a vectors of static matrices, and A is a matrix of static
 # matrices. Should eventually be removed.
-function mul!(
+function LinearAlgebra.mul!(
     C::AbstractVector,
     Rk::RkMatrix{T},
     F::AbstractVector,

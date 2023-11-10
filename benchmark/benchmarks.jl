@@ -34,7 +34,7 @@ K = laplace_matrix(X, Y)
 irange = 1:N
 jrange = 1:N
 
-compressors = [PartialACA(; rtol = rtol), ACA(; rtol = rtol), TSVD(; rtol = rtol)]
+compressors = [PartialACA(; rtol = rtol), TSVD(; rtol = rtol)]
 
 for comp in compressors
     SUITE["Compressors"][string(comp)] = @benchmarkable $comp($K, $irange, $jrange)

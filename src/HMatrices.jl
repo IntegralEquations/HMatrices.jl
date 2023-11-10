@@ -5,29 +5,21 @@ const PROJECT_ROOT = pkgdir(HMatrices)
 using StaticArrays
 using LinearAlgebra
 using Statistics: median
-using TimerOutputs
 using Printf
 using RecipesBase
 using Distributed
 using Base.Threads
-using AbstractTrees: print_tree
-
-using AbstractTrees: AbstractTrees
-import LinearAlgebra: mul!, lu!, lu, LU, ldiv!, rdiv!, axpy!, rank, rmul!, lmul!
-import Base: Matrix, adjoint, parent
+using AbstractTrees
 
 """
-    const ALLOW_GETINDEX
+    getblock!(block,K,irange,jrange)
 
-If set to false (default), the `getindex(H,i,j)` method will throw an error on
-[`AbstractHMatrix`](@ref) and [`RkMatrix`](@ref).
-"""
-const ALLOW_GETINDEX = Ref(false)
+Fill `block` with `K[i,j]` for `i ∈ irange`, `j ∈ jrange`, where `block` is of
+size `length(irange) × length(jrange)`.
 
-"""
-    get_block!(block,K,irange,jrange)
-
-Fill `block` with `K[irange,jrange]`.
+A default implementation exists which relies on `getindex(K,i,j)`, but this
+method can be overloaded for better performance if e.g. a vectorized way of
+computing a block is available.
 """
 function getblock!(out, K, irange_, jrange_)
     irange = irange_ isa Colon ? axes(K, 1) : irange_
@@ -40,15 +32,15 @@ function getblock!(out, K, irange_, jrange_)
     return out
 end
 
-function getblock!(out, Kadj::Adjoint, irange_, jrange_)
-    getblock!(transpose(out), parent(Kadj), jrange_, irange_)
+function getblock!(out, Kadj::Adjoint, irange_, j::Int)
+    getblock!(transpose(out), parent(Kadj), j:j, irange_)
     return out .= conj.(out)
 end
 
 """
     use_threads()::Bool
 
-Default choice of whether threads will be used or not throughout the package.
+Default choice of whether threads will be used throughout the package.
 """
 use_threads() = true
 
@@ -69,15 +61,12 @@ include("rkmatrix.jl")
 include("compressor.jl")
 include("hmatrix.jl")
 include("dhmatrix.jl")
-include("addition.jl")
 include("multiplication.jl")
 include("triangular.jl")
 include("lu.jl")
 
-export
-    # types (re-exported)
+export ClusterTree,
     CardinalitySplitter,
-    ClusterTree,
     DyadicSplitter,
     GeometricSplitter,
     GeometricMinimalSplitter,
@@ -90,11 +79,9 @@ export
     StrongAdmissibilityStd,
     WeakAdmissibilityStd,
     PartialACA,
-    ACA,
     TSVD,
     # functions
     compression_ratio,
-    print_tree,
     assemble_hmatrix,
     # macros
     @hprofile

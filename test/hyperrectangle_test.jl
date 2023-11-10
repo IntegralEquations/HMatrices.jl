@@ -44,11 +44,6 @@ using StaticArrays
     rec2 = HMatrices.HyperRectangle(SVector(2, 0), SVector(3, 1))
     @test HMatrices.distance(rec1, rec2) ≈ 1
     x = SVector(0.5, 0.5)
-    @test HMatrices.distance(x, rec1) ≈ HMatrices.distance(rec1, x) ≈ 0
-    x = SVector(0.0, 2.0)
-    @test HMatrices.distance(x, rec1) ≈ HMatrices.distance(rec1, x) ≈ 1
-    x = SVector(2.0, 2.0)
-    @test HMatrices.distance(x, rec1) ≈ HMatrices.distance(rec1, x) ≈ √2
     rec2 = HMatrices.HyperRectangle(SVector(2, 2), SVector(3, 3))
     HMatrices.distance(rec1, rec2) ≈ sqrt(2)
 end

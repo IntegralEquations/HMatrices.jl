@@ -98,12 +98,6 @@ function HMatrices.getblock!(out, K::LaplaceMatrixVec, I::UnitRange, J::UnitRang
     end
     return out
 end
-function HMatrices.getblock!(out, K::LaplaceMatrixVec, I::UnitRange, j::Int)
-    return HMatrices.getblock!(out, K, I, j:j)
-end
-function HMatrices.getblock!(out, K::LaplaceMatrixVec, i::Int, J::UnitRange)
-    return HMatrices.getblock!(out, K, i:i, J)
-end
 function Base.getindex(K::LaplaceMatrixVec{T}, i::Int, j::Int)::T where {T}
     d2 = (K.X[i, 1] - K.Y[j, 1])^2 + (K.X[i, 2] - K.Y[j, 2])^2 + (K.X[i, 3] - K.Y[j, 3])^2
     d = sqrt(d2) + EPS

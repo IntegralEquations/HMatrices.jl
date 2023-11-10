@@ -60,7 +60,7 @@ children(clt::ClusterTree) = clt.children
 
 The node's parent. If `t` is a root, then `parent(t)==t`.
 """
-parent(clt::ClusterTree) = clt.parent
+Base.parent(clt::ClusterTree) = clt.parent
 
 """
     container(clt::ClusterTree)
