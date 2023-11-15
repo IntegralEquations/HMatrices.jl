@@ -17,7 +17,7 @@ function hmul!(C::T, A::T, B::T, a, b, compressor, bufs_ = nothing) where {T<:HM
     b == true || rmul!(C, b)
     dict = IdDict{T,Vector{NTuple{2,T}}}()
     _plan_dict!(dict, C, A, B)
-    _hmul!(C, compressor, dict, a, nothing, bufs)
+    _hmul!(C, compressor, dict, a, bufs)
     return C
 end
 
@@ -42,43 +42,131 @@ function _plan_dict!(dict, C::T, A::T, B::T) where {T<:HMatrix}
     return dict
 end
 
-function _hmul!(C::HMatrix, compressor, dict, a, R, bufs)
-    execute_node!(C, compressor, dict, a, R, bufs)
-    shift = pivot(C) .- 1
-    for chd in children(C)
-        irange = rowrange(chd) .- shift[1]
-        jrange = colrange(chd) .- shift[2]
-        Rp     = data(C)
-        Rv     = hasdata(C) ? RkMatrix(Rp.A[irange, :], Rp.B[jrange, :]) : nothing
-        # Rv = hasdata(C) ? view(Rp,irange,jrange) : nothing
-        _hmul!(chd, compressor, dict, a, Rv, bufs)
+# function _hmul!(C::HMatrix, compressor, dict, a, bufs)
+#     # recursive multiplication function. For the node C, if it is a leaf, you
+#     # add the contribution of all the pairs in the dictionary and P directly to
+#     # it. If it is not a leaf, build an approximation of P + all the pairs, and
+#     # pass it down to the children.
+#     T = typeof(C)
+#     S = eltype(C)
+#     pairs = get(dict, C, Tuple{T,T}[])
+#     if isleaf(C)
+#         if isadmissible(C)
+#             @dspawn begin
+#                 D = data(C)::RkMatrix{S}
+#                 L = MulLinearOp(D, P, pairs, a)
+#                 id = Threads.threadid()
+#                 R = compressor(L, axes(L, 1), axes(L, 2), bufs[id])
+#                 C.data = R
+#             end
+#         else
+#             M = data(C)::Matrix{S}
+#             for (A, B) in pairs
+#                 _mul_dense!(M, A, B, a)
+#             end
+#             isnothing(P) || mul!(M, P.A, adjoint(P.B), true, true)
+#         end
+#     else
+#         if isempty(pairs)
+#             Pnew = P
+#         else
+#             L = MulLinearOp(nothing, P, pairs, a)
+#             id = Threads.threadid()
+#             Pnew = compressor(L, axes(L, 1), axes(L, 2), bufs[id])
+#         end
+#         shift = pivot(C) .- 1
+#         for chd in children(C)
+#             if isnothing(Pnew)
+#                 _hmul!(chd, compressor, dict, a, nothing, bufs)
+#             else
+#                 irange = rowrange(chd) .- shift[1]
+#                 jrange = colrange(chd) .- shift[2]
+#                 # Rv = hasdata(C) ? view(Rp,irange,jrange) : nothing
+#                 block  = RkMatrix(Pnew.A[irange, :], Pnew.B[jrange, :])
+#                 _hmul!(chd, compressor, dict, a, block, bufs)
+#             end
+#         end
+#     end
+#     return C
+# end
+
+function _hmul!(C::T, compressor, dict, a, bufs) where {T<:HMatrix}
+    pairs = get(dict, C, Tuple{T,T}[])
+    if isleaf(C) && !isempty(pairs)
+        if isadmissible(C)
+            @dspawn begin
+                @RW C
+                @R pairs
+                L = MulLinearOp(data(C), nothing, pairs, a)
+                id = Threads.threadid()
+                R = compressor(L, axes(L, 1), axes(L, 2), bufs[id])
+                setdata!(C, R)
+            end label = "admissible leaf $(size(C)) ($(length(pairs)))"
+        else
+            @dspawn begin
+                @RW C
+                @R pairs
+                d = data(C)
+                for (A, B) in pairs
+                    _mul_dense!(d, A, B, a)
+                end
+            end label = "non-admissible leaf"
+        end
+    elseif !isempty(pairs)
+        # internal node: compute low rank approximation
+        Rtask = @dspawn begin
+            @R pairs
+            L = MulLinearOp(nothing, nothing, pairs, a)
+            id = Threads.threadid()
+            compressor(L, axes(L, 1), axes(L, 2), bufs[id])
+        end label = "internal node"
+        # move low rank data to leaves
+        add_to_leaves!(C, Rtask, compressor, bufs)
     end
-    isleaf(C) || (setdata!(C, nothing))
+    # continue with children of C
+    for chd in children(C)
+        _hmul!(chd, compressor, dict, a, bufs)
+    end
     return C
 end
 
-# non-recursive execution
-function execute_node!(C::HMatrix, compressor, dict, a, R, bufs)
-    T = typeof(C)
-    S = eltype(C)
-    pairs = get(dict, C, Tuple{T,T}[])
-    isnothing(R) && isempty(pairs) && (return C)
-    if isleaf(C) && !isadmissible(C)
-        d = data(C)::Matrix{S}
-        for (A, B) in pairs
-            _mul_dense!(d, A, B, a)
-        end
-        # isnothing(R) || axpy!(true, R, d)
-        isnothing(R) || mul!(d, R.A, adjoint(R.B), true, true)
+"""
+    add_to_leaves(H::HMatrix,R,compressor)
+
+Add `R` to the leaves of `H`.
+"""
+function add_to_leaves!(H::HMatrix, Rtask, compressor, bufs)
+    shift = pivot(H) .- 1
+    return _add_to_leaves!(H, Rtask, compressor, shift, bufs)
+end
+function _add_to_leaves!(node, Rtask, compressor, shift, bufs)
+    S = typeof(node)
+    T = eltype(node)
+    if isleaf(node)
+        @dspawn begin
+            @RW node
+            R = fetch(Rtask)::RkMatrix{T}
+            irange = rowrange(node) .- shift[1]
+            jrange = colrange(node) .- shift[2]
+            Rv = RkMatrix(R.A[irange, :], R.B[jrange, :])
+            # Rv = view(R,irange,jrange)
+            if isadmissible(node)
+                Rl = data(node)::RkMatrix{T}
+                L = MulLinearOp(Rl, Rv, Tuple{S,S}[], true)
+                id = Threads.threadid()
+                node.data = compressor(L, axes(L, 1), axes(L, 2), bufs[id])
+            else
+                M = data(node)::Matrix{T}
+                mul!(M, Rv.A, adjoint(Rv.B), true, true)
+                # axpy!(true, Rv, M)
+            end
+        end label = "add to leaves"
     else
-        L = MulLinearOp(data(C), R, pairs, a)
-        id = Threads.threadid()
-        R = compressor(L, axes(L, 1), axes(L, 2), bufs[id])
-        id == Threads.threadid() ||
-            (@warn "thread id changed from $id to $(Threads.threadid())")
-        setdata!(C, R)
+        for child in children(node)
+            _add_to_leaves!(child, Rtask, compressor, shift, bufs)
+        end
     end
-    return C
+    return node
 end
 
 """

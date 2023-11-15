@@ -10,6 +10,7 @@ using RecipesBase
 using Distributed
 using Base.Threads
 using AbstractTrees
+using DataFlowTasks
 
 """
     getblock!(block,K,irange,jrange)
@@ -64,6 +65,21 @@ include("dhmatrix.jl")
 include("multiplication.jl")
 include("triangular.jl")
 include("lu.jl")
+
+# interface of DataFlowTasks
+function DataFlowTasks.memory_overlap(H1::HMatrix, H2::HMatrix)
+    isempty(intersect(rowrange(H1), rowrange(H2))) && (return false)
+    isempty(intersect(colrange(H1), colrange(H2))) && (return false)
+    return true
+end
+function DataFlowTasks.memory_overlap(H1::HMatrix, pairs::Vector{<:NTuple{2,<:HMatrix}})
+    for (A, B) in pairs
+        DataFlowTasks.memory_overlap(H1, A) && (return true)
+        DataFlowTasks.memory_overlap(H1, B) && (return true)
+    end
+    return false
+end
+DataFlowTasks.memory_overlap(pairs::Vector{<:NTuple{2,<:HMatrix}}, H::HMatrix) = DataFlowTasks.memory_overlap(H, pairs)
 
 export ClusterTree,
     CardinalitySplitter,
