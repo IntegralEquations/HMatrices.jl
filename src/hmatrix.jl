@@ -121,7 +121,9 @@ function _getcol!(col, adjH::Adjoint{<:Any,<:HMatrix}, j, piv)
         shift = pivot(adjH) .- 1
         jl = j - shift[2]
         irange = rowrange(adjH) .- (piv[1] - 1)
-        getcol!(view(col, irange), data(adjH), jl)
+        H = parent(adjH)
+        d = data(H)
+        getcol!(view(col, irange), adjoint(d), jl)
     end
     for child in children(adjH)
         if j ∈ colrange(child)
@@ -421,7 +423,7 @@ function _assemble_dense_block!(hmat, K)
 end
 
 hasdata(adjH::Adjoint{<:Any,<:HMatrix}) = hasdata(adjH.parent)
-data(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(data(adjH.parent))
+data(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(adjH.parent.data)
 children(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(children(adjH.parent))
 pivot(adjH::Adjoint{<:Any,<:HMatrix}) = reverse(pivot(adjH.parent))
 offset(adjH::Adjoint{<:Any,<:HMatrix}) = pivot(adjH) .- 1

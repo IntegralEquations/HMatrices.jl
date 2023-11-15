@@ -30,7 +30,8 @@ function LinearAlgebra.lu!(M::HMatrix, compressor; threads = use_threads())
     buffers = [(VectorOfVectors(T), VectorOfVectors(T)) for _ in 1:Threads.nthreads()]
     _lu!(M, compressor, threads, buffers)
     # wrap the result in the LU structure
-    return LU(M, LinearAlgebra.BlasInt[], LinearAlgebra.BlasInt(0))
+    res = @dspawn LU(@R(M), LinearAlgebra.BlasInt[], LinearAlgebra.BlasInt(0)) label = "LU"
+    return fetch(res)
 end
 
 """
@@ -59,10 +60,8 @@ LinearAlgebra.lu(M::HMatrix, args...; kwargs...) = lu!(deepcopy(M), args...; kwa
 
 function _lu!(M::HMatrix, compressor, threads, bufs = nothing)
     if isleaf(M)
-        d = data(M)
-        @assert d isa Matrix
-        lu!(d, NOPIVOT())
-    else
+        @dspawn lu!(data(@RW(M)), NOPIVOT()) label = "Dense LU"
+    else # recurse on children
         @assert !hasdata(M)
         chdM = children(M)
         m, n = size(chdM)

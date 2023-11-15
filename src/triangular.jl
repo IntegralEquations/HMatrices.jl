@@ -11,7 +11,7 @@ function Base.show(io::IO, ::MIME"text/plain", L::HUnitLowerTriangular)
     return println(io, "Unit lower triangular part of $H")
 end
 
-function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, B::AbstractMatrix)
+function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, B::StridedMatrix)
     H = parent(L)
     if isleaf(H)
         d = data(H)
@@ -51,8 +51,12 @@ function LinearAlgebra.ldiv!(
     H = parent(L)
     @assert isclean(H)
     if isleaf(X)
-        d = data(X)
-        ldiv!(L, d)
+        @dspawn begin
+            @R H
+            @RW X
+            d = data(X)
+            ldiv!(L, d)
+        end label = "dense ldiv"
     elseif isleaf(H) # X not a leaf, but L is a leaf. This should not happen.
         error()
     else
@@ -141,8 +145,12 @@ function LinearAlgebra.rdiv!(
 )
     H = parent(U)
     if isleaf(X)
-        d = data(X)
-        rdiv!(d, U) # b <-- b/L
+        @dspawn begin
+            @RW X
+            @R H
+            d = data(X)
+            rdiv!(d, U) # b <-- b/L
+        end label = "dense rdiv"
     elseif isleaf(H)
         error()
     else

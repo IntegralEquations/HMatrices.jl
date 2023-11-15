@@ -34,16 +34,16 @@ Random.seed!(1)
         # test fast update of frobenius norm
         m, n = 10000, 1000
         r = 10
-        A = VectorOfVectors(T,m,r)
-        B = VectorOfVectors(T,n,r)
-        A.data .= rand(T, m*r)
-        B.data .= rand(T, n*r)
-        old_norm = norm(Matrix(A)*adjoint(Matrix(B)), 2)
+        A = VectorOfVectors(T, m, r)
+        B = VectorOfVectors(T, n, r)
+        A.data .= rand(T, m * r)
+        B.data .= rand(T, n * r)
+        old_norm = norm(Matrix(A) * adjoint(Matrix(B)), 2)
         a = HMatrices.newcol!(A)
-        a .= rand(T,m)
+        a .= rand(T, m)
         b = HMatrices.newcol!(B)
-        b .= rand(T,n)
-        new_norm = norm(Matrix(A)*adjoint(Matrix(B)), 2)
+        b .= rand(T, n)
+        new_norm = norm(Matrix(A) * adjoint(Matrix(B)), 2)
         @test new_norm ≈ HMatrices._update_frob_norm(old_norm, A, B)
 
         # test simple case where things are not compressible
@@ -67,9 +67,9 @@ Random.seed!(1)
         R = tsvd(M, irange, jrange)
         @test rank(R) == r
         # test recompression using QR-SVD
-        R2 = RkMatrix(hcat(R.A,R.A),hcat(R.B,R.B))
+        R2 = RkMatrix(hcat(R.A, R.A), hcat(R.B, R.B))
         @test rank(R2) == 2r
-        HMatrices.compress!(R2,tsvd)
+        HMatrices.compress!(R2, tsvd)
         @test rank(R2) == r
     end
 end
@@ -101,17 +101,17 @@ end
 
         # test fast update of frobenius norm
         T = SMatrix{3,3,Float64,9}
-        A = VectorOfVectors(T,m,r)
-        B = VectorOfVectors(T,n,r)
-        A.data .= rand(T, m*r)
-        B.data .= rand(T, n*r)
-        R = Matrix(A)*collect(adjoint(Matrix(B)))
+        A = VectorOfVectors(T, m, r)
+        B = VectorOfVectors(T, n, r)
+        A.data .= rand(T, m * r)
+        B.data .= rand(T, n * r)
+        R = Matrix(A) * collect(adjoint(Matrix(B)))
         old_norm = norm(R, 2)
         a = HMatrices.newcol!(A)
-        a .= rand(T,m)
+        a .= rand(T, m)
         b = HMatrices.newcol!(B)
-        b .= rand(T,n)
-        R = Matrix(A)*collect(adjoint(Matrix(B)))
+        b .= rand(T, n)
+        R = Matrix(A) * collect(adjoint(Matrix(B)))
         new_norm = norm(R, 2)
         HMatrices._update_frob_norm(old_norm, A, B)
         @test_broken new_norm ≈ HMatrices._update_frob_norm(old_norm, A, B)
