@@ -79,7 +79,9 @@ function DataFlowTasks.memory_overlap(H1::HMatrix, pairs::Vector{<:NTuple{2,<:HM
     end
     return false
 end
-DataFlowTasks.memory_overlap(pairs::Vector{<:NTuple{2,<:HMatrix}}, H::HMatrix) = DataFlowTasks.memory_overlap(H, pairs)
+function DataFlowTasks.memory_overlap(pairs::Vector{<:NTuple{2,<:HMatrix}}, H::HMatrix)
+    return DataFlowTasks.memory_overlap(H, pairs)
+end
 
 export ClusterTree,
     CardinalitySplitter,
