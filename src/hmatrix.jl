@@ -252,12 +252,15 @@ node of `rowtree` and a node of `coltree` to determine if the block is
 compressible, and `comp` is a function/functor which can compress admissible
 blocks.
 
-It is assumed that `K` supports `getindex(K,i,j)`, and that comp can be called
+It is assumed that `K` supports `getindex(K,i,j)`, and that `comp` can be called
 as `comp(K,irange::UnitRange,jrange::UnitRange)` to produce a compressed version
 of `K[irange,jrange]` in the form of an [`RkMatrix`](@ref).
 
 The type paramter `T` is used to specify the type of the entries of the matrix,
 by default is inferred from `K` using `eltype(K)`.
+
+For best performance, you want to
+- permute the entries of the
 """
 function assemble_hmatrix(
     ::Type{T},
@@ -666,20 +669,30 @@ Base.:(+)(X::HMatrix, Y::UniformScaling) = Y + X
 # on admissble blocks. This arises when adding a correction to BIE matrices.
 function LinearAlgebra.axpy!(a, X::AbstractSparseArray{<:Any,<:Any,2}, Y::HMatrix)
     T = eltype(Y)
+    row_glob2loc = glob2loc(rowtree(Y))
+    col_loc2glob = loc2glob(coltree(Y))
     if isleaf(Y)
         rows = rowvals(X)
         vals = nonzeros(X)
         irange = rowrange(Y)
         jrange = colrange(Y)
-        for j in jrange
+        for (m,jloc) in enumerate(jrange)
+            j = col_loc2glob[jloc]
             for idx in nzrange(X, j)
-                i = rows[idx]
-                if i < irange.start
+                i    = rows[idx]
+                iloc = row_glob2loc[i]
+                if iloc < irange.start
                     continue
-                elseif i <= irange.stop # i ∈ irange
-                    @assert !isadmissible(Y) "not possible to add sparse matrix to admissible block"
+                elseif iloc <= irange.stop # i ∈ irange
+                    if isadmissible(Y)
+                        if isdefined(Main, :Infiltrator)
+                            Main.infiltrate(@__MODULE__, Base.@locals, @__FILE__, @__LINE__)
+                        end
+                        error("not possible to add sparse matrix to admissible block")
+                    end
+                    # @assert !isadmissible(Y)
                     M = data(Y)::Matrix{T} #
-                    M[i-irange.start+1, j-jrange.start+1] += a * vals[idx]
+                    M[iloc-irange.start+1, jloc-jrange.start+1] += a * vals[idx]
                 else
                     break # go to next column
                 end
