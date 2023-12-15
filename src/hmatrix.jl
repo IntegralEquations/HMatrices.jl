@@ -664,7 +664,7 @@ Base.:(+)(X::HMatrix, Y::UniformScaling) = Y + X
 
 # adding a sparse matrix to an HMatrix is allowed if the sparse matrix is null
 # on admissble blocks. This arises when adding a correction to BIE matrices.
-function LinearAlgebra.axpy!(a,X::AbstractSparseArray{<:Any,<:Any,2},Y::HMatrix)
+function LinearAlgebra.axpy!(a, X::AbstractSparseArray{<:Any,<:Any,2}, Y::HMatrix)
     T = eltype(Y)
     if isleaf(Y)
         rows = rowvals(X)
@@ -672,14 +672,14 @@ function LinearAlgebra.axpy!(a,X::AbstractSparseArray{<:Any,<:Any,2},Y::HMatrix)
         irange = rowrange(Y)
         jrange = colrange(Y)
         for j in jrange
-            for idx in nzrange(X,j)
+            for idx in nzrange(X, j)
                 i = rows[idx]
                 if i < irange.start
                     continue
                 elseif i <= irange.stop # i ∈ irange
                     @assert !isadmissible(Y) "not possible to add sparse matrix to admissible block"
                     M = data(Y)::Matrix{T} #
-                    M[i-irange.start+1,j-jrange.start+1] += a*vals[idx]
+                    M[i-irange.start+1, j-jrange.start+1] += a * vals[idx]
                 else
                     break # go to next column
                 end
@@ -687,7 +687,7 @@ function LinearAlgebra.axpy!(a,X::AbstractSparseArray{<:Any,<:Any,2},Y::HMatrix)
         end
     else # has children
         for child in children(Y)
-            axpy!(a,X,child)
+            axpy!(a, X, child)
         end
     end
     return Y

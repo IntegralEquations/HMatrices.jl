@@ -53,8 +53,8 @@ end
     H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false, distributed = false)
     H_full = Matrix(H; global_index = false)
     T = eltype(H)
-    m,n = size(H)
-    S = spdiagm(0 => rand(T,n))
-    Hnew = axpy!(true,S,deepcopy(H))
+    m, n = size(H)
+    S = spdiagm(0 => rand(T, n))
+    Hnew = axpy!(true, S, deepcopy(H))
     @test Matrix(Hnew; global_index = false) == H_full + Matrix(S)
 end
