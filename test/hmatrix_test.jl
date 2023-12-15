@@ -2,6 +2,7 @@ using Test
 using StaticArrays
 using HMatrices
 using LinearAlgebra
+using SparseArrays
 
 include(joinpath(HMatrices.PROJECT_ROOT, "test", "testutils.jl"))
 
@@ -34,4 +35,26 @@ include(joinpath(HMatrices.PROJECT_ROOT, "test", "testutils.jl"))
         H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads)
         @test norm(Matrix(K) - Matrix(H; global_index = true)) < rtol * norm(Matrix(K))
     end
+end
+
+@testset "Sparse arrays" begin
+    m = 2000
+    n = 2000
+
+    X = rand(SVector{3,Float64}, m)
+    Y = X
+    splitter = CardinalitySplitter(; nmax = 40)
+    Xclt = ClusterTree(X, splitter)
+    Yclt = ClusterTree(Y, splitter)
+    adm = StrongAdmissibilityStd(; eta = 3)
+    rtol = 1e-5
+    comp = PartialACA(; rtol = rtol)
+    K = laplace_matrix(X, Y)
+    H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false, distributed = false)
+    H_full = Matrix(H; global_index = false)
+    T = eltype(H)
+    m,n = size(H)
+    S = spdiagm(0 => rand(T,n))
+    Hnew = axpy!(true,S,deepcopy(H))
+    @test Matrix(Hnew; global_index = false) == H_full + Matrix(S)
 end

@@ -10,6 +10,7 @@ using RecipesBase
 using Distributed
 using Base.Threads
 using AbstractTrees
+using SparseArrays
 
 """
     getblock!(block,K,irange,jrange)
@@ -82,8 +83,6 @@ export ClusterTree,
     TSVD,
     # functions
     compression_ratio,
-    assemble_hmatrix,
-    # macros
-    @hprofile
+    assemble_hmatrix
 
 end

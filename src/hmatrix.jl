@@ -640,7 +640,7 @@ function partition!(s::Symbol, H::HMatrix, np = Threads.nthreads(), cost = _cost
     return H
 end
 
-# add a unifor scaling to an HMatrix return an HMatrix
+# add a uniform scaling to an HMatrix return an HMatrix
 function LinearAlgebra.axpy!(a, X::UniformScaling, Y::HMatrix)
     @assert isclean(Y)
     if hasdata(Y)
@@ -661,3 +661,37 @@ end
 
 Base.:(+)(X::UniformScaling, Y::HMatrix) = axpy!(true, X, deepcopy(Y))
 Base.:(+)(X::HMatrix, Y::UniformScaling) = Y + X
+
+# adding a sparse matrix to an HMatrix is allowed if the sparse matrix is null
+# on admissble blocks. This arises when adding a correction to BIE matrices.
+function LinearAlgebra.axpy!(a,X::AbstractSparseArray{<:Any,<:Any,2},Y::HMatrix)
+    T = eltype(Y)
+    if isleaf(Y)
+        rows = rowvals(X)
+        vals = nonzeros(X)
+        irange = rowrange(Y)
+        jrange = colrange(Y)
+        for j in jrange
+            for idx in nzrange(X,j)
+                i = rows[idx]
+                if i < irange.start
+                    continue
+                elseif i <= irange.stop # i ∈ irange
+                    @assert !isadmissible(Y) "not possible to add sparse matrix to admissible block"
+                    M = data(Y)::Matrix{T} #
+                    M[i-irange.start+1,j-jrange.start+1] += a*vals[idx]
+                else
+                    break # go to next column
+                end
+            end
+        end
+    else # has children
+        for child in children(Y)
+            axpy!(a,X,child)
+        end
+    end
+    return Y
+end
+
+Base.:(+)(X::AbstractSparseArray, Y::HMatrix) = axpy!(true, X, deepcopy(Y))
+Base.:(+)(X::HMatrix, Y::AbstractSparseArray) = Y + X
