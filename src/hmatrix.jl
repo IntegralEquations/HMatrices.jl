@@ -667,32 +667,32 @@ Base.:(+)(X::HMatrix, Y::UniformScaling) = Y + X
 
 # adding a sparse matrix to an HMatrix is allowed if the sparse matrix is null
 # on admissble blocks. This arises when adding a correction to BIE matrices.
-function LinearAlgebra.axpy!(a, X::AbstractSparseArray{<:Any,<:Any,2}, Y::HMatrix)
+function LinearAlgebra.axpy!(
+    a,
+    X::AbstractSparseArray{<:Any,<:Any,2},
+    Y::HMatrix;
+    global_index = true,
+)
     T = eltype(Y)
-    row_glob2loc = glob2loc(rowtree(Y))
-    col_loc2glob = loc2glob(coltree(Y))
+    rp = loc2glob(rowtree(Y))
+    cp = loc2glob(coltree(Y))
+    global_index && (X = permute(X, rp, cp))
     if isleaf(Y)
         rows = rowvals(X)
         vals = nonzeros(X)
         irange = rowrange(Y)
         jrange = colrange(Y)
-        for (m, jloc) in enumerate(jrange)
-            j = col_loc2glob[jloc]
+        for j in jrange
             for idx in nzrange(X, j)
-                i    = rows[idx]
-                iloc = row_glob2loc[i]
-                if iloc < irange.start
+                i = rows[idx]
+                if i < irange.start
                     continue
-                elseif iloc <= irange.stop # i ∈ irange
+                elseif i <= irange.stop # i ∈ irange
                     if isadmissible(Y)
-                        if isdefined(Main, :Infiltrator)
-                            Main.infiltrate(@__MODULE__, Base.@locals, @__FILE__, @__LINE__)
-                        end
                         error("not possible to add sparse matrix to admissible block")
                     end
-                    # @assert !isadmissible(Y)
                     M = data(Y)::Matrix{T} #
-                    M[iloc-irange.start+1, jloc-jrange.start+1] += a * vals[idx]
+                    M[i-irange.start+1, j-jrange.start+1] += a * vals[idx]
                 else
                     break # go to next column
                 end
@@ -700,7 +700,7 @@ function LinearAlgebra.axpy!(a, X::AbstractSparseArray{<:Any,<:Any,2}, Y::HMatri
         end
     else # has children
         for child in children(Y)
-            axpy!(a, X, child)
+            axpy!(a, X, child; global_index = false)
         end
     end
     return Y

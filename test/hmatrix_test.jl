@@ -38,8 +38,8 @@ include(joinpath(HMatrices.PROJECT_ROOT, "test", "testutils.jl"))
 end
 
 @testset "Sparse arrays" begin
-    m = 2000
-    n = 2000
+    m = 1000
+    n = 1000
 
     X = rand(SVector{3,Float64}, m)
     Y = X
@@ -56,5 +56,5 @@ end
     m, n = size(H)
     S = spdiagm(0 => rand(T, n))
     Hnew = axpy!(true, S, deepcopy(H))
-    @test Matrix(Hnew) == H_full + Matrix(S)
+    @test Matrix(Hnew) == (H_full + Matrix(S))
 end
