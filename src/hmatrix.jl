@@ -676,7 +676,7 @@ function LinearAlgebra.axpy!(a, X::AbstractSparseArray{<:Any,<:Any,2}, Y::HMatri
         vals = nonzeros(X)
         irange = rowrange(Y)
         jrange = colrange(Y)
-        for (m,jloc) in enumerate(jrange)
+        for (m, jloc) in enumerate(jrange)
             j = col_loc2glob[jloc]
             for idx in nzrange(X, j)
                 i    = rows[idx]
