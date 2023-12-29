@@ -219,10 +219,10 @@ function _mul_dense!(C::Base.Matrix, A, B, a)
 end
 
 function _mul111!(
-    C::Union{Matrix,SubArray,Adjoint},
-    A::Union{Matrix,SubArray,Adjoint},
-    B::Union{Matrix,SubArray,Adjoint},
-    a::Number,
+    C,
+    A,
+    B,
+    a,
 )
     return mul!(C, A, B, a, true)
 end
