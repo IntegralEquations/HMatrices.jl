@@ -160,16 +160,29 @@ end
 """
     compression_ratio(H::HMatrix)
 
-The ratio of the uncompressed size of `H` to its compressed size.
+The ratio of the uncompressed size of `H` to its compressed size. A
+`compression_ratio` of `10` means it would have taken 10 times more memory to
+store `H` as a dense matrix.
 """
 function compression_ratio(H::HMatrix)
-    ns = 0 # stored entries
+    ns = num_stored_elements(H)
     nr = length(H) # represented entries
+    return nr / ns
+end
+
+"""
+    num_stored_elements(H::HMatrix)
+
+The number of entries stored in the representation. Note that this is *not*
+`length(H)`.
+"""
+function num_stored_elements(H::HMatrix)
+    ns = 0 # stored entries
     for block in AbstractTrees.Leaves(H)
         data = block.data
         ns += num_stored_elements(data)
     end
-    return nr / ns
+    return ns
 end
 
 num_stored_elements(M::Matrix) = length(M)
@@ -665,18 +678,27 @@ end
 Base.:(+)(X::UniformScaling, Y::HMatrix) = axpy!(true, X, deepcopy(Y))
 Base.:(+)(X::HMatrix, Y::UniformScaling) = Y + X
 
-# adding a sparse matrix to an HMatrix is allowed if the sparse matrix is null
-# on admissble blocks. This arises when adding a correction to BIE matrices.
+# adding a sparse matrix to an HMatrix is allowed, but in the current
+# implementation is done to recompress blocks which may increase rank during the
+# process. If the rank increases by a large amount, we just print a warning for now.
 function LinearAlgebra.axpy!(
     a,
     X::AbstractSparseArray{<:Any,<:Any,2},
     Y::HMatrix;
     global_index = true,
 )
-    T = eltype(Y)
     rp = loc2glob(rowtree(Y))
     cp = loc2glob(coltree(Y))
     global_index && (X = permute(X, rp, cp))
+    size_start = num_stored_elements(Y)
+    _axpy!(a, X, Y)
+    size_end = num_stored_elements(Y)
+    size_end / size_start > 1.1 && @warn "Rank increased by more than 10% during axpy!"
+    return Y
+end
+
+function _axpy!(a, X::AbstractSparseArray, Y::HMatrix)
+    T = eltype(Y)
     if isleaf(Y)
         rows = rowvals(X)
         vals = nonzeros(X)
@@ -689,10 +711,19 @@ function LinearAlgebra.axpy!(
                     continue
                 elseif i <= irange.stop # i ∈ irange
                     if isadmissible(Y)
-                        error("not possible to add sparse matrix to admissible block")
+                        R = data(Y)
+                        m, n = size(R)
+                        # create a rank one matrix and add it to R
+                        a = zeros(T, m)
+                        b = zeros(T, n)
+                        a[i-irange.start+1] = vals[idx]
+                        b[j-jrange.start+1] = 1
+                        R.A = hcat(R.A, a)
+                        R.B = hcat(R.B, b)
+                    else
+                        M = data(Y)::Matrix{T} #
+                        M[i-irange.start+1, j-jrange.start+1] += a * vals[idx]
                     end
-                    M = data(Y)::Matrix{T} #
-                    M[i-irange.start+1, j-jrange.start+1] += a * vals[idx]
                 else
                     break # go to next column
                 end
@@ -700,7 +731,7 @@ function LinearAlgebra.axpy!(
         end
     else # has children
         for child in children(Y)
-            axpy!(a, X, child; global_index = false)
+            _axpy!(a, X, child)
         end
     end
     return Y
