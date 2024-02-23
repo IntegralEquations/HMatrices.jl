@@ -218,12 +218,7 @@ function _mul_dense!(C::Base.Matrix, A, B, a)
     end
 end
 
-function _mul111!(
-    C,
-    A,
-    B,
-    a,
-)
+function _mul111!(C, A, B, a)
     return mul!(C, A, B, a, true)
 end
 
