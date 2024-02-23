@@ -189,12 +189,12 @@ function _aca_partial_pivot(v, J)
     idx = -1
     val = -Inf
     for n in 1:length(J)
-        J[n] || continue
         x = v[n]
         σ = svdvals(x)[end]
-        σ < val && continue
-        idx = n
-        val = σ
+        if σ > val && J[n]
+            idx = n
+            val = σ
+        end
     end
     return idx
 end
