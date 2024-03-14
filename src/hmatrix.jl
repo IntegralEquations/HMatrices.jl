@@ -21,9 +21,11 @@ multiplication.
 """
 struct Partition{T}
     root::T
-    partition::Vector{Vector{T}}
+    nodes::Vector{Vector{T}}
     tag::Symbol
 end
+
+nodes(p::Partition) = p.nodes
 
 """
     mutable struct HMatrix{R,T} <: AbstractHMatrix{T}
@@ -59,6 +61,7 @@ data(H::AbstractHMatrix) = H.data
 setdata!(H::AbstractHMatrix, d) = setfield!(H, :data, d)
 rowtree(H::AbstractHMatrix) = H.rowtree
 coltree(H::AbstractHMatrix) = H.coltree
+partition(H::AbstractHMatrix) = H.partition
 
 cluster_type(::HMatrix{R,T}) where {R,T} = R
 
@@ -448,6 +451,7 @@ isleaf(adjH::Adjoint{<:Any,<:HMatrix}) = isleaf(adjH.parent)
 rowperm(adjH::Adjoint{<:Any,<:HMatrix}) = colperm(adjH.parent)
 colperm(adjH::Adjoint{<:Any,<:HMatrix}) = rowperm(adjH.parent)
 Base.size(adjH::Adjoint{<:Any,<:HMatrix}) = reverse(size(adjH.parent))
+partition(adjH::Adjoint{<:Any,<:HMatrix}) = adjH.parent.partition
 
 function Base.show(io::IO, adjH::Adjoint{<:Any,<:HMatrix})
     hmat = parent(adjH)
