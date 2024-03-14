@@ -436,6 +436,7 @@ function _assemble_dense_block!(hmat, K)
     return hmat
 end
 
+# operation on adjoint
 hasdata(adjH::Adjoint{<:Any,<:HMatrix}) = hasdata(adjH.parent)
 data(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(data(adjH.parent))
 children(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(children(adjH.parent))
@@ -444,7 +445,8 @@ offset(adjH::Adjoint{<:Any,<:HMatrix}) = pivot(adjH) .- 1
 rowrange(adjH::Adjoint{<:Any,<:HMatrix}) = colrange(adjH.parent)
 colrange(adjH::Adjoint{<:Any,<:HMatrix}) = rowrange(adjH.parent)
 isleaf(adjH::Adjoint{<:Any,<:HMatrix}) = isleaf(adjH.parent)
-
+rowperm(adjH::Adjoint{<:Any,<:HMatrix}) = colperm(adjH.parent)
+colperm(adjH::Adjoint{<:Any,<:HMatrix}) = rowperm(adjH.parent)
 Base.size(adjH::Adjoint{<:Any,<:HMatrix}) = reverse(size(adjH.parent))
 
 function Base.show(io::IO, adjH::Adjoint{<:Any,<:HMatrix})

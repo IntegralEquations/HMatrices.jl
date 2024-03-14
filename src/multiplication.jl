@@ -364,7 +364,7 @@ Perform `y <-- H*x*a + y*b` in place.
 """
 function LinearAlgebra.mul!(
     y::AbstractVector,
-    A::HMatrix,
+    A::Union{HMatrix,Adjoint{<:Any,<:HMatrix}},
     x::AbstractVector,
     a::Number = 1,
     b::Number = 0;
@@ -377,10 +377,8 @@ function LinearAlgebra.mul!(
     # multiplication is performed by first defining B <-- Pc*B, and C <--
     # Pr*C, doing the multiplication with the permuted entries, and then
     # permuting the result  back C <-- inv(Pr)*C at the end.
-    ctree = coltree(A)
-    rtree = rowtree(A)
-    # permute input
     if global_index
+        # permute input
         x = x[colperm(A)]
         y = permute!(y, rowperm(A))
         rmul!(x, a) # multiply in place since this is a new copy, so does not mutate exterior x
@@ -419,7 +417,7 @@ end
 # enough.
 function LinearAlgebra.mul!(
     Y::AbstractMatrix,
-    A::HMatrix,
+    A::Union{HMatrix,Adjoint{<:Any,<:HMatrix}},
     X::AbstractMatrix,
     a::Number = 1,
     b::Number = 0;
@@ -447,15 +445,10 @@ function _hgemv_recursive!(
     B::AbstractVector,
     offset,
 )
-    T = eltype(A)
     if isleaf(A)
         irange = rowrange(A) .- offset[1]
         jrange = colrange(A) .- offset[2]
         d = data(A)
-        # FIXME: can we run into this?
-        # (https://github.com/JuliaArrays/StaticArrays.jl/issues/966#issuecomment-943679214).
-        # C and B are the "global" vectors handled by the caller, so a view
-        # is needed.
         mul!(view(C, irange), d, view(B, jrange), 1, 1)
     else
         for block in children(A)
