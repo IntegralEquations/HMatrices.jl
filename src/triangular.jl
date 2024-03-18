@@ -133,12 +133,7 @@ function LinearAlgebra.rdiv!(R::RkMatrix, U::HUpperTriangular)
 end
 
 # 3.3
-function LinearAlgebra.rdiv!(
-    X::AbstractHMatrix,
-    U::HUpperTriangular,
-    compressor,
-    bufs = nothing,
-)
+function LinearAlgebra.rdiv!(X::HMatrix, U::HUpperTriangular, compressor, bufs = nothing)
     H = parent(U)
     if isleaf(X)
         d = data(X)

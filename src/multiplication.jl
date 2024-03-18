@@ -371,7 +371,6 @@ function LinearAlgebra.mul!(
     global_index = use_global_index(),
     threads = use_threads(),
 )
-    adj = Val(A isa Adjoint)
     # since the HMatrix represents A = inv(Pr)*H*Pc, where Pr and Pc are row and column
     # permutations, we need first to rewrite C <-- b*C + a*(inv(Pr)*H*Pc)*B as
     # C <-- inv(Pr)*(b*Pr*C + a*H*(Pc*B)). Following this rewrite, the
@@ -402,10 +401,9 @@ function LinearAlgebra.mul!(
         #    or row_partition
         #    Right now the hilbert partition is chosen by default without proper
         #    testing.
-        isnothing(partition(A)) && (partition!(:hilbert, A))
-        A_part = partition(A)
-        _hgemv_static_partition!(y, x, nodes(A_part), offset, adj)
-        # _hgemv_threads!(y, x, nodes(A_part), offset, adj)  # threaded implementation
+        haspartition(A) || (partition!(:hilbert, A))
+        _hgemv_static_partition!(y, x, partition_nodes(A), offset)
+        # _hgemv_threads!(y, x, nodes(A_part), offset)  # threaded implementation
     else
         _hgemv_recursive!(y, A, x, offset) # serial implementation
     end
@@ -460,19 +458,12 @@ function _hgemv_recursive!(
     return C
 end
 
-function _hgemv_threads!(
-    C::AbstractVector,
-    B::AbstractVector,
-    partition,
-    offset,
-    ::Val{ADJ},
-) where {ADJ}
+function _hgemv_threads!(C::AbstractVector, B::AbstractVector, partition, offset)
     nt = Threads.nthreads()
     # make `nt` copies of C and run in parallel
     buffers = [zero(C) for _ in 1:nt]
     @sync for p in partition
         for block in p
-            ADJ && (block = adjoint(block))
             Threads.@spawn begin
                 # FIXME: this is probably unsafe since the _hgemv_recursive! may
                 # suspend execution and the buffer may be overwritten by another
@@ -492,7 +483,7 @@ function _hgemv_threads!(
     return C
 end
 
-function _hgemv_static_partition!(C::AbstractVector, B::AbstractVector, partition, offset, ::Val{ADJ}) where {ADJ}
+function _hgemv_static_partition!(C::AbstractVector, B::AbstractVector, partition, offset)
     # create a lock for the reduction step
     T = eltype(C)
     mutex = ReentrantLock()
@@ -503,7 +494,6 @@ function _hgemv_static_partition!(C::AbstractVector, B::AbstractVector, partitio
             leaves = partition[n]
             Cloc = buffers[n]
             for leaf in leaves
-                ADJ && (leaf = adjoint(leaf))
                 irange = rowrange(leaf) .- offset[1]
                 jrange = colrange(leaf) .- offset[2]
                 mul!(view(Cloc, irange), data(leaf), view(B, jrange), 1, 1)

@@ -64,7 +64,7 @@ end
         @test exact ≈ approx
 
         # multiply by adjoint
-        adjH = adjoint(H)
+        adjH = adjoint(deepcopy(H))
         exact = β * y + α * adjoint(H_full) * x
         approx = mul!(copy(y), adjH, x, α, β; threads = false, global_index = false)
         @test exact ≈ approx
@@ -82,7 +82,8 @@ end
         @test exact ≈ approx
 
         # multiply by adjoint
-        adjH = adjoint(H)
+        adjH = adjoint(deepcopy(H))
+        adjH.parent.partition = nothing # make sure partition is created again
         exact = β * y + α * adjoint(H_full) * x
         approx = mul!(copy(y), adjH, x, α, β; threads = true, global_index = false)
         @test exact ≈ approx
