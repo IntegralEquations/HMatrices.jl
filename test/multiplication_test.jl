@@ -62,6 +62,15 @@ end
         exact = β * y + α * Matrix(H; global_index = true) * x
         approx = mul!(copy(y), H, x, α, β; threads = false, global_index = true)
         @test exact ≈ approx
+
+        # multiply by adjoint
+        adjH = adjoint(deepcopy(H))
+        exact = β * y + α * adjoint(H_full) * x
+        approx = mul!(copy(y), adjH, x, α, β; threads = false, global_index = false)
+        @test exact ≈ approx
+        exact = β * y + α * adjoint(Matrix(H; global_index = true)) * x
+        approx = mul!(copy(y), adjH, x, α, β; threads = false, global_index = true)
+        @test exact ≈ approx
     end
 
     @testset "threads" begin
@@ -70,6 +79,16 @@ end
         @test exact ≈ approx
         exact = β * y + α * Matrix(H; global_index = true) * x
         approx = mul!(copy(y), H, x, α, β; threads = false, global_index = true)
+        @test exact ≈ approx
+
+        # multiply by adjoint
+        adjH = adjoint(deepcopy(H))
+        adjH.parent.partition = nothing # make sure partition is created again
+        exact = β * y + α * adjoint(H_full) * x
+        approx = mul!(copy(y), adjH, x, α, β; threads = true, global_index = false)
+        @test exact ≈ approx
+        exact = β * y + α * adjoint(Matrix(H; global_index = true)) * x
+        approx = mul!(copy(y), adjH, x, α, β; threads = true, global_index = true)
         @test exact ≈ approx
     end
 end

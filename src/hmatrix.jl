@@ -21,9 +21,11 @@ multiplication.
 """
 struct Partition{T}
     root::T
-    partition::Vector{Vector{T}}
+    nodes::Vector{Vector{T}}
     tag::Symbol
 end
+
+nodes(p::Partition) = p.nodes
 
 """
     mutable struct HMatrix{R,T} <: AbstractHMatrix{T}
@@ -52,13 +54,16 @@ mutable struct HMatrix{R,T} <: AbstractHMatrix{T}
     end
 end
 
-# setters and getters (defined for AbstractHMatrix)
-isadmissible(H::AbstractHMatrix) = H.admissible
-hasdata(H::AbstractHMatrix) = !isnothing(H.data)
-data(H::AbstractHMatrix) = H.data
-setdata!(H::AbstractHMatrix, d) = setfield!(H, :data, d)
-rowtree(H::AbstractHMatrix) = H.rowtree
-coltree(H::AbstractHMatrix) = H.coltree
+# setters and getters (defined for HMatrix)
+isadmissible(H::HMatrix) = H.admissible
+hasdata(H::HMatrix) = !isnothing(H.data)
+data(H::HMatrix) = H.data
+setdata!(H::HMatrix, d) = setfield!(H, :data, d)
+rowtree(H::HMatrix) = H.rowtree
+coltree(H::HMatrix) = H.coltree
+partition(H::HMatrix) = H.partition
+haspartition(H::HMatrix) = !isnothing(H.partition)
+partition_nodes(H::HMatrix) = partition(H) |> nodes
 
 cluster_type(::HMatrix{R,T}) where {R,T} = R
 
@@ -132,28 +137,28 @@ function _getcol!(col, adjH::Adjoint{<:Any,<:HMatrix}, j, piv)
 end
 
 # Trees interface
-children(H::AbstractHMatrix) = H.children
-children(H::AbstractHMatrix, idxs...) = H.children[idxs]
-Base.parent(H::AbstractHMatrix) = H.parent
-isleaf(H::AbstractHMatrix) = isempty(children(H))
-isroot(H::AbstractHMatrix) = parent(H) === H
+children(H::HMatrix) = H.children
+children(H::HMatrix, idxs...) = H.children[idxs]
+Base.parent(H::HMatrix) = H.parent
+isleaf(H::HMatrix) = isempty(children(H))
+isroot(H::HMatrix) = parent(H) === H
 
 # interface to AbstractTrees. No children is determined by an empty tuple for
 # AbstractTrees.
-AbstractTrees.children(t::AbstractHMatrix) = isleaf(t) ? () : t.children
-AbstractTrees.nodetype(t::AbstractHMatrix) = typeof(t)
+AbstractTrees.children(t::HMatrix) = isleaf(t) ? () : t.children
+AbstractTrees.nodetype(t::HMatrix) = typeof(t)
 
-rowrange(H::AbstractHMatrix) = index_range(H.rowtree)
-colrange(H::AbstractHMatrix) = index_range(H.coltree)
-rowperm(H::AbstractHMatrix) = loc2glob(rowtree(H))
-colperm(H::AbstractHMatrix) = loc2glob(coltree(H))
-pivot(H::AbstractHMatrix) = (rowrange(H).start, colrange(H).start)
-offset(H::AbstractHMatrix) = pivot(H) .- 1
+rowrange(H::HMatrix) = index_range(H.rowtree)
+colrange(H::HMatrix) = index_range(H.coltree)
+rowperm(H::HMatrix) = loc2glob(rowtree(H))
+colperm(H::HMatrix) = loc2glob(coltree(H))
+pivot(H::HMatrix) = (rowrange(H).start, colrange(H).start)
+offset(H::HMatrix) = pivot(H) .- 1
 
 # Base.axes(H::HMatrix) = rowrange(H),colrange(H)
-Base.size(H::AbstractHMatrix) = length(rowrange(H)), length(colrange(H))
+Base.size(H::HMatrix) = length(rowrange(H)), length(colrange(H))
 
-function blocksize(H::AbstractHMatrix)
+function blocksize(H::HMatrix)
     return size(children(H))
 end
 
@@ -436,6 +441,7 @@ function _assemble_dense_block!(hmat, K)
     return hmat
 end
 
+# operation on adjoint
 hasdata(adjH::Adjoint{<:Any,<:HMatrix}) = hasdata(adjH.parent)
 data(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(data(adjH.parent))
 children(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(children(adjH.parent))
@@ -444,8 +450,11 @@ offset(adjH::Adjoint{<:Any,<:HMatrix}) = pivot(adjH) .- 1
 rowrange(adjH::Adjoint{<:Any,<:HMatrix}) = colrange(adjH.parent)
 colrange(adjH::Adjoint{<:Any,<:HMatrix}) = rowrange(adjH.parent)
 isleaf(adjH::Adjoint{<:Any,<:HMatrix}) = isleaf(adjH.parent)
-
+rowperm(adjH::Adjoint{<:Any,<:HMatrix}) = colperm(adjH.parent)
+colperm(adjH::Adjoint{<:Any,<:HMatrix}) = rowperm(adjH.parent)
 Base.size(adjH::Adjoint{<:Any,<:HMatrix}) = reverse(size(adjH.parent))
+haspartition(adjH::Adjoint{<:Any,<:HMatrix}) = haspartition(adjH.parent)
+partition_nodes(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(partition_nodes(adjH.parent))
 
 function Base.show(io::IO, adjH::Adjoint{<:Any,<:HMatrix})
     hmat = parent(adjH)
@@ -654,6 +663,11 @@ function partition!(s::Symbol, H::HMatrix, np = Threads.nthreads(), cost = _cost
     isnothing(H.partition) || (@warn "overwriting existing partition")
     H.partition = Partition(H, p, s)
     return H
+end
+
+function partition!(s::Symbol, adjH::Adjoint{<:Any,<:HMatrix}, args...)
+    partition!(s, parent(adjH), args...)
+    return adjH
 end
 
 # add a uniform scaling to an HMatrix return an HMatrix
