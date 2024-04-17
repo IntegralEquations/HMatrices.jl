@@ -300,11 +300,12 @@ function assemble_hmatrix(
         global_index && (K = PermutedMatrix(K, loc2glob(rowtree), loc2glob(coltree)))
         # now assemble the data in the blocks
         if threads
-            bufs = [ACABuffer(T) for _ in 1:Threads.nthreads()]
-            _assemble_threads!(hmat, K, comp, bufs)
+            # channel holding buffers for ACA
+            chn = Channel{ACABuffer{T}}(Threads.nthreads())
+            foreach(i -> put!(chn, ACABuffer(T)), 1:Threads.nthreads())
+            _assemble_threads!(hmat, K, comp, chn)
         else
-            bufs = ACABuffer(T)
-            _assemble_cpu!(hmat, K, comp, bufs)
+            _assemble_cpu!(hmat, K, comp, ACABuffer(T))
         end
     end
 end
@@ -405,11 +406,7 @@ that the threads are spanwned using `Threads.@spawn`, which means they are
 spawned on the same worker as the caller.
 """
 function _assemble_threads!(hmat, K, comp, bufs)
-    # FIXME: ideally something like `omp for schedule(guided)` should be used here
-    # to avoid spawning too many (small) tasks. In the absece of such scheduling
-    # strategy in julia at the moment (v1.6), we resort to manually limiting the size
-    # of the tasks by directly calling the serial method for blocks which are
-    # smaller than a given length (1000^2 here).
+    # manually control the granularity of the tasks which are spawned
     blocks = filter_tree(hmat, true) do x
         return (isleaf(x) || length(x) < 1000 * 1000)
     end
@@ -417,9 +414,9 @@ function _assemble_threads!(hmat, K, comp, bufs)
     n = length(blocks)
     @sync for i in 1:n
         Threads.@spawn begin
-            tid = Threads.threadid()
-            _assemble_cpu!(blocks[i], K, comp, bufs[tid])
-            tid == Threads.threadid() || (@warn "thread id changed!")
+            buf = take!(bufs)
+            _assemble_cpu!(blocks[i], K, comp, buf)
+            put!(bufs, buf)
         end
     end
     return hmat

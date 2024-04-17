@@ -9,7 +9,9 @@ addition is performed.
 function hmul!(C::T, A::T, B::T, a, b, compressor, bufs_ = nothing) where {T<:HMatrix}
     bufs = if isnothing(bufs_)
         S = eltype(C)
-        [ACABuffer(S) for _ in 1:Threads.nthreads()]
+        chn = Channel{ACABuffer{S}}(Threads.nthreads())
+        foreach(i -> put!(chn, ACABuffer(S)), 1:Threads.nthreads())
+        chn
     else
         bufs_
     end
@@ -72,10 +74,9 @@ function execute_node!(C::HMatrix, compressor, dict, a, R, bufs)
         isnothing(R) || mul!(d, R.A, adjoint(R.B), true, true)
     else
         L = MulLinearOp(data(C), R, pairs, a)
-        id = Threads.threadid()
-        R = compressor(L, axes(L, 1), axes(L, 2), bufs[id])
-        id == Threads.threadid() ||
-            (@warn "thread id changed from $id to $(Threads.threadid())")
+        buf = take!(bufs)
+        R = compressor(L, axes(L, 1), axes(L, 2), buf)
+        put!(bufs, buf)
         setdata!(C, R)
     end
     return C
@@ -461,24 +462,21 @@ end
 function _hgemv_threads!(C::AbstractVector, B::AbstractVector, partition, offset)
     nt = Threads.nthreads()
     # make `nt` copies of C and run in parallel
-    buffers = [zero(C) for _ in 1:nt]
+    chn = Channel{typeof(C)}(nt)
+    foreach(i -> put!(chn, copy(C)), 1:nt)
     @sync for p in partition
         for block in p
             Threads.@spawn begin
-                # FIXME: this is probably unsafe since the _hgemv_recursive! may
-                # suspend execution and the buffer may be overwritten by another
-                # task on the same thread. For now this function is not used, so
-                # it is OK, but it should be either fixed or removed.
-                tid = Threads.threadid()
-                _hgemv_recursive!(buffers[tid], block, B, offset)
-                tid == Threads.threadid() ||
-                    (@warn "thread id changed from $tid to $(Threads.threadid())")
+                buf = take!(chn)
+                _hgemv_recursive!(buf, block, B, offset)
+                put!(chn, buf)
             end
         end
     end
     # reduce
-    for buffer in buffers
-        axpy!(1, buffer, C)
+    close(chn)
+    for buf in chn
+        axpy!(1, buf, C)
     end
     return C
 end
