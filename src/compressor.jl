@@ -61,6 +61,22 @@ end
 
 (paca::PartialACA)(K::AbstractMatrix) = paca(K, axes(K, 1), axes(K, 2))
 
+struct ACABuffer{T}
+    A::VectorOfVectors{T}
+    B::VectorOfVectors{T}
+    I::BitVector
+    J::BitVector
+end
+
+function ACABuffer(T, m = 0, n = 0)
+    return ACABuffer{T}(
+        VectorOfVectors(T, m),
+        VectorOfVectors(T, n),
+        BitVector(undef, m),
+        BitVector(undef, n),
+    )
+end
+
 """
     _aca_partial(K,irange,jrange,atol,rmax,rtol,istart=1)
 
@@ -70,9 +86,9 @@ partial pivoting. The returned `R::RkMatrix` provides an approximation to
 max(atol,rtol*|M|)`, but this inequality may fail to hold due to the various
 errors involved in estimating the error and |M|.
 """
-function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffers = nothing)
+function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = nothing)
     Kadj = adjoint(K)
-    T = Base.eltype(K)
+    T = eltype(K)
     # if irange and jrange are Colon, extract the size from `K` directly. This
     # allows for some code reuse with specializations on getindex(i,::Colon) and
     # getindex(::Colon,j) for when `K` is a `RkMatrix`
@@ -84,16 +100,15 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffers = not
         ishift, jshift = first(irange) - 1, first(jrange) - 1
         # maps global indices to local indices
     end
-    A, B = if isnothing(buffers)
-        (VectorOfVectors(eltype(K), m), VectorOfVectors(eltype(K), n))
-    else
-        buffers[1], buffers[2]
-    end
+    buffer = isnothing(buffer_) ? ACABuffer(T, m, n) : buffer_
+    A, B, I, J = buffer.A, buffer.B, buffer.I, buffer.J # extract the individual buffers for convenience
     @assert A.k == 0 && B.k == 0 "buffers must be empty"
     A.m, B.m = m, n
     rmax = min(m, n, rmax)
-    I = BitVector(true for i in 1:m)
-    J = BitVector(true for i in 1:n)
+    resize!(I, m)
+    resize!(J, n)
+    fill!(I, true)
+    fill!(J, true)
     i = istart # initial pivot
     er = Inf
     est_norm = 0 # approximate norm of K[irange,jrange]

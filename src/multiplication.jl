@@ -9,7 +9,7 @@ addition is performed.
 function hmul!(C::T, A::T, B::T, a, b, compressor, bufs_ = nothing) where {T<:HMatrix}
     bufs = if isnothing(bufs_)
         S = eltype(C)
-        [(VectorOfVectors(S), VectorOfVectors(S)) for _ in 1:Threads.nthreads()]
+        [ACABuffer(S) for _ in 1:Threads.nthreads()]
     else
         bufs_
     end
