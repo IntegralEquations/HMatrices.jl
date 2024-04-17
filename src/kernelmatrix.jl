@@ -47,3 +47,27 @@ function KernelMatrix(f, X, Y)
     T = Base.promote_op(f, eltype(X), eltype(Y))
     return KernelMatrix{typeof(f),typeof(X),typeof(Y),T}(f, X, Y)
 end
+
+"""
+    assembel_hmatrix(K::AbstractKernelMatrix[; atol, rank, rtol, kwargs...])
+
+Construct an approximation of `K` as an [`HMatrix`](@ref) using the partial ACA
+algorithm for the low rank blocks. The `atol`, `rank`, and `rtol` optional
+arguments are passed to the [`PartialACA`](@ref) constructor, and the remaining
+keyword arguments are forwarded to the main `assemble_hmatrix` function.
+"""
+function assemble_hmatrix(
+    K::AbstractKernelMatrix;
+    atol = 0,
+    rank = typemax(Int),
+    rtol = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
+    kwargs...,
+)
+    comp = PartialACA(; rtol, atol, rank)
+    adm = StrongAdmissibilityStd()
+    X = map(center, rowelements(K))
+    Y = map(center, colelements(K))
+    Xclt = ClusterTree(X)
+    Yclt = ClusterTree(Y)
+    return assemble_hmatrix(K, Xclt, Yclt; adm, comp, kwargs...)
+end

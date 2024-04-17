@@ -260,8 +260,12 @@ end
 @deprecate assemble_hmat assemble_hmatrix
 
 """
-    assemble_hmatrix([T,], K,rowtree,coltree;adm=StrongAdmissibilityStd(),comp=PartialACA(),threads=true,distributed=false,global_index=true)
-    assemble_hmatrix([T,], K::KernelMatrix;threads=true,distributed=false,global_index=true,[rtol],[atol],[rank])
+    assemble_hmatrix([T,], K, rowtree, coltree;
+        adm=StrongAdmissibilityStd(),
+        comp=PartialACA(),
+        threads=true,
+        distributed=false,
+        global_index=true)
 
 Main routine for assembling a hierarchical matrix. The argument `K` represents
 the matrix to be approximated, `rowtree` and `coltree` are tree structure
@@ -276,9 +280,6 @@ of `K[irange,jrange]` in the form of an [`RkMatrix`](@ref).
 
 The type paramter `T` is used to specify the type of the entries of the matrix,
 by default is inferred from `K` using `eltype(K)`.
-
-For best performance, you want to
-- permute the entries of the
 """
 function assemble_hmatrix(
     ::Type{T},
@@ -312,22 +313,6 @@ end
 
 function assemble_hmatrix(K::AbstractMatrix, args...; kwargs...)
     return assemble_hmatrix(eltype(K), K, args...; kwargs...)
-end
-
-function assemble_hmatrix(
-    K::AbstractKernelMatrix;
-    atol = 0,
-    rank = typemax(Int),
-    rtol = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
-    kwargs...,
-)
-    comp = PartialACA(; rtol, atol, rank)
-    adm = StrongAdmissibilityStd()
-    X = rowelements(K)
-    Y = colelements(K)
-    Xclt = ClusterTree(X)
-    Yclt = ClusterTree(Y)
-    return assemble_hmatrix(K, Xclt, Yclt; adm, comp, kwargs...)
 end
 
 """
