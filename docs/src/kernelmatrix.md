@@ -9,8 +9,9 @@ The [`AbstractKernelMatrix`](@ref) interface is used to represent matrices `K` w
 `i,j` entry given by `f(X[i],Y[j])`, where `X=rowelements(K)` and
 `Y=colelements(K)`. The row and columns elements may be as simple as points in
 $\mathbb{R}^d$ (as is the case for Nyström methods), but they can also be more
-complex objects such as triangles or basis functions --- the only thing required is
-that `f(X[i],Y[j])` make sense. 
+complex objects such as triangles or basis functions. In such cases, it is
+required that `center(X[i])` and `center(Y[j])` return a point as an `SVector`,
+and that `f(X[i],Y[j])` make sense.
 
 A concrete implementation of `AbstractKernelMatrix` is provided by the
 `KernelMatrix` type. Creating the matrix associated with the Helmholtz
@@ -36,12 +37,40 @@ H = assemble_hmatrix(K;rtol=1e-6)
 ```
 
 It is worth noting that several *default* choices are made during the
-compression above. See the [Assembling and `HMatrix`](@ref
+compression above. See the [Assembling an `HMatrix`](@ref
 assemble-generic-subsection) section or the documentation of
-[`assemble_hmatrix`](@ref) for information on how to obtain a more granular control
-of the assembling stage.
+[`assemble_hmatrix`](@ref) for information on how to obtain a more granular
+control of the assembling stage.
 
 As before, you can multiply `H` by a vector, or do an `lu` factorization of it.
+
+Finally, here is a somewhat contrived example of how to use a `KernelMatrix`
+when the `rowelements` and `colelements` are not simply points (as required e.g.
+in a Galerkin discretization of boundary integral equations):
+
+```@example galerkin-kernel
+using HMatrices, LinearAlgebra, StaticArrays
+# create a simple structure to represent a segment
+struct Segment
+    start::SVector{2,Float64}
+    stop::SVector{2,Float64}
+end
+# extend the function center to work with segments
+HMatrices.center(s::Segment) = 0.5*(s.start + s.stop)
+# P1 mesh of a circle
+npts = 10_000
+nodes = [SVector(cos(s), sin(s)) for s in range(0,stop=2π,length=npts+1)]
+segments = [Segment(nodes[i],nodes[i+1]) for i in 1:npts]
+# Now define a kernel function that takes two segments (instead of two points) and returns a scalar
+function G(target::Segment,source::Segment) 
+    x, y = HMatrices.center(target), HMatrices.center(source)
+    d = norm(x-y)
+    return -log(d + 1e-10)
+end
+K = KernelMatrix(G,segments,segments)
+# compress the kernel matrix
+H = assemble_hmatrix(K;rtol=1e-6)
+```
 
 ## Support for tensor kernels
 
@@ -53,7 +82,8 @@ For vector-valued partial differential equations such as *Stokes* or
 time-harmonic *Maxwell's* equation, the underlying integral operator has a
 kernel function which is a tensor. This package currently provides some limited
 support for these types of operators. The example below illustrates how to build
-an [`HMatrix`](@ref) representing a [`KernelMatrix`](@ref) corresponding to Stokes Greens function for points on a sphere:
+an [`HMatrix`](@ref) representing a [`KernelMatrix`](@ref) corresponding to
+Stokes Greens function for points on a sphere:
 
 ```@example stokes
 using HMatrices, LinearAlgebra, StaticArrays

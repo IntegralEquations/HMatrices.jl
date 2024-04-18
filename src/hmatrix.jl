@@ -260,8 +260,12 @@ end
 @deprecate assemble_hmat assemble_hmatrix
 
 """
-    assemble_hmatrix([T,], K,rowtree,coltree;adm=StrongAdmissibilityStd(),comp=PartialACA(),threads=true,distributed=false,global_index=true)
-    assemble_hmatrix([T,], K::KernelMatrix;threads=true,distributed=false,global_index=true,[rtol],[atol],[rank])
+    assemble_hmatrix([T,], K, rowtree, coltree;
+        adm=StrongAdmissibilityStd(),
+        comp=PartialACA(),
+        threads=true,
+        distributed=false,
+        global_index=true)
 
 Main routine for assembling a hierarchical matrix. The argument `K` represents
 the matrix to be approximated, `rowtree` and `coltree` are tree structure
@@ -276,9 +280,6 @@ of `K[irange,jrange]` in the form of an [`RkMatrix`](@ref).
 
 The type paramter `T` is used to specify the type of the entries of the matrix,
 by default is inferred from `K` using `eltype(K)`.
-
-For best performance, you want to
-- permute the entries of the
 """
 function assemble_hmatrix(
     ::Type{T},
@@ -300,35 +301,18 @@ function assemble_hmatrix(
         global_index && (K = PermutedMatrix(K, loc2glob(rowtree), loc2glob(coltree)))
         # now assemble the data in the blocks
         if threads
-            bufs = [
-                (VectorOfVectors(T, 0), VectorOfVectors(T, 0)) for _ in 1:Threads.nthreads()
-            ]
-            _assemble_threads!(hmat, K, comp, bufs)
+            # channel holding buffers for ACA
+            chn = Channel{ACABuffer{T}}(Threads.nthreads())
+            foreach(i -> put!(chn, ACABuffer(T)), 1:Threads.nthreads())
+            _assemble_threads!(hmat, K, comp, chn)
         else
-            bufs = (VectorOfVectors(T, 0), VectorOfVectors(T, 0))
-            _assemble_cpu!(hmat, K, comp, bufs)
+            _assemble_cpu!(hmat, K, comp, ACABuffer(T))
         end
     end
 end
 
 function assemble_hmatrix(K::AbstractMatrix, args...; kwargs...)
     return assemble_hmatrix(eltype(K), K, args...; kwargs...)
-end
-
-function assemble_hmatrix(
-    K::AbstractKernelMatrix;
-    atol = 0,
-    rank = typemax(Int),
-    rtol = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
-    kwargs...,
-)
-    comp = PartialACA(; rtol, atol, rank)
-    adm = StrongAdmissibilityStd()
-    X = rowelements(K)
-    Y = colelements(K)
-    Xclt = ClusterTree(X)
-    Yclt = ClusterTree(Y)
-    return assemble_hmatrix(K, Xclt, Yclt; adm, comp, kwargs...)
 end
 
 """
@@ -407,11 +391,7 @@ that the threads are spanwned using `Threads.@spawn`, which means they are
 spawned on the same worker as the caller.
 """
 function _assemble_threads!(hmat, K, comp, bufs)
-    # FIXME: ideally something like `omp for schedule(guided)` should be used here
-    # to avoid spawning too many (small) tasks. In the absece of such scheduling
-    # strategy in julia at the moment (v1.6), we resort to manually limiting the size
-    # of the tasks by directly calling the serial method for blocks which are
-    # smaller than a given length (1000^2 here).
+    # manually control the granularity of the tasks which are spawned
     blocks = filter_tree(hmat, true) do x
         return (isleaf(x) || length(x) < 1000 * 1000)
     end
@@ -419,9 +399,9 @@ function _assemble_threads!(hmat, K, comp, bufs)
     n = length(blocks)
     @sync for i in 1:n
         Threads.@spawn begin
-            tid = Threads.threadid()
-            _assemble_cpu!(blocks[i], K, comp, bufs[tid])
-            tid == Threads.threadid() || (@warn "thread id changed!")
+            buf = take!(bufs)
+            _assemble_cpu!(blocks[i], K, comp, buf)
+            put!(bufs, buf)
         end
     end
     return hmat
