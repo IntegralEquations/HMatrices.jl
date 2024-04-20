@@ -49,7 +49,7 @@ function LinearAlgebra.ldiv!(
     bufs = nothing,
 )
     H = parent(L)
-    @assert isclean(H)
+    @debug (isclean(H) || error("HMatrix is dirty"))
     if isleaf(X)
         d = data(X)
         ldiv!(L, d)

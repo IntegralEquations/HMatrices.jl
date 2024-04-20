@@ -143,11 +143,6 @@ Base.parent(H::HMatrix) = H.parent
 isleaf(H::HMatrix) = isempty(children(H))
 isroot(H::HMatrix) = parent(H) === H
 
-# interface to AbstractTrees. No children is determined by an empty tuple for
-# AbstractTrees.
-AbstractTrees.children(t::HMatrix) = isleaf(t) ? () : t.children
-AbstractTrees.nodetype(t::HMatrix) = typeof(t)
-
 rowrange(H::HMatrix) = index_range(H.rowtree)
 colrange(H::HMatrix) = index_range(H.coltree)
 rowperm(H::HMatrix) = loc2glob(rowtree(H))
@@ -183,7 +178,7 @@ The number of entries stored in the representation. Note that this is *not*
 """
 function num_stored_elements(H::HMatrix)
     ns = 0 # stored entries
-    for block in AbstractTrees.Leaves(H)
+    for block in leaves(H)
         data = block.data
         ns += num_stored_elements(data)
     end
@@ -201,15 +196,15 @@ end
 Base.show(io::IO, ::MIME"text/plain", hmat::HMatrix) = show(io, hmat)
 
 function _show(io, hmat)
-    nodes = collect(AbstractTrees.PreOrderDFS(hmat))
-    @printf io "\n\t number of nodes in tree: %i" length(nodes)
-    leaves = collect(AbstractTrees.Leaves(hmat))
-    sparse_leaves = filter(isadmissible, leaves)
-    dense_leaves = filter(!isadmissible, leaves)
+    nodes_ = nodes(hmat)
+    @printf io "\n\t number of nodes in tree: %i" length(nodes_)
+    leaves_ = leaves(hmat)
+    sparse_leaves = filter(isadmissible, leaves_)
+    dense_leaves = filter(!isadmissible, leaves_)
     @printf(
         io,
         "\n\t number of leaves: %i (%i admissible + %i full)",
-        length(leaves),
+        length(leaves_),
         length(sparse_leaves),
         length(dense_leaves)
     )
@@ -221,10 +216,10 @@ function _show(io, hmat)
         isempty(dense_leaves) ? (-1, -1) : extrema(x -> length(x.data), dense_leaves)
     @printf(io, "\n\t min length of dense blocks : %i", dense_min)
     @printf(io, "\n\t max length of dense blocks : %i", dense_max)
-    points_per_leaf = map(length, leaves)
+    points_per_leaf = map(length, leaves_)
     @printf(io, "\n\t min number of elements per leaf: %i", minimum(points_per_leaf))
     @printf(io, "\n\t max number of elements per leaf: %i", maximum(points_per_leaf))
-    depth_per_leaf = map(depth, leaves)
+    depth_per_leaf = map(depth, leaves_)
     @printf(io, "\n\t depth of tree: %i", maximum(depth_per_leaf))
     @printf(io, "\n\t compression ratio: %f\n", compression_ratio(hmat))
     return io
@@ -242,7 +237,7 @@ Base.Matrix(hmat::HMatrix; global_index = true) = Matrix{eltype(hmat)}(hmat; glo
 function Base.Matrix{T}(hmat::HMatrix; global_index) where {T}
     M = zeros(T, size(hmat)...)
     piv = pivot(hmat)
-    for block in AbstractTrees.PreOrderDFS(hmat)
+    for block in nodes(hmat)
         hasdata(block) || continue
         irange = rowrange(block) .- piv[1] .+ 1
         jrange = colrange(block) .- piv[2] .+ 1
@@ -490,7 +485,7 @@ intermediate stages of a computation data may be associated with non-leaf nodes
 for convenience.
 """
 function isclean(H::HMatrix)
-    for node in AbstractTrees.PreOrderDFS(H)
+    for node in nodes(H)
         if isleaf(node)
             if !hasdata(node)
                 @warn "leaf node without data found"
@@ -522,7 +517,7 @@ end
 
 function compress!(H::HMatrix, comp)
     @assert isclean(H)
-    for leaf in AbstractTrees.Leaves(H)
+    for leaf in leaves(H)
         d = data(leaf)
         if d isa RkMatrix
             compress!(d, comp)
@@ -542,7 +537,7 @@ end
     seriestype := :shape
     linecolor --> :black
     # all leaves
-    for block in AbstractTrees.Leaves(hmat)
+    for block in leaves(hmat)
         @series begin
             if isadmissible(block)
                 fillcolor --> :blue
@@ -575,17 +570,17 @@ function hilbert_partition(H::HMatrix, np = Threads.nthreads(), cost = _cost_gem
     N = max(m, n)
     N = nextpow(2, N)
     # sort the leaves by their hilbert index
-    leaves = collect(AbstractTrees.Leaves(H))
-    hilbert_indices = map(leaves) do leaf
+    leaves_ = leaves(H)
+    hilbert_indices = map(leaves_) do leaf
         # use the center of the leaf as a cartesian index
         i, j = pivot(leaf) .- 1 .+ size(leaf) .÷ 2
         return hilbert_cartesian_to_linear(N, i, j)
     end
     p = sortperm(hilbert_indices)
-    permute!(leaves, p)
+    permute!(leaves_, p)
     # now compute a quasi-optimal partition of leaves based `cost_mv`
-    cmax = find_optimal_cost(leaves, np, cost, 1)
-    return build_sequence_partition(leaves, np, cost, cmax)
+    cmax = find_optimal_cost(leaves_, np, cost, 1)
+    return build_sequence_partition(leaves_, np, cost, cmax)
 end
 
 """
@@ -596,17 +591,17 @@ Similar to [`hilbert_partition`](@ref), but attempts to partition the leaves of
 """
 function row_partition(H::HMatrix, np = Threads.nthreads(), cost = _cost_gemv)
     # sort the leaves by their row index
-    leaves = filter_tree(x -> isleaf(x), H)
-    row_indices = map(leaves) do leaf
+    l = leaves(H)
+    row_indices = map(l) do leaf
         # use the center of the leaf as a cartesian index
         i, j = pivot(leaf)
         return i
     end
     p = sortperm(row_indices)
-    permute!(leaves, p)
+    permute!(l, p)
     # now compute a quasi-optimal partition of leaves based `cost_mv`
-    cmax = find_optimal_cost(leaves, np, cost, 1)
-    return build_sequence_partition(leaves, np, cost, cmax)
+    cmax = find_optimal_cost(l, np, cost, 1)
+    return build_sequence_partition(l, np, cost, cmax)
 end
 
 """
@@ -617,17 +612,17 @@ Similar to [`hilbert_partition`](@ref), but attempts to partition the leaves of
 """
 function col_partition(H::HMatrix, np = Threads.nthreads(), cost = _cost_gemv)
     # sort the leaves by their row index
-    leaves = filter_tree(x -> isleaf(x), H)
-    row_indices = map(leaves) do leaf
+    l = leaves(H)
+    row_indices = map(l) do leaf
         # use the center of the leaf as a cartesian index
         i, j = pivot(leaf)
         return j
     end
     p = sortperm(row_indices)
-    permute!(leaves, p)
+    permute!(l, p)
     # now compute a quasi-optimal partition of leaves based `cost_mv`
-    cmax = find_optimal_cost(leaves, np, cost, 1)
-    return build_sequence_partition(leaves, np, cost, cmax)
+    cmax = find_optimal_cost(l, np, cost, 1)
+    return build_sequence_partition(l, np, cost, cmax)
 end
 
 function partition!(s::Symbol, H::HMatrix, np = Threads.nthreads(), cost = _cost_gemv)

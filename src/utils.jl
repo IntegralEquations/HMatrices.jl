@@ -130,6 +130,26 @@ function filter_tree!(f, nodes, tree, isterminal = true)
 end
 
 """
+    leaves(tree)
+
+Return a vector containing all the leaf nodes of `tree`.
+"""
+function leaves(tree)
+    isterminal = true
+    return filter_tree(isleaf, tree, isterminal)
+end
+
+"""
+    leaves(tree)
+
+Return a vector containing all the nodes of `tree`.
+"""
+function nodes(tree)
+    isterminal = false
+    return filter_tree(x->true, tree, isterminal)
+end
+
+"""
     depth(tree,acc=0)
 
 Recursive function to compute the depth of `node` in a a tree-like structure.

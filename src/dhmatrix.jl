@@ -117,11 +117,11 @@ function Base.show(io::IO, ::MIME"text/plain", hmat::DHMatrix)
         io,
         "Distributed HMatrix of $(eltype(hmat)) with range $(rowrange(hmat)) × $(colrange(hmat))",
     )
-    nodes = collect(AbstractTrees.PreOrderDFS(hmat))
-    println(io, "\t number of nodes in tree: $(length(nodes))")
-    leaves = collect(AbstractTrees.Leaves(hmat))
-    @printf(io, "\t number of leaves: %i\n", length(leaves))
-    for (i, leaf) in enumerate(leaves)
+    nodes_ = nodes(hmat)
+    println(io, "\t number of nodes in tree: $(length(nodes_))")
+    leaves_ = leaves(hmat)
+    @printf(io, "\t number of leaves: %i\n", length(leaves_))
+    for (i, leaf) in enumerate(leaves_)
         r = leaf.data.future
         pid = r.where
         irange, jrange = @fetchfrom pid rowrange(fetch(r)), colrange(fetch(r))
@@ -149,9 +149,9 @@ function _assemble_hmat_distributed(
     T = eltype(K)
     wids = workers()
     root = DHMatrix{T}(rtree, ctree; partition_strategy = :distribute_columns)
-    leaves = collect(AbstractTrees.Leaves(root))
-    @info "Assembling distributed HMatrix on $(length(leaves)) processes"
-    @sync for (k, leaf) in enumerate(leaves)
+    leaves_ = leaves(root)
+    @info "Assembling distributed HMatrix on $(length(leaves_)) processes"
+    @sync for (k, leaf) in enumerate(leaves_)
         pid = wids[k] # id of k-th worker
         r = @spawnat pid assemble_hmatrix(
             K,
@@ -222,7 +222,7 @@ function LinearAlgebra.mul!(
 end
 
 function isclean(H::DHMatrix)
-    for node in AbstractTrees.PreOrderDFS(H)
+    for node in nodes(H)
         if isleaf(node)
             if !hasdata(node)
                 @warn "leaf node without data found"
