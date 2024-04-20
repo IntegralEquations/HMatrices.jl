@@ -296,10 +296,7 @@ function assemble_hmatrix(
         global_index && (K = PermutedMatrix(K, loc2glob(rowtree), loc2glob(coltree)))
         # now assemble the data in the blocks
         if threads
-            # channel holding buffers for ACA
-            chn = Channel{ACABuffer{T}}(Threads.nthreads())
-            foreach(i -> put!(chn, ACABuffer(T)), 1:Threads.nthreads())
-            _assemble_threads!(hmat, K, comp, chn)
+            _assemble_threads!(hmat, K, comp)
         else
             _assemble_cpu!(hmat, K, comp, ACABuffer(T))
         end
@@ -364,11 +361,7 @@ already been intialized, and therefore should not be called directly. See
 """
 function _assemble_cpu!(hmat, K, comp, bufs)
     if isleaf(hmat) # base case
-        if isadmissible(hmat)
-            _assemble_sparse_block!(hmat, K, comp, bufs)
-        else
-            _assemble_dense_block!(hmat, K)
-        end
+        _process_leaf!(hmat, K, comp, bufs)
     else
         # recurse on children
         for child in hmat.children
@@ -378,6 +371,14 @@ function _assemble_cpu!(hmat, K, comp, bufs)
     return hmat
 end
 
+function _process_leaf!(leaf, K, comp, bufs)
+    if isadmissible(leaf)
+        _assemble_sparse_block!(leaf, K, comp, bufs)
+    else
+        _assemble_dense_block!(leaf, K)
+    end
+end
+
 """
     _assemble_threads!(hmat::HMatrix,K,comp)
 
@@ -385,18 +386,21 @@ Like [`_assemble_cpu!`](@ref), but uses threads to assemble the leaves. Note
 that the threads are spanwned using `Threads.@spawn`, which means they are
 spawned on the same worker as the caller.
 """
-function _assemble_threads!(hmat, K, comp, bufs)
-    # manually control the granularity of the tasks which are spawned
-    blocks = filter_tree(hmat, true) do x
-        return (isleaf(x) || length(x) < 1000 * 1000)
-    end
-    sort!(blocks; lt = (x, y) -> length(x) < length(y), rev = true)
-    n = length(blocks)
-    @sync for i in 1:n
+function _assemble_threads!(hmat, K, comp)
+    c = leaves(hmat)
+    lck = Threads.SpinLock()
+    # spawn np workers to assemble the leaves in parallel
+    np = Threads.nthreads()
+    @sync for _ in 1:np
         Threads.@spawn begin
-            buf = take!(bufs)
-            _assemble_cpu!(blocks[i], K, comp, buf)
-            put!(bufs, buf)
+            buf = ACABuffer(eltype(hmat))
+            while true
+                leaf = @lock lck begin
+                    isempty(c) && break
+                    pop!(c)
+                end
+                _process_leaf!(leaf, K, comp, buf)
+            end
         end
     end
     return hmat
