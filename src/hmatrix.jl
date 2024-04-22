@@ -190,17 +190,18 @@ num_stored_elements(M::Matrix) = length(M)
 function Base.show(io::IO, hmat::HMatrix)
     isclean(hmat) || return print(io, "Dirty HMatrix")
     print(io, "HMatrix of $(eltype(hmat)) with range $(rowrange(hmat)) × $(colrange(hmat))")
-    _show(io, hmat)
+    _show(io, hmat, false)
     return io
 end
 Base.show(io::IO, ::MIME"text/plain", hmat::HMatrix) = show(io, hmat)
 
-function _show(io, hmat)
+function _show(io, hmat, allow_empty = false)
     nodes_ = nodes(hmat)
     @printf io "\n\t number of nodes in tree: %i" length(nodes_)
-    leaves_ = leaves(hmat)
-    sparse_leaves = filter(isadmissible, leaves_)
-    dense_leaves = filter(!isadmissible, leaves_)
+    # filter empty leaves
+    leaves_ = allow_empty ? filter(x->!isnothing(data(x)), leaves(hmat)) : leaves(hmat)
+    sparse_leaves = filter(x->isadmissible(x), leaves_)
+    dense_leaves  = filter(!isadmissible, leaves_)
     @printf(
         io,
         "\n\t number of leaves: %i (%i admissible + %i full)",
