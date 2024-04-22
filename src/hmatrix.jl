@@ -165,8 +165,8 @@ The ratio of the uncompressed size of `H` to its compressed size. A
 store `H` as a dense matrix.
 """
 function compression_ratio(H::HMatrix)
-    ns = num_stored_elements(H)
-    nr = length(H) # represented entries
+    ns = Base.summarysize(H) # size in bytes
+    nr = length(H) *  sizeof(eltype(H))# represented entries
     return nr / ns
 end
 
