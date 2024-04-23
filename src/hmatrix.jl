@@ -14,20 +14,6 @@ function Base.getindex(::AbstractHMatrix, args...)
 end
 
 """
-    struct Partition{T}
-
-A partition of the leaves of an `HMatrix`. Used to perform threaded hierarchical
-multiplication.
-"""
-struct Partition{T}
-    root::T
-    nodes::Vector{Vector{T}}
-    tag::Symbol
-end
-
-nodes(p::Partition) = p.nodes
-
-"""
     mutable struct HMatrix{R,T} <: AbstractHMatrix{T}
 
 A hierarchial matrix constructed from a `rowtree` and `coltree` of type `R` and
@@ -40,7 +26,6 @@ mutable struct HMatrix{R,T} <: AbstractHMatrix{T}
     data::Union{Matrix{T},RkMatrix{T},Nothing}
     children::Matrix{HMatrix{R,T}}
     parent::HMatrix{R,T}
-    partition::Union{Nothing,Partition{HMatrix{R,T}}}
     # inner constructor which handles `nothing` fields.
     function HMatrix{R,T}(rowtree, coltree, adm, data, children, parent) where {R,T}
         if data !== nothing
@@ -49,7 +34,6 @@ mutable struct HMatrix{R,T} <: AbstractHMatrix{T}
         hmat = new{R,T}(rowtree, coltree, adm, data)
         hmat.children = isnothing(children) ? Matrix{HMatrix{R,T}}(undef, 0, 0) : children
         hmat.parent = isnothing(parent) ? hmat : parent
-        hmat.partition = nothing
         return hmat
     end
 end
@@ -61,14 +45,11 @@ data(H::HMatrix) = H.data
 setdata!(H::HMatrix, d) = setfield!(H, :data, d)
 rowtree(H::HMatrix) = H.rowtree
 coltree(H::HMatrix) = H.coltree
-partition(H::HMatrix) = H.partition
-haspartition(H::HMatrix) = !isnothing(H.partition)
-partition_nodes(H::HMatrix) = partition(H) |> nodes
 
 cluster_type(::HMatrix{R,T}) where {R,T} = R
 
 # getcol for regular matrices
-function getcol!(col, M::Matrix, j)
+function getcol!(col, M::Base.Matrix, j)
     @assert length(col) == size(M, 1)
     return copyto!(col, view(M, :, j))
 end
@@ -77,7 +58,7 @@ function getcol!(col, adjM::Adjoint{<:Any,<:Matrix}, j)
     return copyto!(col, view(adjM, :, j))
 end
 
-getcol(M::Matrix, j) = M[:, j]
+getcol(M::Base.Matrix, j) = M[:, j]
 getcol(adjM::Adjoint{<:Any,<:Matrix}, j) = adjM[:, j]
 
 function getcol(H::HMatrix, j::Int)
@@ -185,7 +166,7 @@ function num_stored_elements(H::HMatrix)
     return ns
 end
 
-num_stored_elements(M::Matrix) = length(M)
+num_stored_elements(M::Base.Matrix) = length(M)
 
 function Base.show(io::IO, hmat::HMatrix)
     isclean(hmat) || return print(io, "Dirty HMatrix")
@@ -292,7 +273,15 @@ function assemble_hmatrix(
         _assemble_hmat_distributed(K, rowtree, coltree; adm, comp, global_index, threads)
     else
         # create first the structure. No parellelism used as this should be light.
-        hmat = HMatrix{T}(rowtree, coltree, adm)
+        hmat_ = HMatrix{T}(rowtree, coltree, adm)
+        # wrap hmat in a Hermitian or Symmetric if needed
+        hmat = if K isa Hermitian
+            Hermitian(hmat_)
+        elseif K isa Symmetric
+            Symmetric(hmat_)
+        else
+            hmat_
+        end
         # if needed permute kernel entries into indexing induced by trees
         global_index && (K = PermutedMatrix(K, loc2glob(rowtree), loc2glob(coltree)))
         # now assemble the data in the blocks
@@ -365,7 +354,7 @@ function _assemble_cpu!(hmat, K, comp, bufs)
         _process_leaf!(hmat, K, comp, bufs)
     else
         # recurse on children
-        for child in hmat.children
+        for child in children(hmat)
             _assemble_cpu!(child, K, comp, bufs)
         end
     end
@@ -373,10 +362,20 @@ function _assemble_cpu!(hmat, K, comp, bufs)
 end
 
 function _process_leaf!(leaf, K, comp, bufs)
-    if isadmissible(leaf)
-        _assemble_sparse_block!(leaf, K, comp, bufs)
+    # for symmetric and hermitian, the upper trianglar stores the data
+    (leaf isa Adjoint || leaf isa Transpose) && (return leaf)
+    H = if leaf isa Hermitian || leaf isa Symmetric
+        parent(leaf) # the underlying HMatrix
+    elseif leaf isa HMatrix
+        leaf
     else
-        _assemble_dense_block!(leaf, K)
+        throw(ArgumentError("Invalid leaf type: $(typeof(leaf))"))
+    end
+    #
+    if isadmissible(H)
+        _assemble_sparse_block!(H, K, comp, bufs)
+    else
+        _assemble_dense_block!(H, K)
     end
 end
 
@@ -389,18 +388,16 @@ spawned on the same worker as the caller.
 """
 function _assemble_threads!(hmat, K, comp)
     c = leaves(hmat)
-    lck = Threads.SpinLock()
+    acc = Threads.Atomic{Int}(1)
     # spawn np workers to assemble the leaves in parallel
     np = Threads.nthreads()
     @sync for _ in 1:np
         Threads.@spawn begin
             buf = ACABuffer(eltype(hmat))
             while true
-                leaf = @lock lck begin
-                    isempty(c) && break
-                    pop!(c)
-                end
-                _process_leaf!(leaf, K, comp, buf)
+                i = Threads.atomic_add!(acc, 1)
+                i > length(c) && break
+                _process_leaf!(c[i], K, comp, buf)
             end
         end
     end
@@ -433,8 +430,6 @@ isleaf(adjH::Adjoint{<:Any,<:HMatrix}) = isleaf(adjH.parent)
 rowperm(adjH::Adjoint{<:Any,<:HMatrix}) = colperm(adjH.parent)
 colperm(adjH::Adjoint{<:Any,<:HMatrix}) = rowperm(adjH.parent)
 Base.size(adjH::Adjoint{<:Any,<:HMatrix}) = reverse(size(adjH.parent))
-haspartition(adjH::Adjoint{<:Any,<:HMatrix}) = haspartition(adjH.parent)
-partition_nodes(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(partition_nodes(adjH.parent))
 
 function Base.show(io::IO, adjH::Adjoint{<:Any,<:HMatrix})
     hmat = parent(adjH)
@@ -443,10 +438,48 @@ function Base.show(io::IO, adjH::Adjoint{<:Any,<:HMatrix})
         io,
         "Adjoint HMatrix of $(eltype(hmat)) with range $(rowrange(adjH)) × $(colrange(adjH))",
     )
-    _show(io, hmat)
+    _show(io, hmat, false)
     return io
 end
 Base.show(io::IO, ::MIME"text/plain", adjH::Adjoint{<:Any,<:HMatrix}) = show(io, adjH)
+
+# operations on hermitian
+hasdata(hermH::Hermitian{<:Any,<:HMatrix})         = hasdata(hermH |> parent)
+data(hermH::Hermitian{<:Any,<:HMatrix})            = data(hermH |> parent)
+pivot(hermH::Hermitian{<:Any,<:HMatrix})           = hermH |> parent |> pivot
+rowperm(hermH::Hermitian{<:Any,<:HMatrix})         = hermH |> parent |> rowperm
+colperm(hermH::Hermitian{<:Any,<:HMatrix})         = hermH |> parent |> colperm
+isleaf(hermH::Hermitian{<:Any,<:HMatrix})          = isleaf(parent(hermH))
+rowrange(hermH::Hermitian{<:Any,<:HMatrix})        = hermH |> parent |> rowrange
+colrange(hermH::Hermitian{<:Any,<:HMatrix})        = hermH |> parent |> colrange
+Base.size(hermH::Hermitian{<:Any,<:HMatrix})       = hermH |> parent |> size
+isadmissible(hermH::Hermitian) = isadmissible(hermH |> parent)
+
+function children(hermH::Hermitian{<:Any,<:HMatrix})
+    par_chd = hermH |> parent |> children
+    return [children(hermH, i, j) for i in 1:size(par_chd, 1), j in 1:size(par_chd, 2)]
+end
+function children(hermH::Hermitian{<:Any,<:HMatrix}, i, j)
+    par_chd = hermH |> parent |> children
+    if i == j
+        return Hermitian(par_chd[i, j])
+    elseif i < j
+        return par_chd[i, j]
+    else
+        return adjoint(par_chd[j, i])
+    end
+end
+
+function Base.show(io::IO, hermH::Hermitian{<:Any,<:HMatrix})
+    hmat = parent(hermH)
+    print(
+        io,
+        "Hermitian HMatrix of $(eltype(hmat)) with range $(rowrange(hmat)) × $(colrange(hmat))",
+    )
+    _show(io, hmat, true)
+    return io
+end
+Base.show(io::IO, ::MIME"text/plain", hermH::Hermitian{<:Any,<:HMatrix}) = show(io, hermH)
 
 """
     struct StrongAdmissibilityStd
@@ -559,95 +592,6 @@ end
             [x1, x2, x2, x1, x1], [y1, y1, y2, y2, y1]
         end
     end
-end
-
-"""
-    hilbert_partition(H::HMatrix,np,cost)
-
-Partiotion the leaves of `H` into `np` sequences of approximate equal cost (as
-determined by the `cost` function) while also trying to maximize the locality of
-each partition.
-"""
-function hilbert_partition(H::HMatrix, np = Threads.nthreads(), cost = _cost_gemv)
-    # the hilbert curve will be indexed from (0,0) × (N-1,N-1), so set N to be
-    # the smallest power of two larger than max(m,n), where m,n = size(H)
-    m, n = size(H)
-    N = max(m, n)
-    N = nextpow(2, N)
-    # sort the leaves by their hilbert index
-    leaves_ = leaves(H)
-    hilbert_indices = map(leaves_) do leaf
-        # use the center of the leaf as a cartesian index
-        i, j = pivot(leaf) .- 1 .+ size(leaf) .÷ 2
-        return hilbert_cartesian_to_linear(N, i, j)
-    end
-    p = sortperm(hilbert_indices)
-    permute!(leaves_, p)
-    # now compute a quasi-optimal partition of leaves based `cost_mv`
-    cmax = find_optimal_cost(leaves_, np, cost, 1)
-    return build_sequence_partition(leaves_, np, cost, cmax)
-end
-
-"""
-    row_partition(H::HMatrix,np,cost)
-
-Similar to [`hilbert_partition`](@ref), but attempts to partition the leaves of
-`H` by row.
-"""
-function row_partition(H::HMatrix, np = Threads.nthreads(), cost = _cost_gemv)
-    # sort the leaves by their row index
-    l = leaves(H)
-    row_indices = map(l) do leaf
-        # use the center of the leaf as a cartesian index
-        i, j = pivot(leaf)
-        return i
-    end
-    p = sortperm(row_indices)
-    permute!(l, p)
-    # now compute a quasi-optimal partition of leaves based `cost_mv`
-    cmax = find_optimal_cost(l, np, cost, 1)
-    return build_sequence_partition(l, np, cost, cmax)
-end
-
-"""
-    col_partition(H::HMatrix,np,cost)
-
-Similar to [`hilbert_partition`](@ref), but attempts to partition the leaves of
-`H` by column.
-"""
-function col_partition(H::HMatrix, np = Threads.nthreads(), cost = _cost_gemv)
-    # sort the leaves by their row index
-    l = leaves(H)
-    row_indices = map(l) do leaf
-        # use the center of the leaf as a cartesian index
-        i, j = pivot(leaf)
-        return j
-    end
-    p = sortperm(row_indices)
-    permute!(l, p)
-    # now compute a quasi-optimal partition of leaves based `cost_mv`
-    cmax = find_optimal_cost(l, np, cost, 1)
-    return build_sequence_partition(l, np, cost, cmax)
-end
-
-function partition!(s::Symbol, H::HMatrix, np = Threads.nthreads(), cost = _cost_gemv)
-    p = if s == :hilbert
-        hilbert_partition(H, np, cost)
-    elseif s == :row
-        row_partition(H, np, cost)
-    elseif s == :col
-        col_partition(H, np, cost)
-    else
-        error("Unknown partitioning strategy: $s")
-    end
-    isnothing(H.partition) || (@warn "overwriting existing partition")
-    H.partition = Partition(H, p, s)
-    return H
-end
-
-function partition!(s::Symbol, adjH::Adjoint{<:Any,<:HMatrix}, args...)
-    partition!(s, parent(adjH), args...)
-    return adjH
 end
 
 # add a uniform scaling to an HMatrix return an HMatrix

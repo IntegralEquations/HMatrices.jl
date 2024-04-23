@@ -1,9 +1,5 @@
 using SafeTestsets
 
-@safetestset "Utils" begin
-    include("utils_test.jl")
-end
-
 @safetestset "HyperRectangle" begin
     include("hyperrectangle_test.jl")
 end

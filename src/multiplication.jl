@@ -391,20 +391,7 @@ function LinearAlgebra.mul!(
     # of and HMatrix
     offset = pivot(A) .- 1
     if threads
-        # if a partition of the leaves does not already exist, create one. By
-        # default a `hilbert_partition` is created
-        # TODO: test the various threaded implementations and chose one.
-        # Currently there are two main choices:
-        # 1. spawn a task per leaf, and let julia scheduler handle the tasks
-        # 2. create a static partition of the leaves and try to estimate the
-        #    cost, then spawn one task per block of the partition. In this case,
-        #    test if the hilbert partition is really faster than col_partition
-        #    or row_partition
-        #    Right now the hilbert partition is chosen by default without proper
-        #    testing.
-        haspartition(A) || (partition!(:hilbert, A))
-        _hgemv_static_partition!(y, x, partition_nodes(A), offset)
-        # _hgemv_threads!(y, x, nodes(A_part), offset)  # threaded implementation
+        _hgemv_threads!(y, x, leaves(A), offset)  # threaded implementation
     else
         _hgemv_recursive!(y, A, x, offset) # serial implementation
     end
@@ -459,47 +446,25 @@ function _hgemv_recursive!(
     return C
 end
 
-function _hgemv_threads!(C::AbstractVector, B::AbstractVector, partition, offset)
-    nt = Threads.nthreads()
-    # make `nt` copies of C and run in parallel
-    chn = Channel{typeof(C)}(nt)
-    foreach(i -> put!(chn, copy(C)), 1:nt)
-    @sync for p in partition
-        for block in p
-            Threads.@spawn begin
-                buf = take!(chn)
-                _hgemv_recursive!(buf, block, B, offset)
-                put!(chn, buf)
-            end
-        end
-    end
-    # reduce
-    close(chn)
-    for buf in chn
-        axpy!(1, buf, C)
-    end
-    return C
-end
-
-function _hgemv_static_partition!(C::AbstractVector, B::AbstractVector, partition, offset)
-    # create a lock for the reduction step
-    T = eltype(C)
-    mutex = ReentrantLock()
-    np = length(partition)
-    buffers = [zero(C) for _ in 1:np]
-    @sync for n in 1:np
+function _hgemv_threads!(C::AbstractVector, B::AbstractVector, leaves, offset)
+    acc = Threads.Atomic{Int}(1)
+    lck = ReentrantLock()
+    # spawn np workers to assemble the leaves in parallel
+    np = Threads.nthreads()
+    nl = length(leaves)
+    @sync for _ in 1:np
         Threads.@spawn begin
-            leaves = partition[n]
-            Cloc = buffers[n]
-            for leaf in leaves
+            buf = zero(C)
+            while true
+                i = Threads.atomic_add!(acc, 1)
+                i > nl && break
+                leaf = leaves[i]
                 irange = rowrange(leaf) .- offset[1]
                 jrange = colrange(leaf) .- offset[2]
-                mul!(view(Cloc, irange), data(leaf), view(B, jrange), 1, 1)
+                mul!(view(buf, irange), data(leaf), view(B, jrange), 1, 1)
             end
-            # reduction
-            lock(mutex) do
-                return axpy!(1, Cloc, C)
-            end
+            # add the local buffer to the global buffer
+            @lock lck axpy!(true, buf, C)
         end
     end
     return C
@@ -524,27 +489,4 @@ function LinearAlgebra.rmul!(H::HMatrix, b::Number)
         rmul!(child, b)
     end
     return H
-end
-
-"""
-    _cost_gemv(A::Union{Matrix,SubArray,Adjoint})
-
-A proxy for the computational cost of a matrix/vector product.
-"""
-function _cost_gemv(R::RkMatrix)
-    return rank(R) * sum(size(R))
-end
-function _cost_gemv(M::Matrix)
-    return length(M)
-end
-function _cost_gemv(H::HMatrix)
-    acc = 0.0
-    if isleaf(H)
-        acc += _cost_gemv(data(H))
-    else
-        for c in children(H)
-            acc += cost_gemv(c)
-        end
-    end
-    return acc
 end
