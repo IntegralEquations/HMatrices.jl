@@ -29,7 +29,7 @@ function Base.getindex(r::RemoteHMatrix, i::Int, j::Int)
 end
 
 """
-    mutable struct DHMatrix{R,T} <: AbstractHMatrix{T}
+    mutable struct DHMatrix{R,T} <: AbstractMatrix{T}
 
 Concrete type representing a hierarchical matrix with data distributed amongst
 various workers. Its structure is very similar to `HMatrix`, except that the
@@ -38,7 +38,7 @@ leaves store a [`RemoteHMatrix`](@ref) object.
 The `data` on the leaves of a `DHMatrix` may live on a different worker, so
 calling `fetch` on them should be avoided whenever possible.
 """
-mutable struct DHMatrix{R,T} <: AbstractHMatrix{T}
+mutable struct DHMatrix{R,T} <: AbstractMatrix{T}
     rowtree::R
     coltree::R
     # admissible:: Bool --> false

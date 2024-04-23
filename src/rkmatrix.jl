@@ -21,7 +21,7 @@ mutable struct RkMatrix{T} <: AbstractMatrix{T}
     end
 end
 
-function Base.setproperty!(R::RkMatrix, s::Symbol, mat::Matrix)
+function Base.setproperty!(R::RkMatrix, s::Symbol, mat::Base.Matrix)
     setfield!(R, s, mat)
     return R
 end

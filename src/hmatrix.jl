@@ -1,25 +1,10 @@
 """
-    abstract type AbstractHMatrix{T} <: AbstractMatrix{T}
-
-Abstract type for hierarchical matrices.
-"""
-abstract type AbstractHMatrix{T} <: AbstractMatrix{T} end
-
-function Base.getindex(::AbstractHMatrix, args...)
-    msg = """method `getindex(::AbstractHMatrix,args...)` has been disabled to
-    avoid performance pitfalls. Unless you made an explicit call to `getindex`,
-    this error usually means that a linear algebra routine involving an
-    `AbstractHMatrix` has fallen back to a generic implementation."""
-    return error(msg)
-end
-
-"""
-    mutable struct HMatrix{R,T} <: AbstractHMatrix{T}
+    mutable struct HMatrix{R,T} <: AbstractMatrix{T}
 
 A hierarchial matrix constructed from a `rowtree` and `coltree` of type `R` and
 holding elements of type `T`.
 """
-mutable struct HMatrix{R,T} <: AbstractHMatrix{T}
+mutable struct HMatrix{R,T} <: AbstractMatrix{T}
     rowtree::R
     coltree::R
     admissible::Bool
@@ -38,15 +23,21 @@ mutable struct HMatrix{R,T} <: AbstractHMatrix{T}
     end
 end
 
+function Base.getindex(::HMatrix, args...)
+    msg = """method `getindex(::HMatrix,args...)` has been disabled to
+    avoid performance pitfalls. Unless you made an explicit call to `getindex`,
+    this error usually means that a linear algebra routine involving an
+    `HMatrix` has fallen back to a generic implementation."""
+    return error(msg)
+end
+
 # setters and getters (defined for HMatrix)
 isadmissible(H::HMatrix) = H.admissible
-hasdata(H::HMatrix) = !isnothing(H.data)
-data(H::HMatrix) = H.data
-setdata!(H::HMatrix, d) = setfield!(H, :data, d)
-rowtree(H::HMatrix) = H.rowtree
-coltree(H::HMatrix) = H.coltree
-
-cluster_type(::HMatrix{R,T}) where {R,T} = R
+hasdata(H::HMatrix)      = !isnothing(H.data)
+data(H::HMatrix)         = H.data
+setdata!(H::HMatrix, d)  = setfield!(H, :data, d)
+rowtree(H::HMatrix)      = H.rowtree
+coltree(H::HMatrix)      = H.coltree
 
 # getcol for regular matrices
 function getcol!(col, M::Base.Matrix, j)
@@ -134,7 +125,7 @@ offset(H::HMatrix) = pivot(H) .- 1
 # Base.axes(H::HMatrix) = rowrange(H),colrange(H)
 Base.size(H::HMatrix) = length(rowrange(H)), length(colrange(H))
 
-function blocksize(H::HMatrix)
+function blocksize(H)
     return size(children(H))
 end
 
@@ -274,11 +265,9 @@ function assemble_hmatrix(
     else
         # create first the structure. No parellelism used as this should be light.
         hmat_ = HMatrix{T}(rowtree, coltree, adm)
-        # wrap hmat in a Hermitian or Symmetric if needed
+        # wrap hmat in a Hermitian if needed
         hmat = if K isa Hermitian
             Hermitian(hmat_)
-        elseif K isa Symmetric
-            Symmetric(hmat_)
         else
             hmat_
         end
@@ -362,9 +351,9 @@ function _assemble_cpu!(hmat, K, comp, bufs)
 end
 
 function _process_leaf!(leaf, K, comp, bufs)
-    # for symmetric and hermitian, the upper trianglar stores the data
+    # for hermitian, the upper trianglar stores the data
     (leaf isa Adjoint || leaf isa Transpose) && (return leaf)
-    H = if leaf isa Hermitian || leaf isa Symmetric
+    H = if leaf isa Hermitian
         parent(leaf) # the underlying HMatrix
     elseif leaf isa HMatrix
         leaf
