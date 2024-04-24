@@ -1,21 +1,29 @@
-const HUnitLowerTriangular = UnitLowerTriangular{<:Any,<:HMatrix}
-const HUpperTriangular = UpperTriangular{<:Any,<:HMatrix}
+const HLowerTriangular =
+    Union{UnitLowerTriangular{<:Any,<:HTypes},LowerTriangular{<:Any,<:HTypes}}
+const HUpperTriangular =
+    Union{UnitUpperTriangular{<:Any,<:HTypes},UpperTriangular{<:Any,<:HTypes}}
+
+# helper function to wrap into the correct triangular type
+_wraptriangular(d, ::UpperTriangular) = UpperTriangular(d)
+_wraptriangular(d, ::LowerTriangular) = LowerTriangular(d)
+_wraptriangular(d, ::UnitUpperTriangular) = UnitUpperTriangular(d)
+_wraptriangular(d, ::UnitLowerTriangular) = UnitLowerTriangular(d)
 
 function Base.show(io::IO, ::MIME"text/plain", U::HUpperTriangular)
     H = parent(U)
     return println(io, "Upper triangular part of $H")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", L::HUnitLowerTriangular)
+function Base.show(io::IO, ::MIME"text/plain", L::HLowerTriangular)
     H = parent(L)
-    return println(io, "Unit lower triangular part of $H")
+    return println(io, "Lower triangular part of $H")
 end
 
-function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, B::AbstractMatrix)
+function LinearAlgebra.ldiv!(L::HLowerTriangular, B::AbstractMatrix)
     H = parent(L)
     if isleaf(H)
         d = data(H)
-        ldiv!(UnitLowerTriangular(d), B) # B <-- L\B
+        ldiv!(_wraptriangular(d, L), B) # B <-- L\B
     else
         @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
         shift = pivot(H) .- 1
@@ -31,23 +39,18 @@ function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, B::AbstractMatrix)
                 _mul131!(bi, chdH[i, j], bj, -1)
             end
             # recursion stage
-            ldiv!(UnitLowerTriangular(chdH[i, i]), bi)
+            ldiv!(_wraptriangular(chdH[i, i], L), bi)
         end
     end
     return B
 end
 
-function LinearAlgebra.ldiv!(L::HUnitLowerTriangular, R::RkMatrix)
+function LinearAlgebra.ldiv!(L::HLowerTriangular, R::RkMatrix)
     ldiv!(L, R.A) # change R.A in-place
     return R
 end
 
-function LinearAlgebra.ldiv!(
-    L::HUnitLowerTriangular,
-    X::HMatrix,
-    compressor,
-    bufs = nothing,
-)
+function LinearAlgebra.ldiv!(L::HLowerTriangular, X::HMatrix, compressor, bufs = nothing)
     H = parent(L)
     @debug (isclean(H) || error("HMatrix is dirty"))
     if isleaf(X)
@@ -65,7 +68,7 @@ function LinearAlgebra.ldiv!(
                 for j in 1:(i-1)# j<i
                     hmul!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor, bufs)
                 end
-                ldiv!(UnitLowerTriangular(chdH[i, i]), chdX[i, k], compressor, bufs)
+                ldiv!(_wraptriangular(chdH[i, i], L), chdX[i, k], compressor, bufs)
             end
         end
     end
@@ -76,7 +79,7 @@ function LinearAlgebra.ldiv!(U::HUpperTriangular, B::AbstractMatrix)
     H = parent(U)
     if isleaf(H)
         d = data(H)
-        ldiv!(UpperTriangular(d), B) # B <-- L\B
+        ldiv!(_wraptriangular(d, U), B) # B <-- L\B
     else
         @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
         shift = pivot(H) .- 1
@@ -92,7 +95,7 @@ function LinearAlgebra.ldiv!(U::HUpperTriangular, B::AbstractMatrix)
                 _mul131!(bi, chdH[i, j], bj, -1)
             end
             # recursion stage
-            ldiv!(UpperTriangular(chdH[i, i]), bi)
+            ldiv!(_wraptriangular(chdH[i, i], U), bi)
         end
     end
     return B
@@ -103,7 +106,7 @@ function LinearAlgebra.rdiv!(B::StridedMatrix, U::HUpperTriangular)
     H = parent(U)
     if isleaf(H)
         d = data(H)
-        rdiv!(B, UpperTriangular(d)) # b <-- b/L
+        rdiv!(B, _wraptriangular(d, U)) # b <-- b/L
     else
         @assert !hasdata(H) "only leaves are allowed to have data when using `rdiv`!"
         shift = reverse(pivot(H) .- 1)
@@ -119,7 +122,7 @@ function LinearAlgebra.rdiv!(B::StridedMatrix, U::HUpperTriangular)
                 _mul113!(bi, bj, chdH[j, i], -1)
             end
             # recursion stage
-            rdiv!(bi, UpperTriangular(chdH[i, i]))
+            rdiv!(bi, _wraptriangular(chdH[i, i], U))
         end
     end
     return B
@@ -150,9 +153,61 @@ function LinearAlgebra.rdiv!(X::HMatrix, U::HUpperTriangular, compressor, bufs =
                 for j in 1:(i-1)
                     hmul!(chdX[k, i], chdX[k, j], chdH[j, i], -1, 1, compressor, bufs)
                 end
-                rdiv!(chdX[k, i], UpperTriangular(chdH[i, i]), compressor, bufs)
+                rdiv!(chdX[k, i], _wraptriangular(chdH[i, i], U), compressor, bufs)
             end
         end
     end
     return X
+end
+
+function LinearAlgebra.ldiv!(L::HLowerTriangular, y::AbstractVector)
+    H = parent(L)
+    if isleaf(H)
+        d = data(H)
+        ldiv!(_wraptriangular(d, L), y) # B <-- L\B
+    else
+        @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
+        shift = pivot(H) .- 1
+        chdH = children(H)
+        m, n = size(chdH)
+        @assert m === n
+        for i in 1:m
+            irows = colrange(chdH[i, i]) .- shift[2]
+            bi = view(y, irows)
+            for j in 1:(i-1)# j<i
+                jrows = colrange(chdH[i, j]) .- shift[2]
+                bj = view(y, jrows)
+                _mul131!(bi, chdH[i, j], bj, -1)
+            end
+            # recursion stage
+            ldiv!(_wraptriangular(chdH[i, i], L), bi)
+        end
+    end
+    return y
+end
+
+function LinearAlgebra.ldiv!(U::HUpperTriangular, y::AbstractVector)
+    H = parent(U)
+    if isleaf(H)
+        d = data(H)
+        ldiv!(_wraptriangular(d, U), y) # B <-- L\B
+    else
+        @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
+        shift = pivot(H) .- 1
+        chdH = children(H)
+        m, n = size(chdH)
+        @assert m === n
+        for i in m:-1:1
+            irows = colrange(chdH[i, i]) .- shift[2]
+            bi = view(y, irows)
+            for j in (i+1):n # j>i
+                jrows = colrange(chdH[i, j]) .- shift[2]
+                bj = view(y, jrows)
+                _mul131!(bi, chdH[i, j], bj, -1)
+            end
+            # recursion stage
+            ldiv!(_wraptriangular(chdH[i, i], U), bi)
+        end
+    end
+    return y
 end
