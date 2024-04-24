@@ -44,12 +44,12 @@ mutable struct DHMatrix{R,T} <: AbstractMatrix{T}
     # admissible:: Bool --> false
     data::Union{RemoteHMatrix{R,T},Nothing}
     children::Matrix{DHMatrix{R,T}}
-    parent::DHMatrix{R,T}
+    parentnode::DHMatrix{R,T}
     # inner constructor which handles `nothing` fields.
-    function DHMatrix{R,T}(rowtree, coltree, data, children, parent) where {R,T}
+    function DHMatrix{R,T}(rowtree, coltree, data, children, parentnode) where {R,T}
         dhmat = new{R,T}(rowtree, coltree, data)
         dhmat.children = isnothing(children) ? Matrix{DHMatrix{R,T}}(undef, 0, 0) : children
-        dhmat.parent = isnothing(parent) ? dhmat : parent
+        dhmat.parentnode = isnothing(parentnode) ? dhmat : parentnode
         return dhmat
     end
 end
@@ -87,8 +87,9 @@ end
 function _build_block_structure_distribute_cols!(
     current_node::DHMatrix{R,T},
     dmax,
+    d = 0
 ) where {R,T}
-    if Trees.depth(current_node) == dmax
+    if d == dmax
         return current_node
     else
         X = rowtree(current_node)
@@ -103,7 +104,7 @@ function _build_block_structure_distribute_cols!(
         ]
         current_node.children = children
         for child in children
-            _build_block_structure_distribute_cols!(child, dmax)
+            _build_block_structure_distribute_cols!(child, dmax, d+1)
         end
         return current_node
     end

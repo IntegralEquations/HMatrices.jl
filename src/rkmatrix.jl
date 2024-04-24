@@ -109,22 +109,6 @@ function Base.Matrix(R::RkMatrix{<:SMatrix})
     return R.A * collect(R.Bt)
 end
 
-"""
-    num_stored_elements(R::RkMatrix)
-
-The number of entries stored in the representation. Note that this is *not*
-`length(R)`.
-"""
-num_stored_elements(R::RkMatrix) = size(R.A, 2) * (sum(size(R)))
-
-"""
-    compression_ratio(R::RkMatrix)
-
-The ratio of the uncompressed size of `R` to its compressed size in outer
-product format.
-"""
-compression_ratio(R::RkMatrix) = prod(size(R)) / num_stored_elements(R)
-
 # FIXME: to support scalar and tensorial problems, we currently allow for T
 # to be something other than a plain number. If that is the case, we
 # implement a (slow) multiplication algorithm by hand to circumvent a

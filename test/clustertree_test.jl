@@ -10,7 +10,7 @@ function test_cluster_tree(clt)
         x ∈ bbox || (return false)
     end
     if !HMatrices.isroot(clt)
-        clt ∈ clt.parent.children || (return false)
+        clt ∈ clt.parentnode.children || (return false)
     end
     if !HMatrices.isleaf(clt)
         for child in clt.children

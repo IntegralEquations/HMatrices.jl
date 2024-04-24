@@ -145,3 +145,24 @@ function Base.Matrix(A::VectorOfVectors{T}) where {T}
 end
 
 Base.length(A::VectorOfVectors) = A.k
+
+"""
+    getcol!(col, M, j)
+
+Return the `j`-th column of `M` in `col`.
+"""
+function getcol!(col, M, j)
+    @assert length(col) == size(M, 1)
+    return copyto!(col, view(M, :, j))
+end
+
+"""
+    getcol(M, j)
+
+Return the `j`-th column of `M`.
+"""
+function getcol(M, j)
+    n = size(M, 1)
+    col = Vector{eltype(M)}(undef, n)
+    getcol!(col, M, j)
+end

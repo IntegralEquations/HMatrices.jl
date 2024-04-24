@@ -10,20 +10,80 @@ mutable struct HMatrix{R,T} <: AbstractMatrix{T}
     admissible::Bool
     data::Union{Matrix{T},RkMatrix{T},Nothing}
     children::Matrix{HMatrix{R,T}}
-    parent::HMatrix{R,T}
+    # NOTE: to avoid confusion with Base.parent, which returns the underlying
+    # parent object of a view, we use `parentnode` to refer to the tree parent.
+    parentnode::HMatrix{R,T}
     # inner constructor which handles `nothing` fields.
-    function HMatrix{R,T}(rowtree, coltree, adm, data, children, parent) where {R,T}
+    function HMatrix{R,T}(rowtree, coltree, adm, data, children, parentnode) where {R,T}
         if data !== nothing
             @assert (length(rowtree), length(coltree)) === size(data) "$(length(rowtree)),$(length(coltree)) != $(size(data))"
         end
         hmat = new{R,T}(rowtree, coltree, adm, data)
         hmat.children = isnothing(children) ? Matrix{HMatrix{R,T}}(undef, 0, 0) : children
-        hmat.parent = isnothing(parent) ? hmat : parent
+        hmat.parentnode = isnothing(parentnode) ? hmat : parentnode
         return hmat
     end
 end
 
-function Base.getindex(::HMatrix, args...)
+# setters and getters defined for HMatrix.
+isadmissible(H::HMatrix) = H.admissible
+data(H::HMatrix)         = H.data
+rowtree(H::HMatrix)      = H.rowtree
+coltree(H::HMatrix)      = H.coltree
+children(H::HMatrix)     = H.children
+parentnode(H::HMatrix)   = H.parentnode
+setdata!(H::HMatrix, d)  = setfield!(H, :data, d)
+
+# light wrapper for adjoint
+const AdjointHMatrix{R,T} = Adjoint{T,HMatrix{R,T}}
+
+isadmissible(H::AdjointHMatrix) = H |> parent |> isadmissible
+data(H::AdjointHMatrix)         = H |> parent |> data |> adjoint
+rowtree(H::AdjointHMatrix)      = H |> parent |> coltree
+coltree(H::AdjointHMatrix)      = H |> parent |> rowtree
+children(H::AdjointHMatrix)     = H |> parent |> children |> adjoint
+parentnode(H::AdjointHMatrix)   = H |> parent |> parentnode |> adjoint
+setdata!(H::AdjointHMatrix, d)  = setdata!(parentnode(H), d)
+isleaf(H::HMatrix)              = isempty(children(H))
+
+# light wrapper for Hermitian
+const HermitianHMatrix{R,T} = Hermitian{T,HMatrix{R,T}}
+
+isadmissible(H::HermitianHMatrix) = H |> parent |> isadmissible
+data(H::HermitianHMatrix)         = H |> parent |> data
+rowtree(H::HermitianHMatrix)      = H |> parent |> rowtree
+coltree(H::HermitianHMatrix)      = H |> parent |> coltree
+function children(H::HermitianHMatrix, i::Int, j::Int)
+    par = parent(H)
+    if i == j
+        return Hermitian(children(par, i, i))
+    elseif i < j
+        return children(par, i, j)
+    else
+        return adjoint(children(par, j, i))
+    end
+end
+parentnode(H::HermitianHMatrix)  = H |> parent |> parentnode |> Hermitian
+setdata!(H::HermitianHMatrix, d) = setdata!(parentnode(H), d)
+
+# somewhat generic operation
+const HTypes = Union{HMatrix,AdjointHMatrix,HermitianHMatrix}
+
+# NOTE: parent here refers to the underlying data of the view, NOT the
+# parentnode
+hasdata(H::HTypes)   = !isnothing(data(parent(H)))
+isroot(H::HTypes)    = parent(H) === H
+rowrange(H::HTypes)  = index_range(rowtree(H))
+colrange(H::HTypes)  = index_range(coltree(H))
+rowperm(H::HTypes)   = loc2glob(rowtree(H))
+colperm(H::HTypes)   = loc2glob(coltree(H))
+pivot(H::HTypes)     = (rowrange(H).start, colrange(H).start)
+offset(H::HTypes)    = pivot(H) .- 1
+Base.size(H::HTypes) = length(rowrange(H)), length(colrange(H))
+blocksize(H::HTypes) = H |> parent |> children |> size
+isleaf(H::HTypes)    = H |> parent |> isleaf
+
+function Base.getindex(::HTypes, args...)
     msg = """method `getindex(::HMatrix,args...)` has been disabled to
     avoid performance pitfalls. Unless you made an explicit call to `getindex`,
     this error usually means that a linear algebra routine involving an
@@ -31,41 +91,14 @@ function Base.getindex(::HMatrix, args...)
     return error(msg)
 end
 
-# setters and getters (defined for HMatrix)
-isadmissible(H::HMatrix) = H.admissible
-hasdata(H::HMatrix)      = !isnothing(H.data)
-data(H::HMatrix)         = H.data
-setdata!(H::HMatrix, d)  = setfield!(H, :data, d)
-rowtree(H::HMatrix)      = H.rowtree
-coltree(H::HMatrix)      = H.coltree
-
-# getcol for regular matrices
-function getcol!(col, M::Base.Matrix, j)
-    @assert length(col) == size(M, 1)
-    return copyto!(col, view(M, :, j))
-end
-function getcol!(col, adjM::Adjoint{<:Any,<:Matrix}, j)
-    @assert length(col) == size(adjM, 1)
-    return copyto!(col, view(adjM, :, j))
-end
-
-getcol(M::Base.Matrix, j) = M[:, j]
-getcol(adjM::Adjoint{<:Any,<:Matrix}, j) = adjM[:, j]
-
-function getcol(H::HMatrix, j::Int)
-    m, n = size(H)
-    T = eltype(H)
-    col = zeros(T, m)
-    return getcol!(col, H, j)
-end
-
-function getcol!(col, H::HMatrix, j::Int)
+# overload the getcol method
+function getcol!(col, H::HTypes, j::Int)
     (j ∈ colrange(H)) || throw(BoundsError())
     piv = pivot(H)
     return _getcol!(col, H, j, piv)
 end
 
-function _getcol!(col, H::HMatrix, j, piv)
+function _getcol!(col, H::HTypes, j, piv)
     if hasdata(H)
         shift = pivot(H) .- 1
         jl = j - shift[2]
@@ -80,84 +113,18 @@ function _getcol!(col, H::HMatrix, j, piv)
     return col
 end
 
-function getcol(adjH::Adjoint{<:Any,<:HMatrix}, j::Int)
-    # (j ∈ colrange(adjH)) || throw(BoundsError())
-    m, n = size(adjH)
-    T = eltype(adjH)
-    col = zeros(T, m)
-    return getcol!(col, adjH, j)
-end
-
-function getcol!(col, adjH::Adjoint{<:Any,<:HMatrix}, j::Int)
-    piv = pivot(adjH)
-    return _getcol!(col, adjH, j, piv)
-end
-
-function _getcol!(col, adjH::Adjoint{<:Any,<:HMatrix}, j, piv)
-    if hasdata(adjH)
-        shift = pivot(adjH) .- 1
-        jl = j - shift[2]
-        irange = rowrange(adjH) .- (piv[1] - 1)
-        getcol!(view(col, irange), data(adjH), jl)
-    end
-    for child in children(adjH)
-        if j ∈ colrange(child)
-            _getcol!(col, child, j, piv)
-        end
-    end
-    return col
-end
-
-# Trees interface
-children(H::HMatrix) = H.children
-children(H::HMatrix, idxs...) = H.children[idxs]
-Base.parent(H::HMatrix) = H.parent
-isleaf(H::HMatrix) = isempty(children(H))
-isroot(H::HMatrix) = parent(H) === H
-
-rowrange(H::HMatrix) = index_range(H.rowtree)
-colrange(H::HMatrix) = index_range(H.coltree)
-rowperm(H::HMatrix) = loc2glob(rowtree(H))
-colperm(H::HMatrix) = loc2glob(coltree(H))
-pivot(H::HMatrix) = (rowrange(H).start, colrange(H).start)
-offset(H::HMatrix) = pivot(H) .- 1
-
-# Base.axes(H::HMatrix) = rowrange(H),colrange(H)
-Base.size(H::HMatrix) = length(rowrange(H)), length(colrange(H))
-
-function blocksize(H)
-    return size(children(H))
-end
-
 """
-    compression_ratio(H::HMatrix)
+    compression_ratio(H::HTypes)
 
 The ratio of the uncompressed size of `H` to its compressed size. A
 `compression_ratio` of `10` means it would have taken 10 times more memory to
 store `H` as a dense matrix.
 """
-function compression_ratio(H::HMatrix)
+function compression_ratio(H::HTypes)
     ns = Base.summarysize(H) # size in bytes
-    nr = length(H) *  sizeof(eltype(H))# represented entries
+    nr = length(H) * sizeof(eltype(H))# represented entries
     return nr / ns
 end
-
-"""
-    num_stored_elements(H::HMatrix)
-
-The number of entries stored in the representation. Note that this is *not*
-`length(H)`.
-"""
-function num_stored_elements(H::HMatrix)
-    ns = 0 # stored entries
-    for block in leaves(H)
-        data = block.data
-        ns += num_stored_elements(data)
-    end
-    return ns
-end
-
-num_stored_elements(M::Base.Matrix) = length(M)
 
 function Base.show(io::IO, hmat::HMatrix)
     isclean(hmat) || return print(io, "Dirty HMatrix")
@@ -171,8 +138,8 @@ function _show(io, hmat, allow_empty = false)
     nodes_ = nodes(hmat)
     @printf io "\n\t number of nodes in tree: %i" length(nodes_)
     # filter empty leaves
-    leaves_ = allow_empty ? filter(x->!isnothing(data(x)), leaves(hmat)) : leaves(hmat)
-    sparse_leaves = filter(x->isadmissible(x), leaves_)
+    leaves_       = allow_empty ? filter(x -> !isnothing(data(x)), leaves(hmat)) : leaves(hmat)
+    sparse_leaves = filter(x -> isadmissible(x), leaves_)
     dense_leaves  = filter(!isadmissible, leaves_)
     @printf(
         io,
@@ -407,19 +374,6 @@ function _assemble_dense_block!(hmat, K)
     return hmat
 end
 
-# operation on adjoint
-hasdata(adjH::Adjoint{<:Any,<:HMatrix}) = hasdata(adjH.parent)
-data(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(data(adjH.parent))
-children(adjH::Adjoint{<:Any,<:HMatrix}) = adjoint(children(adjH.parent))
-pivot(adjH::Adjoint{<:Any,<:HMatrix}) = reverse(pivot(adjH.parent))
-offset(adjH::Adjoint{<:Any,<:HMatrix}) = pivot(adjH) .- 1
-rowrange(adjH::Adjoint{<:Any,<:HMatrix}) = colrange(adjH.parent)
-colrange(adjH::Adjoint{<:Any,<:HMatrix}) = rowrange(adjH.parent)
-isleaf(adjH::Adjoint{<:Any,<:HMatrix}) = isleaf(adjH.parent)
-rowperm(adjH::Adjoint{<:Any,<:HMatrix}) = colperm(adjH.parent)
-colperm(adjH::Adjoint{<:Any,<:HMatrix}) = rowperm(adjH.parent)
-Base.size(adjH::Adjoint{<:Any,<:HMatrix}) = reverse(size(adjH.parent))
-
 function Base.show(io::IO, adjH::Adjoint{<:Any,<:HMatrix})
     hmat = parent(adjH)
     isclean(hmat) || return print(io, "Dirty HMatrix")
@@ -431,33 +385,6 @@ function Base.show(io::IO, adjH::Adjoint{<:Any,<:HMatrix})
     return io
 end
 Base.show(io::IO, ::MIME"text/plain", adjH::Adjoint{<:Any,<:HMatrix}) = show(io, adjH)
-
-# operations on hermitian
-hasdata(hermH::Hermitian{<:Any,<:HMatrix})         = hasdata(hermH |> parent)
-data(hermH::Hermitian{<:Any,<:HMatrix})            = data(hermH |> parent)
-pivot(hermH::Hermitian{<:Any,<:HMatrix})           = hermH |> parent |> pivot
-rowperm(hermH::Hermitian{<:Any,<:HMatrix})         = hermH |> parent |> rowperm
-colperm(hermH::Hermitian{<:Any,<:HMatrix})         = hermH |> parent |> colperm
-isleaf(hermH::Hermitian{<:Any,<:HMatrix})          = isleaf(parent(hermH))
-rowrange(hermH::Hermitian{<:Any,<:HMatrix})        = hermH |> parent |> rowrange
-colrange(hermH::Hermitian{<:Any,<:HMatrix})        = hermH |> parent |> colrange
-Base.size(hermH::Hermitian{<:Any,<:HMatrix})       = hermH |> parent |> size
-isadmissible(hermH::Hermitian) = isadmissible(hermH |> parent)
-
-function children(hermH::Hermitian{<:Any,<:HMatrix})
-    par_chd = hermH |> parent |> children
-    return [children(hermH, i, j) for i in 1:size(par_chd, 1), j in 1:size(par_chd, 2)]
-end
-function children(hermH::Hermitian{<:Any,<:HMatrix}, i, j)
-    par_chd = hermH |> parent |> children
-    if i == j
-        return Hermitian(par_chd[i, j])
-    elseif i < j
-        return par_chd[i, j]
-    else
-        return adjoint(par_chd[j, i])
-    end
-end
 
 function Base.show(io::IO, hermH::Hermitian{<:Any,<:HMatrix})
     hmat = parent(hermH)
@@ -528,14 +455,6 @@ function isclean(H::HMatrix)
     return true
 end
 
-function depth(tree::HMatrix, acc = 0)
-    if isroot(tree)
-        return acc
-    else
-        depth(parent(tree), acc + 1)
-    end
-end
-
 function Base.zero(H::HMatrix)
     H0 = deepcopy(H)
     rmul!(H0, 0)
@@ -568,7 +487,10 @@ end
         @series begin
             if isadmissible(block)
                 fillcolor --> :blue
-                seriesalpha --> 1 / compression_ratio(block.data)
+                r = rank(block)
+                m,n = size(block)
+                alpha = m*n / (r*(m+n))
+                seriesalpha --> 1 / alpha
             else
                 fillcolor --> :red
                 seriesalpha --> 0.3
@@ -617,10 +539,10 @@ function LinearAlgebra.axpy!(
     rp = loc2glob(rowtree(Y))
     cp = loc2glob(coltree(Y))
     global_index && (X = permute(X, rp, cp))
-    size_start = num_stored_elements(Y)
+    size_start = Base.summarysize(Y)
     _axpy!(a, X, Y)
-    size_end = num_stored_elements(Y)
-    size_end / size_start > 1.1 && @warn "Rank increased by more than 10% during axpy!"
+    size_end = Base.summarysize(Y)
+    size_end / size_start > 1.1 && @warn "Memory size increased by more than 10% during axpy!"
     return Y
 end
 
