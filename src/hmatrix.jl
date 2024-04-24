@@ -53,16 +53,7 @@ isadmissible(H::HermitianHMatrix) = H |> parent |> isadmissible
 data(H::HermitianHMatrix)         = H |> parent |> data
 rowtree(H::HermitianHMatrix)      = H |> parent |> rowtree
 coltree(H::HermitianHMatrix)      = H |> parent |> coltree
-function children(H::HermitianHMatrix, i::Int, j::Int)
-    par = parent(H)
-    if i == j
-        return Hermitian(children(par, i, i))
-    elseif i < j
-        return children(par, i, j)
-    else
-        return adjoint(children(par, j, i))
-    end
-end
+children(H::HermitianHMatrix)     = H |> parent |> children |> Hermitian
 parentnode(H::HermitianHMatrix)  = H |> parent |> parentnode |> Hermitian
 setdata!(H::HermitianHMatrix, d) = setdata!(parentnode(H), d)
 

@@ -81,18 +81,17 @@ end
         @test exact ≈ approx
     end
 
-#     @testset "hermitian" begin
-#        threads = true
-#        for threads in (true, false)
-#            K = laplace_matrix(X, X)
-#            Hsym = assemble_hmatrix(Hermitian(K), Xclt, Xclt; adm, comp, threads = true)
-#            H = assemble_hmatrix(K, Xclt, Xclt; adm, comp, threads)
-#            x = rand(n)
-#            y1 = mul!(zero(x), H, x, 1, 0; threads)
-#            y2 = mul!(zero(x), Hsym, x, 1, 0; threads = true)
-#            @test y1 ≈ y2
-#        end
-#    end
+    @testset "hermitian" begin
+       for threads in (true, false)
+           K = laplace_matrix(X, X)
+           Hsym = assemble_hmatrix(Hermitian(K), Xclt, Xclt; adm, comp, threads)
+           H = assemble_hmatrix(K, Xclt, Xclt; adm, comp, threads)
+           x = rand(n)
+           y1 = mul!(zero(x), H, x, 1, 0; threads)
+           y2 = mul!(zero(x), Hsym, x, 1, 0; threads)
+           @test y1 ≈ y2
+       end
+   end
 end
 
 @testset "gemm" begin

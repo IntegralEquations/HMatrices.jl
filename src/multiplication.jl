@@ -365,7 +365,7 @@ Perform `y <-- H*x*a + y*b` in place.
 """
 function LinearAlgebra.mul!(
     y::AbstractVector,
-    A::Union{HMatrix,Adjoint{<:Any,<:HMatrix}},
+    A::HTypes,
     x::AbstractVector,
     a::Number = 1,
     b::Number = 0;
@@ -429,7 +429,7 @@ hierarchical matrix had a `pivot` other than `(1,1)`.
 """
 function _hgemv_recursive!(
     C::AbstractVector,
-    A::Union{HMatrix,Adjoint{<:Any,<:HMatrix}},
+    A::HTypes,
     B::AbstractVector,
     offset,
 )
