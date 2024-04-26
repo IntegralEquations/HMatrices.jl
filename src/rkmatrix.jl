@@ -63,6 +63,9 @@ function getcol!(col, R::RkMatrix, j::Int, ::Val{T} = Val(false)) where {T}
     end
 end
 
+const AdjRk = Adjoint{<:Any, <:RkMatrix}
+const AdjRkOrRk = Union{AdjRk, RkMatrix}
+
 function getcol!(
     col,
     Ra::Adjoint{<:Any,<:RkMatrix},
@@ -102,6 +105,10 @@ end
 
 function Base.Matrix(R::RkMatrix{<:Number})
     return R.A * R.Bt
+end
+function Base.Matrix(adjR::Adjoint{<:Any,<:RkMatrix})
+    R = parent(adjR)
+    return R.B * R.At
 end
 function Base.Matrix(R::RkMatrix{<:SMatrix})
     # collect must be used when we have a matrix of `SMatrix` because of this issue:

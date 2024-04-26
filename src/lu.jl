@@ -32,7 +32,7 @@ function LinearAlgebra.lu!(M::HMatrix, compressor; threads = use_threads())
     foreach(i -> put!(chn, ACABuffer(T)), 1:nt)
     _lu!(M, compressor, threads, chn)
     # wrap the result in the LU structure
-    return LU(M, LinearAlgebra.BlasInt[], LinearAlgebra.BlasInt(0))
+    return LU(M, Int[], 0)
 end
 
 """
@@ -84,7 +84,7 @@ function _lu!(M::HMatrix, compressor, threads, bufs = nothing)
     return M
 end
 
-function LinearAlgebra.ldiv!(A::LU{<:Any,<:HMatrix}, y::AbstractVector; global_index = true)
+function LinearAlgebra.ldiv!(A::HLU, y::AbstractVector; global_index = true)
     p = A.factors # underlying data
     ctree = coltree(p)
     rtree = rowtree(p)

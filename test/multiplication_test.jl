@@ -15,12 +15,12 @@ n = 2000
 
 X = rand(SVector{3,Float64}, m)
 Y = [rand(SVector{3,Float64}) for _ in 1:n]
-splitter = CardinalitySplitter(; nmax = 40)
+splitter = CardinalitySplitter(; nmax = 50)
 Xclt = ClusterTree(X, splitter)
 Yclt = ClusterTree(Y, splitter)
 adm = StrongAdmissibilityStd(; eta = 3)
-rtol = 1e-5
-comp = PartialACA(; rtol = rtol)
+atol = 1e-5
+comp = PartialACA(; atol)
 K = laplace_matrix(X, Y)
 H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false, distributed = false)
 
@@ -36,6 +36,11 @@ P = HMatrices.RkMatrix(rand(m, 10), rand(n, 10))
     C = deepcopy(H)
     tmp = β * H_full + α * H_full * H_full
     HMatrices.hmul!(C, H, H, α, β, PartialACA(; atol = 1e-6))
+    @test Matrix(C; global_index = false) ≈ tmp
+    # adjoint
+    C = deepcopy(H)
+    tmp = β * H_full + α * adjoint(H_full) * H_full
+    HMatrices.hmul!(C, adjoint(H), H, α, β, PartialACA(; atol = 1e-6))
     @test Matrix(C; global_index = false) ≈ tmp
 end
 
@@ -82,15 +87,16 @@ end
     end
 
     @testset "hermitian" begin
-       for threads in (true, false)
-           K = laplace_matrix(X, X)
-           Hsym = assemble_hmatrix(Hermitian(K), Xclt, Xclt; adm, comp, threads)
-           H = assemble_hmatrix(K, Xclt, Xclt; adm, comp, threads)
-           x = rand(n)
-           y1 = mul!(zero(x), H, x, 1, 0; threads)
-           y2 = mul!(zero(x), Hsym, x, 1, 0; threads)
-           @test y1 ≈ y2
-       end
+        threads = false
+        for threads in (true, false)
+            K = laplace_matrix(X, X)
+            Hsym = assemble_hmatrix(Hermitian(K), Xclt, Xclt; adm, comp, threads)
+            H = assemble_hmatrix(K, Xclt, Xclt; adm, comp, threads)
+            x = rand(n)
+            y1 = mul!(zero(x), H, x, 1, 0; threads)
+            y2 = mul!(zero(x), Hsym, x, 1, 0; threads)
+            @test y1 ≈ y2
+        end
    end
 end
 

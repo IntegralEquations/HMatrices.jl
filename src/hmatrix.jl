@@ -50,7 +50,7 @@ isleaf(H::HMatrix)              = isempty(children(H))
 const HermitianHMatrix{R,T} = Hermitian{T,HMatrix{R,T}}
 
 isadmissible(H::HermitianHMatrix) = H |> parent |> isadmissible
-data(H::HermitianHMatrix)         = H |> parent |> data
+data(H::HermitianHMatrix)         = H |> parent |> data |> Hermitian
 rowtree(H::HermitianHMatrix)      = H |> parent |> rowtree
 coltree(H::HermitianHMatrix)      = H |> parent |> coltree
 children(H::HermitianHMatrix)     = H |> parent |> children |> Hermitian
@@ -164,15 +164,14 @@ given in the global indexing system (see [`HMatrix`](@ref) for more
 information); otherwise the *local* indexing system induced by the row and
 columns trees are used.
 """
-Base.Matrix(hmat::HMatrix; global_index = true) = Matrix{eltype(hmat)}(hmat; global_index)
-function Base.Matrix{T}(hmat::HMatrix; global_index) where {T}
+Base.Matrix(hmat::HTypes; global_index = true) = Matrix{eltype(hmat)}(hmat; global_index)
+function Base.Matrix{T}(hmat::HTypes; global_index) where {T}
     M = zeros(T, size(hmat)...)
     piv = pivot(hmat)
-    for block in nodes(hmat)
-        hasdata(block) || continue
-        irange = rowrange(block) .- piv[1] .+ 1
-        jrange = colrange(block) .- piv[2] .+ 1
-        M[irange, jrange] += Matrix(block.data)
+    for leaf in leaves(hmat)
+        irange = rowrange(leaf) .- piv[1] .+ 1
+        jrange = colrange(leaf) .- piv[2] .+ 1
+        M[irange, jrange] = Matrix(data(leaf))
     end
     if global_index
         P = PermutedMatrix(M, invperm(rowperm(hmat)), invperm(colperm(hmat)))
