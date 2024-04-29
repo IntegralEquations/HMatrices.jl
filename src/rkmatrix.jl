@@ -63,8 +63,8 @@ function getcol!(col, R::RkMatrix, j::Int, ::Val{T} = Val(false)) where {T}
     end
 end
 
-const AdjRk = Adjoint{<:Any, <:RkMatrix}
-const AdjRkOrRk = Union{AdjRk, RkMatrix}
+const AdjRk = Adjoint{<:Any,<:RkMatrix}
+const AdjRkOrRk = Union{AdjRk,RkMatrix}
 
 function getcol!(
     col,

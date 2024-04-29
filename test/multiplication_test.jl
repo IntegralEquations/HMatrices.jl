@@ -97,7 +97,7 @@ end
             y2 = mul!(zero(x), Hsym, x, 1, 0; threads)
             @test y1 ≈ y2
         end
-   end
+    end
 end
 
 @testset "gemm" begin

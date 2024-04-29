@@ -23,11 +23,7 @@ end
 Hierarhical cholesky facotrization of `M`, using `comp` to generate the compressed
 blocks during the multiplication routines.
 """
-function LinearAlgebra.cholesky!(
-    M::HermitianHMatrix,
-    compressor;
-    threads = use_threads(),
-)
+function LinearAlgebra.cholesky!(M::HermitianHMatrix, compressor; threads = use_threads())
     # perform the cholesky decomposition of M in place
     T = eltype(M)
     nt = Threads.nthreads()
@@ -98,11 +94,7 @@ function _cholesky!(M::HermitianHMatrix, compressor, threads, bufs = nothing)
     return M
 end
 
-function LinearAlgebra.ldiv!(
-    A::HChol,
-    y::AbstractVector;
-    global_index = true,
-)
+function LinearAlgebra.ldiv!(A::HChol, y::AbstractVector; global_index = true)
     p = A.factors # underlying data
     ctree = coltree(p)
     rtree = rowtree(p)

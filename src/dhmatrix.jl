@@ -87,7 +87,7 @@ end
 function _build_block_structure_distribute_cols!(
     current_node::DHMatrix{R,T},
     dmax,
-    d = 0
+    d = 0,
 ) where {R,T}
     if d == dmax
         return current_node
@@ -104,7 +104,7 @@ function _build_block_structure_distribute_cols!(
         ]
         current_node.children = children
         for child in children
-            _build_block_structure_distribute_cols!(child, dmax, d+1)
+            _build_block_structure_distribute_cols!(child, dmax, d + 1)
         end
         return current_node
     end

@@ -54,8 +54,8 @@ data(H::HermitianHMatrix)         = H |> parent |> data |> Hermitian
 rowtree(H::HermitianHMatrix)      = H |> parent |> rowtree
 coltree(H::HermitianHMatrix)      = H |> parent |> coltree
 children(H::HermitianHMatrix)     = H |> parent |> children |> Hermitian
-parentnode(H::HermitianHMatrix)  = H |> parent |> parentnode |> Hermitian
-setdata!(H::HermitianHMatrix, d) = setdata!(parentnode(H), d)
+parentnode(H::HermitianHMatrix)   = H |> parent |> parentnode |> Hermitian
+setdata!(H::HermitianHMatrix, d)  = setdata!(parentnode(H), d)
 
 # somewhat generic operation
 const HTypes = Union{HMatrix,AdjointHMatrix,HermitianHMatrix}
@@ -478,8 +478,8 @@ end
             if isadmissible(block)
                 fillcolor --> :blue
                 r = rank(block)
-                m,n = size(block)
-                alpha = m*n / (r*(m+n))
+                m, n = size(block)
+                alpha = m * n / (r * (m + n))
                 seriesalpha --> 1 / alpha
             else
                 fillcolor --> :red
@@ -532,7 +532,8 @@ function LinearAlgebra.axpy!(
     size_start = Base.summarysize(Y)
     _axpy!(a, X, Y)
     size_end = Base.summarysize(Y)
-    size_end / size_start > 1.1 && @warn "Memory size increased by more than 10% during axpy!"
+    size_end / size_start > 1.1 &&
+        @warn "Memory size increased by more than 10% during axpy!"
     return Y
 end
 

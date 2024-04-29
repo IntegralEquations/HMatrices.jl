@@ -70,7 +70,7 @@ Return a vector containing all the nodes of `tree`.
 """
 function nodes(tree)
     isterminal = false
-    return filter_tree(x->true, tree, isterminal)
+    return filter_tree(x -> true, tree, isterminal)
 end
 
 """
@@ -164,5 +164,5 @@ Return the `j`-th column of `M`.
 function getcol(M, j)
     n = size(M, 1)
     col = Vector{eltype(M)}(undef, n)
-    getcol!(col, M, j)
+    return getcol!(col, M, j)
 end

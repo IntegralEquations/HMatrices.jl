@@ -11,7 +11,7 @@ using Distributed
 using Base.Threads
 using SparseArrays
 
-const AdjOrMat = Union{Matrix, Adjoint{<:Any, <:Matrix}}
+const AdjOrMat = Union{Matrix,Adjoint{<:Any,<:Matrix}}
 
 """
     getblock!(block,K,irange,jrange)
