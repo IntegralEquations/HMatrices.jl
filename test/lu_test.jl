@@ -30,4 +30,6 @@ for threads in (false, true)
     exact = M \ y
     approx = hlu \ y
     @test norm(exact - approx, Inf) < 1e-10
+    # test multiplication by checking if the solution is correct
+    @test hlu.L * (hlu.U * approx) ≈ y
 end

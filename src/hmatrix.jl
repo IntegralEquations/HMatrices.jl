@@ -44,7 +44,6 @@ coltree(H::AdjointHMatrix)      = H |> parent |> rowtree
 children(H::AdjointHMatrix)     = H |> parent |> children |> adjoint
 parentnode(H::AdjointHMatrix)   = H |> parent |> parentnode |> adjoint
 setdata!(H::AdjointHMatrix, d)  = setdata!(parentnode(H), d)
-isleaf(H::HMatrix)              = isempty(children(H))
 
 # light wrapper for Hermitian
 const HermitianHMatrix{R,T} = Hermitian{T,HMatrix{R,T}}
@@ -57,24 +56,30 @@ children(H::HermitianHMatrix)     = H |> parent |> children |> Hermitian
 parentnode(H::HermitianHMatrix)   = H |> parent |> parentnode |> Hermitian
 setdata!(H::HermitianHMatrix, d)  = setdata!(parentnode(H), d)
 
-# somewhat generic operation
 const HTypes = Union{HMatrix,AdjointHMatrix,HermitianHMatrix}
 
-# NOTE: parent here refers to the underlying data of the view, NOT the
-# parentnode
-hasdata(H::HTypes)   = !isnothing(data(parent(H)))
-isroot(H::HTypes)    = parent(H) === H
-rowrange(H::HTypes)  = index_range(rowtree(H))
-colrange(H::HTypes)  = index_range(coltree(H))
-rowperm(H::HTypes)   = loc2glob(rowtree(H))
-colperm(H::HTypes)   = loc2glob(coltree(H))
-pivot(H::HTypes)     = (rowrange(H).start, colrange(H).start)
-offset(H::HTypes)    = pivot(H) .- 1
-Base.size(H::HTypes) = length(rowrange(H)), length(colrange(H))
-blocksize(H::HTypes) = H |> parent |> children |> size
-isleaf(H::HTypes)    = H |> parent |> isleaf
+# forward definition of triangular types
+const HLowerTriangular =
+    Union{UnitLowerTriangular{<:Any,<:HTypes},LowerTriangular{<:Any,<:HTypes}}
+const HUpperTriangular =
+    Union{UnitUpperTriangular{<:Any,<:HTypes},UpperTriangular{<:Any,<:HTypes}}
+const HTriangular = Union{HLowerTriangular,HUpperTriangular}
 
-function Base.getindex(::HTypes, args...)
+# NOTE: parent here refers to the underlying data of the view, NOT the
+# parentnode. Ducktype and hope for the best.
+hasdata(H) = !isnothing(data(parent(H)))
+isroot(H) = parent(H) === H
+rowrange(H) = index_range(rowtree(H))
+colrange(H) = index_range(coltree(H))
+rowperm(H) = loc2glob(rowtree(H))
+colperm(H) = loc2glob(coltree(H))
+pivot(H) = (rowrange(H).start, colrange(H).start)
+offset(H) = pivot(H) .- 1
+Base.size(H::HTypes) = length(rowrange(H)), length(colrange(H))
+blocksize(H) = H |> parent |> children |> size
+isleaf(H) = H |> children |> isempty
+
+function Base.getindex(::HTypes, i::Integer, j::Integer)
     msg = """method `getindex(::HMatrix,args...)` has been disabled to
     avoid performance pitfalls. Unless you made an explicit call to `getindex`,
     this error usually means that a linear algebra routine involving an

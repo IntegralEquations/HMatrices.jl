@@ -2,7 +2,7 @@ const HChol = Cholesky{<:Any,<:HermitianHMatrix}
 
 function Base.getproperty(chol::HChol, s::Symbol)
     flag = getfield(chol, :uplo)
-    H = parent(getfield(chol, :factors)) # the underlying hierarchical matrix
+    H = getfield(chol, :factors) # the underlying hierarchical matrix
     if s == :L
         return adjoint(UpperTriangular(H))
     elseif s == :U

@@ -409,7 +409,7 @@ Perform `y <-- H*x*a + y*b` in place.
 """
 function LinearAlgebra.mul!(
     y::AbstractVector,
-    A::HTypes,
+    A::Union{HTypes,HTriangular},
     x::AbstractVector,
     a::Number = 1,
     b::Number = 0;
@@ -449,7 +449,7 @@ end
 # enough.
 function LinearAlgebra.mul!(
     Y::AbstractMatrix,
-    A::Union{HMatrix,Adjoint{<:Any,<:HMatrix}},
+    A::HTypes,
     X::AbstractMatrix,
     a::Number = 1,
     b::Number = 0;

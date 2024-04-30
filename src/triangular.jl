@@ -1,13 +1,35 @@
-const HLowerTriangular =
-    Union{UnitLowerTriangular{<:Any,<:HTypes},LowerTriangular{<:Any,<:HTypes}}
-const HUpperTriangular =
-    Union{UnitUpperTriangular{<:Any,<:HTypes},UpperTriangular{<:Any,<:HTypes}}
-
 # helper function to wrap into the correct triangular type
 _wraptriangular(d, ::UpperTriangular) = UpperTriangular(d)
 _wraptriangular(d, ::LowerTriangular) = LowerTriangular(d)
 _wraptriangular(d, ::UnitUpperTriangular) = UnitUpperTriangular(d)
 _wraptriangular(d, ::UnitLowerTriangular) = UnitLowerTriangular(d)
+
+isadmissible(H::HTriangular) = H |> parent |> isadmissible
+data(t::HTriangular)         = _wraptriangular(data(parent(t)), t)
+rowtree(H::HTriangular)      = H |> parent |> rowtree
+coltree(H::HTriangular)      = H |> parent |> coltree
+function children(T::HTriangular)
+    H = parent(T)
+    chdH = children(H)
+    m, n = size(chdH)
+    v = []
+    for i in 1:m, j in 1:n
+        chd = chdH[i, j]
+        if i == j
+            push!(v, _wraptriangular(chd, T))
+        elseif i > j && T isa HLowerTriangular
+            push!(v, chd)
+        elseif j > i && T isa HUpperTriangular
+            push!(v, chd)
+        end
+    end
+    return v
+end
+parentnode(H::HTriangular)  = H |> parent |> parentnode |> adjoint
+setdata!(H::HTriangular, d) = setdata!(parentnode(H), d)
+isleaf(H::HTriangular)      = isempty(children(H))
+
+hasdata(t::HTriangular) = hasdata(parent(t))
 
 function Base.show(io::IO, ::MIME"text/plain", U::HUpperTriangular)
     H = parent(U)
