@@ -25,7 +25,7 @@ available methods and structures.
     **boundary integral equation (BIE)** methods. As such, most of the API has
     been designed with BIEs in mind, and the examples that follow will focus on
     the compression of integral operators. Feel free to open an
-    [issue](https://github.com/WaveProp/HMatrices.jl/issues/new) or reach out if
+    [issue](https://github.com/IntegralEquations/HMatrices.jl/issues/new) or reach out if
     you have an interesting application of hierarchical matrices in mind not
     covered by this package!
 
@@ -89,7 +89,7 @@ K = LaplaceMatrix(X,Y)
 
 The next step consists in partitioning the point clouds `X` and `Y` into a
 tree-like data structure so that blocks corresponding to well-separated points
-can be easily distinguished and compressed. The `WavePropBase` package provides
+can be easily distinguished and compressed. The `IntegralEquationsBase` package provides
 the `ClusterTree` struct for this purpose (see its documentation for more
 details on available options):
 

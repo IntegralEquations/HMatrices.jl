@@ -2,11 +2,11 @@
 
 *A package for assembling and factoring hierarchical matrices*
 
-[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://WaveProp.github.io/HMatrices.jl/stable)
-[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://WaveProp.github.io/HMatrices.jl/dev)
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://IntegralEquations.github.io/HMatrices.jl/stable)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://IntegralEquations.github.io/HMatrices.jl/dev)
 [![Build
-Status](https://github.com/WaveProp/HMatrices.jl/workflows/CI/badge.svg)](https://github.com/WaveProp/HMatrices.jl/actions)
-[![codecov](https://codecov.io/gh/WaveProp/HMatrices.jl/branch/main/graph/badge.svg?token=DRT75WR7V2)](https://codecov.io/gh/WaveProp/HMatrices.jl)
+Status](https://github.com/IntegralEquations/HMatrices.jl/workflows/CI/badge.svg)](https://github.com/IntegralEquations/HMatrices.jl/actions)
+[![codecov](https://codecov.io/gh/IntegralEquations/HMatrices.jl/branch/main/graph/badge.svg?token=DRT75WR7V2)](https://codecov.io/gh/IntegralEquations/HMatrices.jl)
 ![Lifecycle](https://img.shields.io/badge/lifecycle-experimental-blue.svg)
 
 ## Installation
@@ -85,7 +85,7 @@ size and specified tolerance). The result is an `LU` factorization object with a
 hierarchical low-rank structure, and the factored object can be used both in a
 direct solver or as a preconditioner for `H` in an iterative solver.
 
-For more information, see the [documentation](https://waveprop.github.io/HMatrices.jl/dev/).
+For more information, see the [documentation](https://integralequations.github.io/HMatrices.jl/dev/).
 
 ## References and related packages
 
