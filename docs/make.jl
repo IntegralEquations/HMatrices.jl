@@ -7,7 +7,6 @@ on_CI = get(ENV, "CI", "false") == "true"
 
 makedocs(;
     modules = [HMatrices],
-    authors = "Luiz M. Faria <maltezfaria@gmail.com> and contributors",
     repo = "",
     sitename = "HMatrices.jl",
     format = Documenter.HTML(;
