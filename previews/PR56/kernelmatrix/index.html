@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Kernel matrices · HMatrices.jl</title><meta name="title" content="Kernel matrices · HMatrices.jl"/><meta property="og:title" content="Kernel matrices · HMatrices.jl"/><meta property="twitter:title" content="Kernel matrices · HMatrices.jl"/><meta name="description" content="Documentation for HMatrices.jl."/><meta property="og:description" content="Documentation for HMatrices.jl."/><meta property="twitter:description" content="Documentation for HMatrices.jl."/><meta property="og:url" content="https://IntegralEquations.github.io/HMatrices.jl/kernelmatrix/"/><meta property="twitter:url" content="https://IntegralEquations.github.io/HMatrices.jl/kernelmatrix/"/><link rel="canonical" href="https://IntegralEquations.github.io/HMatrices.jl/kernelmatrix/"/><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../search_index.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">HMatrices.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../">Getting started</a></li><li class="is-active"><a class="tocitem" href>Kernel matrices</a><ul class="internal"><li><a class="tocitem" href="#Support-for-tensor-kernels"><span>Support for tensor kernels</span></a></li></ul></li><li><a class="tocitem" href="../dhmatrix/">Distributed HMatrix</a></li><li><span class="tocitem">Benchmarks</span><ul><li><a class="tocitem" href="../benchs/">Benchmark Report for <em>HMatrices</em></a></li></ul></li><li><a class="tocitem" href="../references/">References</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Kernel matrices</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Kernel matrices</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/IntegralEquations/HMatrices.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/IntegralEquations/HMatrices.jl/blob/main/docs/src/kernelmatrix.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="kernelmatrix-section"><a class="docs-heading-anchor" href="#kernelmatrix-section">Kernel matrices</a><a id="kernelmatrix-section-1"></a><a class="docs-heading-anchor-permalink" href="#kernelmatrix-section" title="Permalink"></a></h1><p>While in the <a href="../#assemble-generic-subsection">introduction</a> we presented a somewhat general way to assemble an <code>HMatrix</code>, abstract matrices associated with an underlying kernel function are common enough in boundary integral equations that a special interface exists for facilitating their use.</p><p>The <a href="../references/#HMatrices.AbstractKernelMatrix"><code>AbstractKernelMatrix</code></a> interface is used to represent matrices <code>K</code> with <code>i,j</code> entry given by <code>f(X[i],Y[j])</code>, where <code>X=rowelements(K)</code> and <code>Y=colelements(K)</code>. The row and columns elements may be as simple as points in <span>$\mathbb{R}^d$</span> (as is the case for Nyström methods), but they can also be more complex objects such as triangles or basis functions. In such cases, it is required that <code>center(X[i])</code> and <code>center(Y[j])</code> return a point as an <code>SVector</code>, and that <code>f(X[i],Y[j])</code> make sense.</p><p>A concrete implementation of <code>AbstractKernelMatrix</code> is provided by the <code>KernelMatrix</code> type. Creating the matrix associated with the Helmholtz free-space Greens function, for example, can be accomplished through:</p><pre><code class="language-julia hljs">using HMatrices, LinearAlgebra, StaticArrays
+const Point3D = SVector{3,Float64}
+X = rand(Point3D,10_000)
+Y = rand(Point3D,10_000)
+const k = 2π
+function G(x,y)
+    d = norm(x-y)
+    exp(im*k*d)/(4π*d)
+end
+K = KernelMatrix(G,X,Y)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">10000×10000 KernelMatrix{typeof(Main.var&quot;Main&quot;.G), Vector{StaticArraysCore.SVector{3, Float64}}, Vector{StaticArraysCore.SVector{3, Float64}}, ComplexF64}:
+ -0.0453107-0.106765im      -0.110609-0.0751819im   …   -0.168167+0.0662665im
+  -0.111832-0.0741135im     0.0372654-0.0906286im       0.0791568-0.0289281im
+  0.0676824-0.0590757im      0.078971+0.00336069im      -0.168207+0.055641im
+  -0.011236-0.107909im     -0.0594146-0.103454im        0.0547437-0.0760409im
+  0.0789261+0.00358147im   -0.0412307-0.10741im         0.0273735+0.0614285im
+  -0.139238+0.173598im      0.0698619-0.0552364im   …   -0.104981+0.226147im
+  -0.158897-0.000804682im   -0.107067-0.0781464im       -0.139529-0.0418062im
+  -0.139419-0.0419757im     0.0782592+0.00655391im     -0.0306436-0.108443im
+  -0.163266+0.106986im      -0.168243+0.0622898im       -0.069906-0.0998659im
+  0.0462629-0.0839558im     -0.148078-0.0269882im       0.0568523-0.0737583im
+           ⋮                                        ⋱  
+  0.0261996-0.0970027im     -0.114263-0.0719186im      -0.0604536-0.103142im
+  0.0594282-0.0707599im     -0.118276-0.068076im       -0.0978604-0.0850243im
+  -0.154278-0.0134622im      -0.16809+0.068532im        0.0220981-0.0989382im
+  0.0592928-0.0709237im    -0.0840872-0.0933689im       0.0461978-0.0840098im
+   0.026941-0.0966298im      0.330132+0.432549im    …   0.0568319-0.0737811im
+ -0.0972792-0.0854213im    -0.0558381+0.276954im        -0.102151-0.0819603im
+  0.0748691-0.0442438im     0.0163102-0.101323im        0.0688802-0.0570179im
+ -0.0795635-0.095658im      -0.107801-0.0775474im       0.0530888-0.0777354im
+  -0.166649+0.0865839im     -0.107644-0.0776759im       0.0119131-0.102882im</code></pre><p>Compressing <code>K</code> is now as simple as:</p><pre><code class="language-julia hljs">H = assemble_hmatrix(K;rtol=1e-6)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HMatrix of ComplexF64 with range 1:10000 × 1:10000
+	 number of nodes in tree: 17005
+	 number of leaves: 12754 (2434 admissible + 10320 full)
+	 min rank of sparse blocks : 22
+	 max rank of sparse blocks : 73
+	 min length of dense blocks : 1521
+	 max length of dense blocks : 1600
+	 min number of elements per leaf: 1521
+	 max number of elements per leaf: 390625
+	 depth of tree: 8
+	 compression ratio: 2.373898
+</code></pre><p>It is worth noting that several <em>default</em> choices are made during the compression above. See the <a href="../#assemble-generic-subsection">Assembling an <code>HMatrix</code></a> section or the documentation of <a href="../references/#HMatrices.assemble_hmatrix-Tuple{AbstractKernelMatrix}"><code>assemble_hmatrix</code></a> for information on how to obtain a more granular control of the assembling stage.</p><p>As before, you can multiply <code>H</code> by a vector, or do an <code>lu</code> factorization of it.</p><p>Finally, here is a somewhat contrived example of how to use a <code>KernelMatrix</code> when the <code>rowelements</code> and <code>colelements</code> are not simply points (as required e.g. in a Galerkin discretization of boundary integral equations):</p><pre><code class="language-julia hljs">using HMatrices, LinearAlgebra, StaticArrays
+# create a simple structure to represent a segment
+struct Segment
+    start::SVector{2,Float64}
+    stop::SVector{2,Float64}
+end
+# extend the function center to work with segments
+HMatrices.center(s::Segment) = 0.5*(s.start + s.stop)
+# P1 mesh of a circle
+npts = 10_000
+nodes = [SVector(cos(s), sin(s)) for s in range(0,stop=2π,length=npts+1)]
+segments = [Segment(nodes[i],nodes[i+1]) for i in 1:npts]
+# Now define a kernel function that takes two segments (instead of two points) and returns a scalar
+function G(target::Segment,source::Segment)
+    x, y = HMatrices.center(target), HMatrices.center(source)
+    d = norm(x-y)
+    return -log(d + 1e-10)
+end
+K = KernelMatrix(G,segments,segments)
+# compress the kernel matrix
+H = assemble_hmatrix(K;rtol=1e-6)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HMatrix of Float64 with range 1:10000 × 1:10000
+	 number of nodes in tree: 3061
+	 number of leaves: 2296 (760 admissible + 1536 full)
+	 min rank of sparse blocks : 4
+	 max rank of sparse blocks : 6
+	 min length of dense blocks : 1521
+	 max length of dense blocks : 1600
+	 min number of elements per leaf: 1521
+	 max number of elements per leaf: 1562500
+	 depth of tree: 8
+	 compression ratio: 24.367885
+</code></pre><h2 id="Support-for-tensor-kernels"><a class="docs-heading-anchor" href="#Support-for-tensor-kernels">Support for tensor kernels</a><a id="Support-for-tensor-kernels-1"></a><a class="docs-heading-anchor-permalink" href="#Support-for-tensor-kernels" title="Permalink"></a></h2><div class="admonition is-warning"><header class="admonition-header">Warning</header><div class="admonition-body"><p>Support for tensor-valued kernels should be considered experimental at this stage.</p></div></div><p>For vector-valued partial differential equations such as <em>Stokes</em> or time-harmonic <em>Maxwell&#39;s</em> equation, the underlying integral operator has a kernel function which is a tensor. This package currently provides some limited support for these types of operators. The example below illustrates how to build an <a href="../references/#HMatrices.HMatrix"><code>HMatrix</code></a> representing a <a href="../references/#HMatrices.KernelMatrix"><code>KernelMatrix</code></a> corresponding to Stokes Greens function for points on a sphere:</p><pre><code class="language-julia hljs">using HMatrices, LinearAlgebra, StaticArrays
+const Point3D = SVector{3,Float64}
+m = 5_000
+X = Y = [Point3D(sin(θ)cos(ϕ),sin(θ)*sin(ϕ),cos(θ)) for (θ,ϕ) in zip(π*rand(m),2π*rand(m))]
+const μ = 5
+function G(x,y)
+    r = x-y
+    d = norm(r) + 1e-10
+    1/(8π*μ) * (1/d*I + r*transpose(r)/d^3)
+end
+K = KernelMatrix(G,X,Y)
+H = assemble_hmatrix(K;atol=1e-4)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HMatrix of StaticArraysCore.SMatrix{3, 3, Float64, 9} with range 1:5000 × 1:5000
+	 number of nodes in tree: 4893
+	 number of leaves: 3670 (1318 admissible + 2352 full)
+	 min rank of sparse blocks : 6
+	 max rank of sparse blocks : 27
+	 min length of dense blocks : 1521
+	 max length of dense blocks : 1600
+	 min number of elements per leaf: 1521
+	 max number of elements per leaf: 97969
+	 depth of tree: 7
+	 compression ratio: 3.443895
+</code></pre><p>You can now multiply <code>H</code> by a density <code>σ</code>, where <code>σ</code> is a <code>Vector</code> of <code>SVector{3,Float64}</code></p><pre><code class="language-julia hljs">σ = rand(SVector{3,Float64},m)
+y = H*σ
+# test the output agains the exact value for a given `i`
+i = 42
+exact = sum(K[i,j]*σ[j] for j in 1:m)
+@show y[i] - exact</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">3-element StaticArraysCore.SVector{3, Float64} with indices SOneTo(3):
+ -3.1515955924987793e-6
+  4.5299530029296875e-6
+  1.6726553440093994e-5</code></pre><div class="admonition is-info"><header class="admonition-header">Note</header><div class="admonition-body"><p>The <em>naive</em> idea of reinterpreting these <em>matrices of tensors</em> as a (larger) matrix of scalars does not always work because care to be taken when choosing the pivot in the compression stage of the <a href="../references/#HMatrices.PartialACA"><code>PartialACA</code></a> in order to exploit some analytic properties of the underlying kernel. See e.g. section 2.3 of <a href="https://www.sciencedirect.com/science/article/pii/S0021999117306721">this paper</a> for a brief discussion.</p></div></div></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Getting started</a><a class="docs-footer-nextpage" href="../dhmatrix/">Distributed HMatrix »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.4.1 on <span class="colophon-date" title="Monday 13 May 2024 14:18">Monday 13 May 2024</span>. Using Julia version 1.10.3.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
