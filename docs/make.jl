@@ -12,14 +12,13 @@ makedocs(;
     sitename = "HMatrices.jl",
     format = Documenter.HTML(;
         prettyurls = get(ENV, "CI", "false") == "true",
-        canonical = "https://WaveProp.github.io/HMatrices.jl",
+        canonical = "https://IntegralEquations.github.io/HMatrices.jl",
         assets = String[],
     ),
     pages = [
         "Getting started" => "index.md",
         "Kernel matrices" => "kernelmatrix.md",
         "Distributed HMatrix" => "dhmatrix.md",
-        "Notebooks" => "notebooks.md",
         "Benchmarks" => ["benchs.md"],
         "References" => "references.md",
     ],
@@ -28,7 +27,7 @@ makedocs(;
 )
 
 deploydocs(;
-    repo = "github.com/WaveProp/HMatrices.jl",
+    repo = "github.com/IntegralEquations/HMatrices.jl",
     devbranch = "main",
     push_preview = true,
 )

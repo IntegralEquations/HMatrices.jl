@@ -121,20 +121,3 @@ exact = sum(K[i,j]*σ[j] for j in 1:m)
     e.g. section 2.3 of [this
     paper](https://www.sciencedirect.com/science/article/pii/S0021999117306721)
     for a brief discussion.
-
-## Vectorized kernels and local indices
-
-A more efficient implementation of your kernel `K::AbstractKernelMatrix` can
-sometimes lead to faster *assembling* times. In particular, providing a permuted
-kernel `Kp` using the local indexing system of the `HMatrix` (and setting the
-keyword argument `global_index=false` in `assemble_hmatrix`) avoids frequent
-unnecessary index permutations, and can facilitate vectorization. This is
-because the permuted kernel `Kp` will be called through
-`Kp[I::UnitRange,J::UnitRange]` to fill in the dense blocks of the matrix, through
-`Kp[I::UnitRange,j::int]` and `adjoint(Kp)[I::UnitRange,j]` to build a low-rank
-approximation of compressible blocks. 
-
-The vectorization example in the [Notebook section](@ref notebook-section) shows how a custom (and somewhat
-more complex) implementation of a vectorized Laplace kernel using the
-[LoopVectorization](https://github.com/JuliaSIMD/LoopVectorization.jl) package
-can lead to faster (sequential) execution.
