@@ -6,7 +6,16 @@ matrices and `compressor` is a function/functor used in the intermediate stages
 of the multiplication to avoid growring the rank of admissible blocks after
 addition is performed.
 """
-function hmul!(C::T, A::T, B::T, a, b, compressor, bufs_ = nothing) where {T<:HMatrix}
+function hmul!(
+    C::T,
+    A::HTypes,
+    B::HTypes,
+    a,
+    b,
+    compressor,
+    bufs_ = nothing,
+    Cflag = 'N',
+) where {T<:HMatrix}
     bufs = if isnothing(bufs_)
         S = eltype(C)
         chn = Channel{ACABuffer{S}}(Threads.nthreads())
@@ -17,13 +26,15 @@ function hmul!(C::T, A::T, B::T, a, b, compressor, bufs_ = nothing) where {T<:HM
     end
     @assert isroot(C) || !hasdata(parent(C))
     b == true || rmul!(C, b)
-    dict = IdDict{T,Vector{NTuple{2,T}}}()
-    _plan_dict!(dict, C, A, B)
-    _hmul!(C, compressor, dict, a, nothing, bufs)
+    dict = IdDict{T,Vector{Tuple{eltype(children(A)),eltype(children(B))}}}()
+    _plan_dict!(dict, C, A, B, Cflag)
+    _hmul!(C, compressor, dict, a, nothing, bufs, Cflag)
     return C
 end
 
-function _plan_dict!(dict, C::T, A::T, B::T) where {T<:HMatrix}
+hmul!(C::HermitianHMatrix, args...) = hmul!(parent(C), args..., C.uplo)
+
+function _plan_dict!(dict, C::T, A::HTypes, B::HTypes, Cflag) where {T<:HMatrix}
     pairs = get!(dict, C, Tuple{T,T}[])
     if isleaf(A) || isleaf(B) || isleaf(C)
         push!(pairs, (A, B))
@@ -35,8 +46,16 @@ function _plan_dict!(dict, C::T, A::T, B::T) where {T<:HMatrix}
         C_children = children(C)
         for i in 1:ni
             for j in 1:nj
+                (Cflag == 'U' && (i > j)) && continue
+                (Cflag == 'L' && (j > i)) && continue
                 for k in 1:nk
-                    _plan_dict!(dict, C_children[i, j], A_children[i, k], B_children[k, j])
+                    _plan_dict!(
+                        dict,
+                        C_children[i, j],
+                        A_children[i, k],
+                        B_children[k, j],
+                        i == j ? Cflag : 'N',
+                    )
                 end
             end
         end
@@ -44,16 +63,23 @@ function _plan_dict!(dict, C::T, A::T, B::T) where {T<:HMatrix}
     return dict
 end
 
-function _hmul!(C::HMatrix, compressor, dict, a, R, bufs)
+function _hmul!(C::HMatrix, compressor, dict, a, R, bufs, Cflag)
     execute_node!(C, compressor, dict, a, R, bufs)
     shift = pivot(C) .- 1
-    for chd in children(C)
-        irange = rowrange(chd) .- shift[1]
-        jrange = colrange(chd) .- shift[2]
-        Rp     = data(C)
-        Rv     = hasdata(C) ? RkMatrix(Rp.A[irange, :], Rp.B[jrange, :]) : nothing
-        # Rv = hasdata(C) ? view(Rp,irange,jrange) : nothing
-        _hmul!(chd, compressor, dict, a, Rv, bufs)
+    C_children = children(C)
+    ni, nj = size(C_children)
+    for i in 1:ni
+        for j in 1:nj
+            (Cflag == 'U' && (i > j)) && continue
+            (Cflag == 'L' && (j > i)) && continue
+            chd    = C_children[i, j]
+            irange = rowrange(chd) .- shift[1]
+            jrange = colrange(chd) .- shift[2]
+            Rp     = data(C)
+            Rv     = hasdata(C) ? RkMatrix(Rp.A[irange, :], Rp.B[jrange, :]) : nothing
+            # Rv = hasdata(C) ? view(Rp,irange,jrange) : nothing
+            _hmul!(chd, compressor, dict, a, Rv, bufs, i == j ? Cflag : 'N')
+        end
     end
     isleaf(C) || (setdata!(C, nothing))
     return C
@@ -73,7 +99,7 @@ function execute_node!(C::HMatrix, compressor, dict, a, R, bufs)
         # isnothing(R) || axpy!(true, R, d)
         isnothing(R) || mul!(d, R.A, adjoint(R.B), true, true)
     else
-        L = MulLinearOp(data(C), R, pairs, a)
+        L = MulLinearOp{S}(data(C), R, pairs, a)
         buf = take!(bufs)
         R = compressor(L, axes(L, 1), axes(L, 2), buf)
         put!(bufs, buf)
@@ -97,12 +123,16 @@ Note: this structure is used to group the operations required when multiplying
 hierarchical matrices so that they can later be executed in a way that minimizes
 recompression of intermediate computations.
 """
-struct MulLinearOp{R,T,S} <: AbstractMatrix{T}
+struct MulLinearOp{T,V,S} <: AbstractMatrix{T}
     R::Union{RkMatrix{T},Nothing}
     # P::Union{RkMatrixBlockView{T},Nothing}
     P::Union{RkMatrix{T},Nothing}
-    pairs::Vector{NTuple{2,HMatrix{R,T}}}
+    pairs::Vector{V}
     multiplier::S
+end
+
+function MulLinearOp{T}(R, P, pairs::Vector{V}, multiplier::S) where {T,V,S}
+    return MulLinearOp{T,V,S}(R, P, pairs, multiplier)
 end
 
 # AbstractMatrix interface
@@ -192,15 +222,15 @@ Multiplication when the target is a dense matrix. The numbering system in the fo
 =#
 
 function _mul_dense!(C::Base.Matrix, A, B, a)
-    Adata = isleaf(A) ? A.data : A
-    Bdata = isleaf(B) ? B.data : B
+    Adata = isleaf(A) ? data(A) : A
+    Bdata = isleaf(B) ? data(B) : B
     if Adata isa HMatrix
         if Bdata isa Matrix
             _mul131!(C, Adata, Bdata, a)
         elseif Bdata isa RkMatrix
             _mul132!(C, Adata, Bdata, a)
         end
-    elseif Adata isa Matrix
+    elseif Adata isa AdjOrMat
         if Bdata isa Matrix
             _mul111!(C, Adata, Bdata, a)
         elseif Bdata isa RkMatrix
@@ -216,6 +246,10 @@ function _mul_dense!(C::Base.Matrix, A, B, a)
         elseif Bdata isa HMatrix
             _mul123!(C, Adata, Bdata, a)
         end
+    else
+        error(
+            "invalid types: typeof(A) = $(typeof(Adata)) and typeof(B) = $(typeof(Bdata))",
+        )
     end
 end
 
@@ -271,6 +305,16 @@ function _mul121!(
     buffer = R.Bt * M
     return _mul111!(C, R.A, buffer, a)
 end
+function _mul121!(
+    C::Union{Matrix,SubArray,Adjoint},
+    adjR::AdjRk,
+    M::Union{Matrix,SubArray,Adjoint},
+    a::Number,
+)
+    R = parent(adjR)
+    buffer = R.At * M
+    return _mul111!(C, R.B, buffer, a)
+end
 
 function _mul122!(C::Union{Matrix,SubArray,Adjoint}, R::RkMatrix, S::RkMatrix, a::Number)
     if rank(R) < rank(S)
@@ -291,18 +335,18 @@ end
 
 function _mul131!(
     C::Union{Matrix,SubArray,Adjoint},
-    H::HMatrix,
+    H::HTypes,
     M::Union{Matrix,SubArray,Adjoint},
     a::Number,
 )
     if isleaf(H)
         mat = data(H)
-        if mat isa Matrix
+        if mat isa AdjOrMat
             _mul111!(C, mat, M, a)
-        elseif mat isa RkMatrix
+        elseif mat isa AdjRkOrRk
             _mul121!(C, mat, M, a)
         else
-            error()
+            error("$(typeof(mat))")
         end
     end
     for child in children(H)
@@ -365,7 +409,7 @@ Perform `y <-- H*x*a + y*b` in place.
 """
 function LinearAlgebra.mul!(
     y::AbstractVector,
-    A::Union{HMatrix,Adjoint{<:Any,<:HMatrix}},
+    A::Union{HTypes,HTriangular},
     x::AbstractVector,
     a::Number = 1,
     b::Number = 0;
@@ -391,20 +435,7 @@ function LinearAlgebra.mul!(
     # of and HMatrix
     offset = pivot(A) .- 1
     if threads
-        # if a partition of the leaves does not already exist, create one. By
-        # default a `hilbert_partition` is created
-        # TODO: test the various threaded implementations and chose one.
-        # Currently there are two main choices:
-        # 1. spawn a task per leaf, and let julia scheduler handle the tasks
-        # 2. create a static partition of the leaves and try to estimate the
-        #    cost, then spawn one task per block of the partition. In this case,
-        #    test if the hilbert partition is really faster than col_partition
-        #    or row_partition
-        #    Right now the hilbert partition is chosen by default without proper
-        #    testing.
-        haspartition(A) || (partition!(:hilbert, A))
-        _hgemv_static_partition!(y, x, partition_nodes(A), offset)
-        # _hgemv_threads!(y, x, nodes(A_part), offset)  # threaded implementation
+        _hgemv_threads!(y, x, leaves(A), offset)  # threaded implementation
     else
         _hgemv_recursive!(y, A, x, offset) # serial implementation
     end
@@ -418,7 +449,7 @@ end
 # enough.
 function LinearAlgebra.mul!(
     Y::AbstractMatrix,
-    A::Union{HMatrix,Adjoint{<:Any,<:HMatrix}},
+    A::HTypes,
     X::AbstractMatrix,
     a::Number = 1,
     b::Number = 0;
@@ -440,12 +471,7 @@ rowrange(A) - offset[1]` and `J = rowrange(B) - offset[2]`.
 The `offset` argument is used on the caller side to signal if the original
 hierarchical matrix had a `pivot` other than `(1,1)`.
 """
-function _hgemv_recursive!(
-    C::AbstractVector,
-    A::Union{HMatrix,Adjoint{<:Any,<:HMatrix}},
-    B::AbstractVector,
-    offset,
-)
+function _hgemv_recursive!(C::AbstractVector, A::HTypes, B::AbstractVector, offset)
     if isleaf(A)
         irange = rowrange(A) .- offset[1]
         jrange = colrange(A) .- offset[2]
@@ -459,47 +485,25 @@ function _hgemv_recursive!(
     return C
 end
 
-function _hgemv_threads!(C::AbstractVector, B::AbstractVector, partition, offset)
-    nt = Threads.nthreads()
-    # make `nt` copies of C and run in parallel
-    chn = Channel{typeof(C)}(nt)
-    foreach(i -> put!(chn, copy(C)), 1:nt)
-    @sync for p in partition
-        for block in p
-            Threads.@spawn begin
-                buf = take!(chn)
-                _hgemv_recursive!(buf, block, B, offset)
-                put!(chn, buf)
-            end
-        end
-    end
-    # reduce
-    close(chn)
-    for buf in chn
-        axpy!(1, buf, C)
-    end
-    return C
-end
-
-function _hgemv_static_partition!(C::AbstractVector, B::AbstractVector, partition, offset)
-    # create a lock for the reduction step
-    T = eltype(C)
-    mutex = ReentrantLock()
-    np = length(partition)
-    buffers = [zero(C) for _ in 1:np]
-    @sync for n in 1:np
+function _hgemv_threads!(C::AbstractVector, B::AbstractVector, leaves, offset)
+    acc = Threads.Atomic{Int}(1)
+    lck = ReentrantLock()
+    # spawn np workers to assemble the leaves in parallel
+    np = Threads.nthreads()
+    nl = length(leaves)
+    @sync for _ in 1:np
         Threads.@spawn begin
-            leaves = partition[n]
-            Cloc = buffers[n]
-            for leaf in leaves
+            buf = zero(C)
+            while true
+                i = Threads.atomic_add!(acc, 1)
+                i > nl && break
+                leaf = leaves[i]
                 irange = rowrange(leaf) .- offset[1]
                 jrange = colrange(leaf) .- offset[2]
-                mul!(view(Cloc, irange), data(leaf), view(B, jrange), 1, 1)
+                mul!(view(buf, irange), data(leaf), view(B, jrange), 1, 1)
             end
-            # reduction
-            lock(mutex) do
-                return axpy!(1, Cloc, C)
-            end
+            # add the local buffer to the global buffer
+            @lock lck axpy!(true, buf, C)
         end
     end
     return C
@@ -524,27 +528,4 @@ function LinearAlgebra.rmul!(H::HMatrix, b::Number)
         rmul!(child, b)
     end
     return H
-end
-
-"""
-    _cost_gemv(A::Union{Matrix,SubArray,Adjoint})
-
-A proxy for the computational cost of a matrix/vector product.
-"""
-function _cost_gemv(R::RkMatrix)
-    return rank(R) * sum(size(R))
-end
-function _cost_gemv(M::Matrix)
-    return length(M)
-end
-function _cost_gemv(H::HMatrix)
-    acc = 0.0
-    if isleaf(H)
-        acc += _cost_gemv(data(H))
-    else
-        for c in children(H)
-            acc += cost_gemv(c)
-        end
-    end
-    return acc
 end

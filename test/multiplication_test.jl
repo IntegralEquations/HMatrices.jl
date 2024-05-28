@@ -15,12 +15,12 @@ n = 2000
 
 X = rand(SVector{3,Float64}, m)
 Y = [rand(SVector{3,Float64}) for _ in 1:n]
-splitter = CardinalitySplitter(; nmax = 40)
+splitter = CardinalitySplitter(; nmax = 50)
 Xclt = ClusterTree(X, splitter)
 Yclt = ClusterTree(Y, splitter)
 adm = StrongAdmissibilityStd(; eta = 3)
-rtol = 1e-5
-comp = PartialACA(; rtol = rtol)
+atol = 1e-5
+comp = PartialACA(; atol)
 K = laplace_matrix(X, Y)
 H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false, distributed = false)
 
@@ -31,25 +31,20 @@ P = HMatrices.RkMatrix(rand(m, 10), rand(n, 10))
 
 α = rand() - 0.5
 β = rand() - 0.5
-# @testset "MulLinearOp" begin
-#     L = HMatrices.HMulNode(H, Matrix{eltype(H)}(undef,0,0), [(H, H)], 1)
-#     @test size(L) == (m, n)
-#     col = Vector{eltype(H)}(undef, m)
-#     j = 7
-#     HMatrices.getcol!(col, L, j)
-#     @test col ≈ Matrix(P)[:, j] + Matrix(R)[:, j] + H_full * H_full[:, j]
-# end
 
 @testset "hmul!" begin
     C = deepcopy(H)
     tmp = β * H_full + α * H_full * H_full
     HMatrices.hmul!(C, H, H, α, β, PartialACA(; atol = 1e-6))
     @test Matrix(C; global_index = false) ≈ tmp
+    # adjoint
+    C = deepcopy(H)
+    tmp = β * H_full + α * adjoint(H_full) * H_full
+    HMatrices.hmul!(C, adjoint(H), H, α, β, PartialACA(; atol = 1e-6))
+    @test Matrix(C; global_index = false) ≈ tmp
 end
 
 @testset "gemv" begin
-    α = rand() - 0.5
-    β = rand() - 0.5
     T = eltype(H)
     m, n = size(H)
     x = rand(T, n)
@@ -83,13 +78,25 @@ end
 
         # multiply by adjoint
         adjH = adjoint(deepcopy(H))
-        adjH.parent.partition = nothing # make sure partition is created again
         exact = β * y + α * adjoint(H_full) * x
         approx = mul!(copy(y), adjH, x, α, β; threads = true, global_index = false)
         @test exact ≈ approx
         exact = β * y + α * adjoint(Matrix(H; global_index = true)) * x
         approx = mul!(copy(y), adjH, x, α, β; threads = true, global_index = true)
         @test exact ≈ approx
+    end
+
+    @testset "hermitian" begin
+        threads = false
+        for threads in (true, false)
+            K = laplace_matrix(X, X)
+            Hsym = assemble_hmatrix(Hermitian(K), Xclt, Xclt; adm, comp, threads)
+            H = assemble_hmatrix(K, Xclt, Xclt; adm, comp, threads)
+            x = rand(n)
+            y1 = mul!(zero(x), H, x, 1, 0; threads)
+            y2 = mul!(zero(x), Hsym, x, 1, 0; threads)
+            @test y1 ≈ y2
+        end
     end
 end
 

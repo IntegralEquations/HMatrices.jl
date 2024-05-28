@@ -9,8 +9,9 @@ using Printf
 using RecipesBase
 using Distributed
 using Base.Threads
-using AbstractTrees
 using SparseArrays
+
+const AdjOrMat = Union{Matrix,Adjoint{<:Any,<:Matrix}}
 
 """
     getblock!(block,K,irange,jrange)
@@ -65,6 +66,7 @@ include("dhmatrix.jl")
 include("multiplication.jl")
 include("triangular.jl")
 include("lu.jl")
+include("cholesky.jl")
 
 export ClusterTree,
     CardinalitySplitter,

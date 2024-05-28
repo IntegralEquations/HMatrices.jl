@@ -257,7 +257,7 @@ function (tsvd::TSVD)(K, irange::UnitRange, jrange::UnitRange)
     return compress!(M, tsvd)
 end
 
-(comp::TSVD)(K::Matrix) = comp(K, 1:size(K, 1), 1:size(K, 2))
+(comp::TSVD)(K::Base.Matrix) = comp(K, 1:size(K, 1), 1:size(K, 2))
 
 """
     compress!(M::RkMatrix,tsvd::TSVD)

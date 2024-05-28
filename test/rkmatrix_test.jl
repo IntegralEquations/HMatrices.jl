@@ -2,7 +2,7 @@ using HMatrices
 using LinearAlgebra
 using Test
 using StaticArrays
-using HMatrices: RkMatrix, compression_ratio
+using HMatrices: RkMatrix
 
 @testset "RkMatrix" begin
     @testset "Scalar entries" begin
@@ -22,7 +22,6 @@ using HMatrices: RkMatrix, compression_ratio
         @test size(R) == (m, n)
         @test rank(R) == r
         @test Matrix(R) ≈ M
-        @test compression_ratio(R) ≈ m * n / (r * (m + n))
         @test HMatrices.getcol!(a, R, 5) ≈ M[:, 5]
         @test HMatrices.getcol!(b, Ra, 5) ≈ Ma[:, 5]
     end
@@ -38,6 +37,5 @@ using HMatrices: RkMatrix, compression_ratio
         ## basic tests
         @test size(R) == (m, n)
         @test rank(R) == r
-        @test compression_ratio(R) ≈ m * n / (r * (m + n))
     end
 end

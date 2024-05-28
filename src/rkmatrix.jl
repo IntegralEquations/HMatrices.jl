@@ -21,7 +21,7 @@ mutable struct RkMatrix{T} <: AbstractMatrix{T}
     end
 end
 
-function Base.setproperty!(R::RkMatrix, s::Symbol, mat::Matrix)
+function Base.setproperty!(R::RkMatrix, s::Symbol, mat::Base.Matrix)
     setfield!(R, s, mat)
     return R
 end
@@ -63,6 +63,9 @@ function getcol!(col, R::RkMatrix, j::Int, ::Val{T} = Val(false)) where {T}
     end
 end
 
+const AdjRk = Adjoint{<:Any,<:RkMatrix}
+const AdjRkOrRk = Union{AdjRk,RkMatrix}
+
 function getcol!(
     col,
     Ra::Adjoint{<:Any,<:RkMatrix},
@@ -103,27 +106,15 @@ end
 function Base.Matrix(R::RkMatrix{<:Number})
     return R.A * R.Bt
 end
+function Base.Matrix(adjR::Adjoint{<:Any,<:RkMatrix})
+    R = parent(adjR)
+    return R.B * R.At
+end
 function Base.Matrix(R::RkMatrix{<:SMatrix})
     # collect must be used when we have a matrix of `SMatrix` because of this issue:
     # https://github.com/JuliaArrays/StaticArrays.jl/issues/966#issuecomment-943679214
     return R.A * collect(R.Bt)
 end
-
-"""
-    num_stored_elements(R::RkMatrix)
-
-The number of entries stored in the representation. Note that this is *not*
-`length(R)`.
-"""
-num_stored_elements(R::RkMatrix) = size(R.A, 2) * (sum(size(R)))
-
-"""
-    compression_ratio(R::RkMatrix)
-
-The ratio of the uncompressed size of `R` to its compressed size in outer
-product format.
-"""
-compression_ratio(R::RkMatrix) = prod(size(R)) / num_stored_elements(R)
 
 # FIXME: to support scalar and tensorial problems, we currently allow for T
 # to be something other than a plain number. If that is the case, we

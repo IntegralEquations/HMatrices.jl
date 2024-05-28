@@ -29,7 +29,7 @@ function Base.getindex(r::RemoteHMatrix, i::Int, j::Int)
 end
 
 """
-    mutable struct DHMatrix{R,T} <: AbstractHMatrix{T}
+    mutable struct DHMatrix{R,T} <: AbstractMatrix{T}
 
 Concrete type representing a hierarchical matrix with data distributed amongst
 various workers. Its structure is very similar to `HMatrix`, except that the
@@ -38,18 +38,18 @@ leaves store a [`RemoteHMatrix`](@ref) object.
 The `data` on the leaves of a `DHMatrix` may live on a different worker, so
 calling `fetch` on them should be avoided whenever possible.
 """
-mutable struct DHMatrix{R,T} <: AbstractHMatrix{T}
+mutable struct DHMatrix{R,T} <: AbstractMatrix{T}
     rowtree::R
     coltree::R
     # admissible:: Bool --> false
     data::Union{RemoteHMatrix{R,T},Nothing}
     children::Matrix{DHMatrix{R,T}}
-    parent::DHMatrix{R,T}
+    parentnode::DHMatrix{R,T}
     # inner constructor which handles `nothing` fields.
-    function DHMatrix{R,T}(rowtree, coltree, data, children, parent) where {R,T}
+    function DHMatrix{R,T}(rowtree, coltree, data, children, parentnode) where {R,T}
         dhmat = new{R,T}(rowtree, coltree, data)
         dhmat.children = isnothing(children) ? Matrix{DHMatrix{R,T}}(undef, 0, 0) : children
-        dhmat.parent = isnothing(parent) ? dhmat : parent
+        dhmat.parentnode = isnothing(parentnode) ? dhmat : parentnode
         return dhmat
     end
 end
@@ -87,8 +87,9 @@ end
 function _build_block_structure_distribute_cols!(
     current_node::DHMatrix{R,T},
     dmax,
+    d = 0,
 ) where {R,T}
-    if Trees.depth(current_node) == dmax
+    if d == dmax
         return current_node
     else
         X = rowtree(current_node)
@@ -103,7 +104,7 @@ function _build_block_structure_distribute_cols!(
         ]
         current_node.children = children
         for child in children
-            _build_block_structure_distribute_cols!(child, dmax)
+            _build_block_structure_distribute_cols!(child, dmax, d + 1)
         end
         return current_node
     end
@@ -117,11 +118,11 @@ function Base.show(io::IO, ::MIME"text/plain", hmat::DHMatrix)
         io,
         "Distributed HMatrix of $(eltype(hmat)) with range $(rowrange(hmat)) × $(colrange(hmat))",
     )
-    nodes = collect(AbstractTrees.PreOrderDFS(hmat))
-    println(io, "\t number of nodes in tree: $(length(nodes))")
-    leaves = collect(AbstractTrees.Leaves(hmat))
-    @printf(io, "\t number of leaves: %i\n", length(leaves))
-    for (i, leaf) in enumerate(leaves)
+    nodes_ = nodes(hmat)
+    println(io, "\t number of nodes in tree: $(length(nodes_))")
+    leaves_ = leaves(hmat)
+    @printf(io, "\t number of leaves: %i\n", length(leaves_))
+    for (i, leaf) in enumerate(leaves_)
         r = leaf.data.future
         pid = r.where
         irange, jrange = @fetchfrom pid rowrange(fetch(r)), colrange(fetch(r))
@@ -149,9 +150,9 @@ function _assemble_hmat_distributed(
     T = eltype(K)
     wids = workers()
     root = DHMatrix{T}(rtree, ctree; partition_strategy = :distribute_columns)
-    leaves = collect(AbstractTrees.Leaves(root))
-    @info "Assembling distributed HMatrix on $(length(leaves)) processes"
-    @sync for (k, leaf) in enumerate(leaves)
+    leaves_ = leaves(root)
+    @info "Assembling distributed HMatrix on $(length(leaves_)) processes"
+    @sync for (k, leaf) in enumerate(leaves_)
         pid = wids[k] # id of k-th worker
         r = @spawnat pid assemble_hmatrix(
             K,
@@ -222,7 +223,7 @@ function LinearAlgebra.mul!(
 end
 
 function isclean(H::DHMatrix)
-    for node in AbstractTrees.PreOrderDFS(H)
+    for node in nodes(H)
         if isleaf(node)
             if !hasdata(node)
                 @warn "leaf node without data found"
