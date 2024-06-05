@@ -116,7 +116,15 @@ function split!(cluster::ClusterTree, ::CardinalitySplitter)
     rec = container(cluster)
     _, imax = findmax(high_corner(rec) - low_corner(rec))
     l2g = loc2glob(cluster)
-    med = median(center(points[l2g[i]])[imax] for i in irange) # the median along largest axis `imax`
+    # sometimes the median can fail to split the data, for example
+    # median([0,0,0,1]) = 0, so no point will be sorted on the left as per the
+    # predicate x->x<med, causing an infinite recursion. This is rare, but can
+    # happen In such cases, we use the mean instead of the median.
+    med = median((points[l2g[i]])[imax] for i in irange) # the median along largest axis `imax`
+    npts = sum(i -> points[l2g[i]][imax] < med, irange)
+    if abs(npts - length(irange) / 2) > 1
+        med = mean((points[l2g[i]])[imax] for i in irange)
+    end
     predicate = (x) -> x[imax] < med
     left_node, right_node = binary_split!(cluster, predicate)
     cluster.children = [left_node, right_node]

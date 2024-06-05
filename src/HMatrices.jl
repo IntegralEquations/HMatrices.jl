@@ -4,7 +4,7 @@ const PROJECT_ROOT = pkgdir(HMatrices)
 
 using StaticArrays
 using LinearAlgebra
-using Statistics: median
+using Statistics: median, mean
 using Printf
 using RecipesBase
 using Distributed
