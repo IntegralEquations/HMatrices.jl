@@ -118,7 +118,7 @@ during the tree construction.
 """
 function ClusterTree(
     elements,
-    splitter = CardinalitySplitter();
+    splitter = GeometricSplitter();
     copy_elements = true,
     threads = false,
 )
