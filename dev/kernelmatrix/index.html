@@ -29,16 +29,16 @@ K = KernelMatrix(G,X,Y)</code></pre><pre class="documenter-example-output"><code
   0.0748691-0.0442438im     0.0163102-0.101323im        0.0688802-0.0570179im
  -0.0795635-0.095658im      -0.107801-0.0775474im       0.0530888-0.0777354im
   -0.166649+0.0865839im     -0.107644-0.0776759im       0.0119131-0.102882im</code></pre><p>Compressing <code>K</code> is now as simple as:</p><pre><code class="language-julia hljs">H = assemble_hmatrix(K;rtol=1e-6)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HMatrix of ComplexF64 with range 1:10000 × 1:10000
-	 number of nodes in tree: 17005
-	 number of leaves: 12754 (2434 admissible + 10320 full)
-	 min rank of sparse blocks : 22
-	 max rank of sparse blocks : 73
-	 min length of dense blocks : 1521
-	 max length of dense blocks : 1600
-	 min number of elements per leaf: 1521
-	 max number of elements per leaf: 390625
+	 number of nodes in tree: 14681
+	 number of leaves: 11011 (2776 admissible + 8235 full)
+	 min rank of sparse blocks : 20
+	 max rank of sparse blocks : 86
+	 min length of dense blocks : 450
+	 max length of dense blocks : 2850
+	 min number of elements per leaf: 450
+	 max number of elements per leaf: 445550
 	 depth of tree: 0
-	 compression ratio: 2.362560
+	 compression ratio: 2.465329
 </code></pre><p>It is worth noting that several <em>default</em> choices are made during the compression above. See the <a href="../#assemble-generic-subsection">Assembling an <code>HMatrix</code></a> section or the documentation of <a href="../references/#HMatrices.assemble_hmatrix-Tuple{AbstractKernelMatrix}"><code>assemble_hmatrix</code></a> for information on how to obtain a more granular control of the assembling stage.</p><p>As before, you can multiply <code>H</code> by a vector, or do an <code>lu</code> factorization of it.</p><p>Finally, here is a somewhat contrived example of how to use a <code>KernelMatrix</code> when the <code>rowelements</code> and <code>colelements</code> are not simply points (as required e.g. in a Galerkin discretization of boundary integral equations):</p><pre><code class="language-julia hljs">using HMatrices, LinearAlgebra, StaticArrays
 # create a simple structure to represent a segment
 struct Segment
@@ -60,16 +60,16 @@ end
 K = KernelMatrix(G,segments,segments)
 # compress the kernel matrix
 H = assemble_hmatrix(K;rtol=1e-6)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HMatrix of Float64 with range 1:10000 × 1:10000
-	 number of nodes in tree: 3061
-	 number of leaves: 2296 (760 admissible + 1536 full)
+	 number of nodes in tree: 3341
+	 number of leaves: 2506 (798 admissible + 1708 full)
 	 min rank of sparse blocks : 4
-	 max rank of sparse blocks : 6
-	 min length of dense blocks : 1521
-	 max length of dense blocks : 1600
-	 min number of elements per leaf: 1521
-	 max number of elements per leaf: 1562500
+	 max rank of sparse blocks : 7
+	 min length of dense blocks : 625
+	 max length of dense blocks : 4300
+	 min number of elements per leaf: 625
+	 max number of elements per leaf: 2775556
 	 depth of tree: 0
-	 compression ratio: 23.503447
+	 compression ratio: 23.064502
 </code></pre><h2 id="Support-for-tensor-kernels"><a class="docs-heading-anchor" href="#Support-for-tensor-kernels">Support for tensor kernels</a><a id="Support-for-tensor-kernels-1"></a><a class="docs-heading-anchor-permalink" href="#Support-for-tensor-kernels" title="Permalink"></a></h2><div class="admonition is-warning"><header class="admonition-header">Warning</header><div class="admonition-body"><p>Support for tensor-valued kernels should be considered experimental at this stage.</p></div></div><p>For vector-valued partial differential equations such as <em>Stokes</em> or time-harmonic <em>Maxwell&#39;s</em> equation, the underlying integral operator has a kernel function which is a tensor. This package currently provides some limited support for these types of operators. The example below illustrates how to build an <a href="../references/#HMatrices.HMatrix"><code>HMatrix</code></a> representing a <a href="../references/#HMatrices.KernelMatrix"><code>KernelMatrix</code></a> corresponding to Stokes Greens function for points on a sphere:</p><pre><code class="language-julia hljs">using HMatrices, LinearAlgebra, StaticArrays
 const Point3D = SVector{3,Float64}
 m = 5_000
@@ -82,22 +82,22 @@ function G(x,y)
 end
 K = KernelMatrix(G,X,Y)
 H = assemble_hmatrix(K;atol=1e-4)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HMatrix of StaticArraysCore.SMatrix{3, 3, Float64, 9} with range 1:5000 × 1:5000
-	 number of nodes in tree: 4893
-	 number of leaves: 3670 (1318 admissible + 2352 full)
-	 min rank of sparse blocks : 6
-	 max rank of sparse blocks : 27
-	 min length of dense blocks : 1521
-	 max length of dense blocks : 1600
-	 min number of elements per leaf: 1521
-	 max number of elements per leaf: 97969
+	 number of nodes in tree: 4005
+	 number of leaves: 3004 (812 admissible + 2192 full)
+	 min rank of sparse blocks : 7
+	 max rank of sparse blocks : 28
+	 min length of dense blocks : 144
+	 max length of dense blocks : 11368
+	 min number of elements per leaf: 144
+	 max number of elements per leaf: 103632
 	 depth of tree: 0
-	 compression ratio: 3.436215
+	 compression ratio: 3.307479
 </code></pre><p>You can now multiply <code>H</code> by a density <code>σ</code>, where <code>σ</code> is a <code>Vector</code> of <code>SVector{3,Float64}</code></p><pre><code class="language-julia hljs">σ = rand(SVector{3,Float64},m)
 y = H*σ
 # test the output agains the exact value for a given `i`
 i = 42
 exact = sum(K[i,j]*σ[j] for j in 1:m)
 @show y[i] - exact</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">3-element StaticArraysCore.SVector{3, Float64} with indices SOneTo(3):
- -3.129243850708008e-6
-  4.544854164123535e-6
-  1.671910285949707e-5</code></pre><div class="admonition is-info"><header class="admonition-header">Note</header><div class="admonition-body"><p>The <em>naive</em> idea of reinterpreting these <em>matrices of tensors</em> as a (larger) matrix of scalars does not always work because care to be taken when choosing the pivot in the compression stage of the <a href="../references/#HMatrices.PartialACA"><code>PartialACA</code></a> in order to exploit some analytic properties of the underlying kernel. See e.g. section 2.3 of <a href="https://www.sciencedirect.com/science/article/pii/S0021999117306721">this paper</a> for a brief discussion.</p></div></div></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Getting started</a><a class="docs-footer-nextpage" href="../dhmatrix/">Distributed HMatrix »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.4.1 on <span class="colophon-date" title="Tuesday 28 May 2024 11:59">Tuesday 28 May 2024</span>. Using Julia version 1.10.3.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+ 4.351139068603516e-6
+ 8.150935173034668e-6
+ 1.0579824447631836e-6</code></pre><div class="admonition is-info"><header class="admonition-header">Note</header><div class="admonition-body"><p>The <em>naive</em> idea of reinterpreting these <em>matrices of tensors</em> as a (larger) matrix of scalars does not always work because care to be taken when choosing the pivot in the compression stage of the <a href="../references/#HMatrices.PartialACA"><code>PartialACA</code></a> in order to exploit some analytic properties of the underlying kernel. See e.g. section 2.3 of <a href="https://www.sciencedirect.com/science/article/pii/S0021999117306721">this paper</a> for a brief discussion.</p></div></div></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Getting started</a><a class="docs-footer-nextpage" href="../dhmatrix/">Distributed HMatrix »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.4.1 on <span class="colophon-date" title="Sunday 16 June 2024 15:09">Sunday 16 June 2024</span>. Using Julia version 1.10.4.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
