@@ -1,38 +1,82 @@
 name: Run benchmarks
 
 on:
-  push:
-    branches:
-      - 'main'
-    tags: '*'
   pull_request:
+
+permissions:
+  pull-requests: write
+
+env:
+  PACKAGE_NAME: HMatrices
 
 jobs:
   Benchmark:
-    runs-on: self-hosted
-    # run if PR has `run benchmark` label 
-    if: contains(github.event.pull_request.labels.*.name, 'run benchmark') 
+    runs-on: ubuntu-latest
+    # run if PR has `run benchmark` label
+    if: contains(github.event.pull_request.labels.*.name, 'run benchmark')
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@latest
         with:
           version: 1
-      - uses: julia-actions/julia-buildpkg@latest
-      - name: Install dependencies
-        run: julia -e 'using Pkg; pkg"add PkgBenchmark BenchmarkCI@0.1"'
-      - name: Run benchmarks
-        run: julia -e '
-               using BenchmarkCI;
-               env = Dict("JULIA_NUM_THREADS" => 8, "OPENBLAS_NUM_THREADS" => 1);
-               config = BenchmarkCI.BenchmarkConfig(; juliacmd = `julia -O3`, env);
-               BenchmarkCI.judge(;baseline="origin/main", target = config);
-              '
-      - name: Post results
-        run: julia -e 'using BenchmarkCI; BenchmarkCI.postjudge()'
+      - uses: julia-actions/cache@v2
+
+      - name: Build AirspeedVelocity
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # - name: Push results
-      #   run: julia -e "using BenchmarkCI; BenchmarkCI.pushresult()"
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #     SSH_KEY: ${{ secrets.DOCUMENTER_KEY }}
+          JULIA_NUM_THREADS: 8
+          OPENBLAS_NUM_THREADS: 1
+        run: |
+          # Lightweight build step, as sometimes the runner runs out of memory:
+          julia -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; import Pkg; Pkg.add(;url="https://github.com/MilesCranmer/AirspeedVelocity.jl.git")'
+          julia -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; import Pkg; Pkg.build("AirspeedVelocity")'
+
+      - name: Add ~/.julia/bin to PATH
+        run: |
+          echo "$HOME/.julia/bin" >> $GITHUB_PATH
+
+      - name: Run benchmarks
+        run: |
+          echo $PATH
+          ls -l ~/.julia/bin
+          mkdir results
+          benchpkg ${{env.PACKAGE_NAME}} --rev="${{github.event.pull_request.base.sha}},${{github.event.pull_request.head.sha}}" --url=${{github.event.repository.clone_url}} --bench-on="${{github.event.pull_request.head.sha}}" --output-dir=results/ --tune
+
+      - name: Create plots from benchmarks
+        run: |
+          mkdir -p plots
+          benchpkgplot ${{env.PACKAGE_NAME}} --rev="${{github.event.pull_request.base.sha}},${{github.event.pull_request.head.sha}}" --npart=10 --format=pdf --input-dir=results/ --output-dir=plots/
+
+      - name: Upload plot as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plots
+          path: plots
+
+      - name: Create markdown table from benchmarks
+        run: |
+          benchpkgtable ${{env.PACKAGE_NAME}} --rev="${{github.event.pull_request.base.sha}},${{github.event.pull_request.head.sha}}" --input-dir=results/ --ratio > table.md
+          echo '### Benchmark Results' > body.md
+          echo '' >> body.md
+          echo '' >> body.md
+          cat table.md >> body.md
+          echo '' >> body.md
+          echo '' >> body.md
+          echo '### Benchmark Plots' >> body.md
+          echo 'A plot of the benchmark results have been uploaded as an artifact to the workflow run for this PR.' >> body.md
+          echo 'Go to "Actions"->"Run benchmarks"->[the most recent run]->"Artifacts" (at the bottom).' >> body.md
+
+      - name: Find Comment
+        uses: peter-evans/find-comment@v3
+        id: fcbenchmark
+        with:
+          issue-number: ${{github.event.pull_request.number}}
+          comment-author: "github-actions[bot]"
+          body-includes: Benchmark Results
+
+      - name: Comment on PR
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{steps.fcbenchmark.outputs.comment-id}}
+          issue-number: ${{github.event.pull_request.number}}
+          body-path: body.md
+          edit-mode: replace
