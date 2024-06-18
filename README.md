@@ -7,7 +7,7 @@
 [![Build
 Status](https://github.com/IntegralEquations/HMatrices.jl/workflows/CI/badge.svg)](https://github.com/IntegralEquations/HMatrices.jl/actions)
 [![codecov](https://codecov.io/gh/IntegralEquations/HMatrices.jl/branch/main/graph/badge.svg?token=DRT75WR7V2)](https://codecov.io/gh/IntegralEquations/HMatrices.jl)
-![Lifecycle](https://img.shields.io/badge/lifecycle-experimental-blue.svg)
+![Lifecycle](https://img.shields.io/badge/lifecycle-stable-blue.svg)
 
 ## Installation
 Install from the Pkg REPL:
