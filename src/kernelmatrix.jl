@@ -49,7 +49,7 @@ function KernelMatrix(f, X, Y)
 end
 
 """
-    assembel_hmatrix(K::AbstractKernelMatrix[; atol, rank, rtol, kwargs...])
+    assemble_hmatrix(K::AbstractKernelMatrix[; atol, rank, rtol, kwargs...])
 
 Construct an approximation of `K` as an [`HMatrix`](@ref) using the partial ACA
 algorithm for the low rank blocks. The `atol`, `rank`, and `rtol` optional

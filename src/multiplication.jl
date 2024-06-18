@@ -1,7 +1,7 @@
 """
     hmul!(C::HMatrix,A::HMatrix,B::HMatrix,a,b,compressor)
 
-Similar to `mul!` : compute `C <-- A*B*a + B*b`, where `A,B,C` are hierarchical
+Similar to `mul!` : compute `C <-- A*B*a + C*b`, where `A,B,C` are hierarchical
 matrices and `compressor` is a function/functor used in the intermediate stages
 of the multiplication to avoid growring the rank of admissible blocks after
 addition is performed.
@@ -77,7 +77,6 @@ function _hmul!(C::HMatrix, compressor, dict, a, R, bufs, Cflag)
             jrange = colrange(chd) .- shift[2]
             Rp     = data(C)
             Rv     = hasdata(C) ? RkMatrix(Rp.A[irange, :], Rp.B[jrange, :]) : nothing
-            # Rv = hasdata(C) ? view(Rp,irange,jrange) : nothing
             _hmul!(chd, compressor, dict, a, Rv, bufs, i == j ? Cflag : 'N')
         end
     end
@@ -125,7 +124,6 @@ recompression of intermediate computations.
 """
 struct MulLinearOp{T,V,S} <: AbstractMatrix{T}
     R::Union{RkMatrix{T},Nothing}
-    # P::Union{RkMatrixBlockView{T},Nothing}
     P::Union{RkMatrix{T},Nothing}
     pairs::Vector{V}
     multiplier::S
