@@ -11,7 +11,7 @@ env:
 
 jobs:
   Benchmark:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     # run if PR has `run benchmark` label
     if: contains(github.event.pull_request.labels.*.name, 'run benchmark')
     steps:
