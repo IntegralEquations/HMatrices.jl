@@ -1,3 +1,5 @@
+using DataFlowTasks
+
 """
     mutable struct HMatrix{R,T} <: AbstractMatrix{T}
 
@@ -465,6 +467,25 @@ function compress!(H::HMatrix, comp)
         end
     end
     return H
+end
+
+function DataFlowTasks.memory_overlap(A::HMatrix, B::HMatrix)
+    # TODO: compare child and all ancestors before: use nodes(M) instead?
+    if A === B
+        return true
+    elseif A.parentnode === B || A === B.parentnode
+        return true
+    end
+    chdA = leaves(A)
+    chdB = leaves(B)
+    for i in eachindex(chdA)
+        for j in eachindex(chdB)
+            if chdA[i].data === chdB[j].data
+                return true
+            end
+        end
+    end
+    return false
 end
 
 ############################################################################################

@@ -1,3 +1,5 @@
+using DataFlowTasks
+
 const NOPIVOT = VERSION >= v"1.7" ? NoPivot : Val{false}
 
 const HLU = LU{<:Any,<:HMatrix}
@@ -24,15 +26,22 @@ end
 Hierarhical LU facotrization of `M`, using `comp` to generate the compressed
 blocks during the multiplication routines.
 """
-function LinearAlgebra.lu!(M::HMatrix, compressor; threads = use_threads())
+function LinearAlgebra.lu!(M::HMatrix, compressor; threads = use_threads(), dataflowtasks = false)
     # perform the lu decomposition of M in place
     T = eltype(M)
     nt = Threads.nthreads()
     chn = Channel{ACABuffer{T}}(nt)
     foreach(i -> put!(chn, ACABuffer(T)), 1:nt)
-    _lu!(M, compressor, threads, chn)
-    # wrap the result in the LU structure
-    return LU(M, Int[], 0)
+    if (dataflowtasks)
+        _lu_dataflow_tasks(M, compressor, threads, chn)
+        # wrap the result in the LU structure
+        d = @dspawn LU(@R(M), Int[], 0) label="result"
+        return fetch(d)
+    else
+        _lu!(M, compressor, threads, chn)
+        # wrap the result in the LU structure
+        return LU(M, Int[], 0)
+    end
 end
 
 """
@@ -77,6 +86,34 @@ function _lu!(M::HMatrix, compressor, threads, bufs = nothing)
             for j in (i+1):m
                 for k in (i+1):n
                     hmul!(chdM[j, k], chdM[j, i], chdM[i, k], -1, 1, compressor, bufs)
+                end
+            end
+        end
+    end
+    return M
+end
+
+function _lu_dataflow_tasks(M::HMatrix, compressor, threads, bufs = nothing, level = 0, parent = (0,0))
+    if isleaf(M)
+        @dspawn begin
+            @RW(M)
+            d = data(M)
+            @assert d isa Matrix
+            lu!(d, NOPIVOT())
+        end label="lu($(parent[1]),$(parent[2]))\nlevel=$(level)"
+    else
+        @assert !hasdata(M)
+        chdM = children(M)
+        m, n = size(chdM)
+        for i in 1:m
+            _lu_dataflow_tasks(chdM[i, i], compressor, threads, bufs, level + 1, (i, i))
+            for j in (i+1):n
+                @dspawn ldiv!(UnitLowerTriangular(@R(chdM[i, i])), @RW(chdM[i, j]), compressor, bufs) label="ldiv($i,$j)\nlevel=$(level+1)"
+                @dspawn rdiv!(@RW(chdM[j, i]), UpperTriangular(@R(chdM[i, i])), compressor, bufs) label="rdiv($j,$i)\nlevel=$(level+1)"
+            end
+            for j in (i+1):m
+                for k in (i+1):n
+                    @dspawn hmul!(@RW(chdM[j, k]), @R(chdM[j, i]), @R(chdM[i, k]), -1, 1, compressor, bufs) label="hmul($j,$k)\nlevel=$(level+1)"
                 end
             end
         end
