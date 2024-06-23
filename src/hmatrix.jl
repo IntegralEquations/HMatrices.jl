@@ -478,7 +478,7 @@ Return all ancestors of `H`.
 function ancestors(H::HMatrix)
     ancestors = []
     W = H
-    while !isroot(W)
+    while W !== parentnode(W)
         W = parentnode(W)
         push!(ancestors, W)
     end
