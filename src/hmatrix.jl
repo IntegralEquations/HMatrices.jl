@@ -158,6 +158,7 @@ function _show(io, hmat, allow_empty = false)
     @printf(io, "\n\t min number of elements per leaf: %i", minimum(points_per_leaf))
     @printf(io, "\n\t max number of elements per leaf: %i", maximum(points_per_leaf))
     depth_per_leaf = map(depth, leaves_)
+    # TODO: the depth of tree is always zero because all leafs are roots
     @printf(io, "\n\t depth of tree: %i", maximum(depth_per_leaf))
     @printf(io, "\n\t compression ratio: %f\n", compression_ratio(hmat))
     return io
@@ -469,18 +470,47 @@ function compress!(H::HMatrix, comp)
     return H
 end
 
+"""
+    ancestors(H::HMatrix)
+
+Return all ancestors of `H`.
+"""
+function ancestors(H::HMatrix)
+    ancestors = []
+    W = H
+    while !isroot(W)
+        W = parentnode(W)
+        push!(ancestors, W)
+    end
+    return ancestors
+end
+
+"""
+    issubmatrix(A::HMatrix, B::HMatrix)
+
+Return `true` if B is a submatrix of A.
+"""
+function issubmatrix(A::HMatrix, B::HMatrix)
+    for ancB in ancestors(B)
+        if A === ancB
+            return true
+        end
+    end
+    return false
+end
+
 function DataFlowTasks.memory_overlap(A::HMatrix, B::HMatrix)
-    # TODO: compare child and all ancestors before: use nodes(M) instead?
+    # TODO: compare leaves in more efficient way.
     if A === B
         return true
-    elseif A.parentnode === B || A === B.parentnode
+    elseif issubmatrix(A, B) || issubmatrix(B, A)
         return true
     end
     chdA = leaves(A)
     chdB = leaves(B)
     for i in eachindex(chdA)
         for j in eachindex(chdB)
-            if chdA[i].data === chdB[j].data
+            if data(chdA[i]) === data(chdB[j])
                 return true
             end
         end

@@ -104,21 +104,19 @@ for (name, (K, p)) in kernels
                     y = zeros($N)
                 ) samples = 1 evals = 50
             # LU factorization. The assemble is considered in a setup-phase.
-            for dataflowtasks in (true, false)
-                SUITE[name]["LU threads=$threads dataflowtasks=$(threads && dataflowtasks)"] =
-                    @benchmarkable lu!(H, $comp; threads=$threads, dataflowtasks=$(threads && dataflowtasks)) setup = (
-                        H = assemble_hmatrix(
-                            $K,
-                            $Xclt,
-                            $Xclt;
-                            adm = $adm,
-                            comp = $comp,
-                            threads = true,
-                            distributed = false,
-                            global_index = $p,
-                        )
-                    ) samples = 4 evals = 1
-            end
+            SUITE[name]["LU threads=$threads"] =
+                @benchmarkable lu!(H, $comp; threads = $threads) setup = (
+                    H = assemble_hmatrix(
+                        $K,
+                        $Xclt,
+                        $Xclt;
+                        adm = $adm,
+                        comp = $comp,
+                        threads = true,
+                        distributed = false,
+                        global_index = $p,
+                    )
+                ) samples = 4 evals = 1
         end
     end
 end
