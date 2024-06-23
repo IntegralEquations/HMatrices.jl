@@ -3,11 +3,8 @@ uuid = "8646bddf-ab1c-4fa7-9c51-ba187d647618"
 version = "0.2.8"
 
 [deps]
-BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
-CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 DataFlowTasks = "d1549cb6-e9f4-42f8-98cc-ffc8d067ff5b"
 Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
-GraphViz = "f526b714-d49f-11e8-06ff-31ed36ee7ee0"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
