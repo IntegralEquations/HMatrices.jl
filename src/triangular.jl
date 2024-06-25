@@ -1,3 +1,5 @@
+using DataFlowTasks
+
 # helper function to wrap into the correct triangular type
 _wraptriangular(d, ::UpperTriangular) = UpperTriangular(d)
 _wraptriangular(d, ::LowerTriangular) = LowerTriangular(d)
@@ -72,12 +74,29 @@ function LinearAlgebra.ldiv!(L::HLowerTriangular, R::RkMatrix)
     return R
 end
 
-function LinearAlgebra.ldiv!(L::HLowerTriangular, X::HMatrix, compressor, bufs = nothing)
+function LinearAlgebra.ldiv!(
+    L::HLowerTriangular,
+    X::HMatrix,
+    compressor,
+    threads = use_threads(),
+    bufs = nothing,
+    level = 0,
+    parentBlock = (0, 0),
+)
     H = parent(L)
     @debug (isclean(H) || error("HMatrix is dirty"))
     if isleaf(X)
-        d = data(X)
-        ldiv!(L, d)
+        if threads
+            @dspawn begin
+                @R(L)
+                @RW(X)
+                d = data(X)
+                ldiv!(L, d)
+            end label = "ldiv($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)"
+        else
+            d = data(X)
+            ldiv!(L, d)
+        end
     elseif isleaf(H) # X not a leaf, but L is a leaf. This should not happen.
         error()
     else
@@ -88,9 +107,31 @@ function LinearAlgebra.ldiv!(L::HLowerTriangular, X::HMatrix, compressor, bufs =
         for k in 1:size(chdX, 2)
             for i in 1:m
                 for j in 1:(i-1)# j<i
-                    hmul!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor, bufs)
+                    if threads
+                        @dspawn begin
+                            hmul!(
+                                @RW(chdX[i, k]),
+                                @R(chdH[i, j]),
+                                @R(chdX[j, k]),
+                                -1,
+                                1,
+                                compressor,
+                                bufs,
+                            )
+                        end label = "lhmul($i,$k)\nlvl=$(level+1)\np=($(parentBlock[1]),$(parentBlock[2]))"
+                    else
+                        hmul!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor, bufs)
+                    end
                 end
-                ldiv!(_wraptriangular(chdH[i, i], L), chdX[i, k], compressor, bufs)
+                ldiv!(
+                    _wraptriangular(chdH[i, i], L),
+                    chdX[i, k],
+                    compressor,
+                    threads,
+                    bufs,
+                    level + 1,
+                    (i, k),
+                )
             end
         end
     end
@@ -158,11 +199,28 @@ function LinearAlgebra.rdiv!(R::RkMatrix, U::HUpperTriangular)
 end
 
 # 3.3
-function LinearAlgebra.rdiv!(X::HMatrix, U::HUpperTriangular, compressor, bufs = nothing)
+function LinearAlgebra.rdiv!(
+    X::HMatrix,
+    U::HUpperTriangular,
+    compressor,
+    threads = use_threads(),
+    bufs = nothing,
+    level = 0,
+    parentBlock = (0, 0),
+)
     H = parent(U)
     if isleaf(X)
-        d = data(X)
-        rdiv!(d, U) # b <-- b/L
+        if threads
+            @dspawn begin
+                @R(U)
+                @RW(X)
+                d = data(X)
+                rdiv!(d, U) # b <-- b/L
+            end label = "rdiv($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)"
+        else
+            d = data(X)
+            rdiv!(d, U) # b <-- b/L
+        end
     elseif isleaf(H)
         error()
     else
@@ -173,9 +231,31 @@ function LinearAlgebra.rdiv!(X::HMatrix, U::HUpperTriangular, compressor, bufs =
         for k in 1:size(chdX, 1)
             for i in 1:m
                 for j in 1:(i-1)
-                    hmul!(chdX[k, i], chdX[k, j], chdH[j, i], -1, 1, compressor, bufs)
+                    if threads
+                        @dspawn begin
+                            hmul!(
+                                @RW(chdX[k, i]),
+                                @R(chdX[k, j]),
+                                @R(chdH[j, i]),
+                                -1,
+                                1,
+                                compressor,
+                                bufs,
+                            )
+                        end label = "rhmul($k,$i)\nlvl=$(level+1)\np=($(parentBlock[1]),$(parentBlock[2]))"
+                    else
+                        hmul!(chdX[k, i], chdX[k, j], chdH[j, i], -1, 1, compressor, bufs)
+                    end
                 end
-                rdiv!(chdX[k, i], _wraptriangular(chdH[i, i], U), compressor, bufs)
+                rdiv!(
+                    chdX[k, i],
+                    _wraptriangular(chdH[i, i], U),
+                    compressor,
+                    threads,
+                    bufs,
+                    level + 1,
+                    (k, i),
+                )
             end
         end
     end

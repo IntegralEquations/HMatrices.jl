@@ -80,8 +80,8 @@ function _lu!(M::HMatrix, compressor, bufs = nothing)
         for i in 1:m
             _lu!(chdM[i, i], compressor, bufs)
             for j in (i+1):n
-                ldiv!(UnitLowerTriangular(chdM[i, i]), chdM[i, j], compressor, bufs)
-                rdiv!(chdM[j, i], UpperTriangular(chdM[i, i]), compressor, bufs)
+                ldiv!(UnitLowerTriangular(chdM[i, i]), chdM[i, j], compressor, false, bufs)
+                rdiv!(chdM[j, i], UpperTriangular(chdM[i, i]), compressor, false, bufs)
             end
             for j in (i+1):m
                 for k in (i+1):n
@@ -108,18 +108,24 @@ function _lu_threads!(M::HMatrix, compressor, bufs = nothing, level = 0, parent 
         for i in 1:m
             _lu_threads!(chdM[i, i], compressor, bufs, level + 1, (i, i))
             for j in (i+1):n
-                @dspawn ldiv!(
-                    UnitLowerTriangular(@R(chdM[i, i])),
-                    @RW(chdM[i, j]),
+                ldiv!(
+                    UnitLowerTriangular(chdM[i, i]),
+                    chdM[i, j],
                     compressor,
+                    true,
                     bufs,
-                ) label = "ldiv($i,$j)\nlevel=$(level+1)"
-                @dspawn rdiv!(
-                    @RW(chdM[j, i]),
-                    UpperTriangular(@R(chdM[i, i])),
+                    level + 1,
+                    (i, j),
+                )
+                rdiv!(
+                    chdM[j, i],
+                    UpperTriangular(chdM[i, i]),
                     compressor,
+                    true,
                     bufs,
-                ) label = "rdiv($j,$i)\nlevel=$(level+1)"
+                    level + 1,
+                    (j, i),
+                )
             end
             for j in (i+1):m
                 for k in (i+1):n
@@ -131,7 +137,7 @@ function _lu_threads!(M::HMatrix, compressor, bufs = nothing, level = 0, parent 
                         1,
                         compressor,
                         bufs,
-                    ) label = "hmul($j,$k)\nlevel=$(level+1)"
+                    ) label = "hml($j,$k)\nlevel=$(level+1)"
                 end
             end
         end
