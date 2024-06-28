@@ -22,6 +22,12 @@ mutable struct RkMatrix{T} <: AbstractMatrix{T}
     end
 end
 
+function RkMatrix(A::Matrix{T}, B::Matrix{T}) where {T}
+     rk_matrix = RkMatrix(A,B,Vector{Float64}(undef,0))
+
+     return rk_matrix
+end
+
 function Base.setproperty!(R::RkMatrix, s::Symbol, mat::Base.Matrix)
     setfield!(R, s, mat)
     return R
