@@ -85,6 +85,17 @@ end
         approx = mul!(copy(y), adjH, x, α, β; threads = true, global_index = true)
         @test exact ≈ approx
     end
+    
+    @testset "exact vs inexact HMatrix-vector products" begin
+        exact = mul!(copy(y), H, x, α, β;threads=false)  
+        approx = mul!(copy(y), H, x, α, β,1e-5;threads=false)
+        @test isapprox(exact,approx;rtol=1.0e-5)
+
+        #no mentinon to threads, so it's on by default
+        exact = mul!(copy(y), H, x, α, β)   
+        approx = mul!(copy(y), H, x, α, β,1e-5)
+        @test isapprox(exact,approx;rtol=1.0e-5)
+    end
 
     @testset "hermitian" begin
         threads = false
@@ -126,4 +137,6 @@ end
         approx = mul!(copy(y), H, x, α, β; threads = false, global_index = true)
         @test exact ≈ approx
     end
+
+
 end
