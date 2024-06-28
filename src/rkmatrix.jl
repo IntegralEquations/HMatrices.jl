@@ -10,6 +10,7 @@ to get the respective adjoints.
 mutable struct RkMatrix{T} <: AbstractMatrix{T}
     A::Matrix{T}
     B::Matrix{T}
+    # TODO: add an rel_er vector to store the relative error at a given rank.
     function RkMatrix(A::Matrix{T}, B::Matrix{T}) where {T}
         @assert size(A, 2) == size(B, 2) "second dimension of `A` and `B` must match"
         m, r = size(A)

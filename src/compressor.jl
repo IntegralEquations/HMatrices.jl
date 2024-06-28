@@ -162,6 +162,8 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
         end
     end
     # copy from buffer to matrix and create Rk matrix
+    # TODO: create a vector to store the relative error at each rank in the
+    # while loop above, and modify the constructor below to store such info
     R_ = RkMatrix(Matrix(A), Matrix(B))
     # # indicate that `A` and `B` can be reused
     reset!(A)
