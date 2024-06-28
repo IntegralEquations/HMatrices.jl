@@ -170,7 +170,7 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
         end
     end
     # copy from buffer to matrix and create Rk matrix
-    R_ = RkMatrix(Matrix(A), Matrix(B))
+    R_ = RkMatrix(Matrix(A), Matrix(B),Vector(rlist))
     # # indicate that `A` and `B` can be reused
     reset!(A)
     reset!(B)
