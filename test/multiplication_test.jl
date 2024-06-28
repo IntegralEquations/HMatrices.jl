@@ -85,15 +85,29 @@ end
         approx = mul!(copy(y), adjH, x, α, β; threads = true, global_index = true)
         @test exact ≈ approx
     end
-    
+
     @testset "exact vs inexact HMatrix-vector products" begin
+        #tests with and tiwhout global indexes
+
+        exact = mul!(copy(y), H, x, α, β; threads = false, global_index = false)
+        approx= mul!(copy(y), H, x, α, β,1.0e-5; threads = false, global_index = false)
+        @test isapprox(exact,approx;rtol=1.0e-5)
         exact = mul!(copy(y), H, x, α, β;threads=false)  
         approx = mul!(copy(y), H, x, α, β,1e-5;threads=false)
         @test isapprox(exact,approx;rtol=1.0e-5)
 
         #no mentinon to threads, so it's on by default
+        exact = mul!(copy(y), H, x, α, β;  global_index = false)
+        approx= mul!(copy(y), H, x, α, β,1.0e-5; global_index = false)
+        @test isapprox(exact,approx;rtol=1.0e-5)
+
         exact = mul!(copy(y), H, x, α, β)   
         approx = mul!(copy(y), H, x, α, β,1e-5)
+        @test isapprox(exact,approx;rtol=1.0e-5)
+
+        #last test checks that if the desired tolerance is to small, we'll use the full low rank matrix instead
+        exact = mul!(copy(y), H, x, α, β)   
+        approx = mul!(copy(y), H, x, α, β,0.0)
         @test isapprox(exact,approx;rtol=1.0e-5)
     end
 
