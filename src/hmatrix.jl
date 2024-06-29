@@ -479,11 +479,12 @@ end
     linecolor --> :black
     # all leaves
     for block in leaves(hmat)
+        mat = data(block)
         @series begin
             if isadmissible(block)
                 fillcolor --> :blue
-                r = rank(block)
-                m, n = size(block)
+                r = rank(mat)
+                m, n = size(mat)
                 alpha = m * n / (r * (m + n))
                 seriesalpha --> 1 / alpha
             else
