@@ -1,3 +1,5 @@
+using DataFlowTasks
+
 """
     hmul!(C::HMatrix,A::HMatrix,B::HMatrix,a,b,compressor)
 
@@ -13,7 +15,10 @@ function hmul!(
     a,
     b,
     compressor,
+    threads = false, # threads must be always false because this feature does not work correctly right now
     bufs_ = nothing,
+    level = 0,
+    parentBlock = (0, 0, -1, -1),
     Cflag = 'N',
 ) where {T<:HMatrix}
     bufs = if isnothing(bufs_)
@@ -28,7 +33,7 @@ function hmul!(
     b == true || rmul!(C, b)
     dict = IdDict{T,Vector{Tuple{eltype(children(A)),eltype(children(B))}}}()
     _plan_dict!(dict, C, A, B, Cflag)
-    _hmul!(C, compressor, dict, a, nothing, bufs, Cflag)
+    _hmul!(C, compressor, dict, a, nothing, threads, bufs, level, parentBlock, Cflag)
     return C
 end
 
@@ -63,8 +68,19 @@ function _plan_dict!(dict, C::T, A::HTypes, B::HTypes, Cflag) where {T<:HMatrix}
     return dict
 end
 
-function _hmul!(C::HMatrix, compressor, dict, a, R, bufs, Cflag)
-    execute_node!(C, compressor, dict, a, R, bufs)
+function _hmul!(
+    C::HMatrix,
+    compressor,
+    dict,
+    a,
+    R,
+    threads,
+    bufs,
+    level,
+    parentBlock,
+    Cflag,
+)
+    execute_node!(C, compressor, dict, a, R, threads, bufs, level, parentBlock)
     shift = pivot(C) .- 1
     C_children = children(C)
     ni, nj = size(C_children)
@@ -77,32 +93,91 @@ function _hmul!(C::HMatrix, compressor, dict, a, R, bufs, Cflag)
             jrange = colrange(chd) .- shift[2]
             Rp     = data(C)
             Rv     = hasdata(C) ? RkMatrix(Rp.A[irange, :], Rp.B[jrange, :]) : nothing
-            _hmul!(chd, compressor, dict, a, Rv, bufs, i == j ? Cflag : 'N')
+            _hmul!(
+                chd,
+                compressor,
+                dict,
+                a,
+                Rv,
+                threads,
+                bufs,
+                level + 1,
+                (i, j, parentBlock[1], parentBlock[2]),
+                i == j ? Cflag : 'N',
+            )
         end
     end
-    isleaf(C) || (setdata!(C, nothing))
+    if threads
+        isleaf(C) || @dspawn begin
+            @W(C)
+            (setdata!(C, nothing))
+        end label = "hmul_clean($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))"
+    else
+        isleaf(C) || (setdata!(C, nothing))
+    end
     return C
 end
 
 # non-recursive execution
-function execute_node!(C::HMatrix, compressor, dict, a, R, bufs)
+function execute_node!(
+    C::HMatrix,
+    compressor,
+    dict,
+    a,
+    R,
+    threads,
+    bufs,
+    level,
+    parentBlock,
+)
     T = typeof(C)
     S = eltype(C)
     pairs = get(dict, C, Tuple{T,T}[])
-    isnothing(R) && isempty(pairs) && (return C)
+    if !threads
+        isnothing(R) && isempty(pairs) && (return C)
+    end
     if isleaf(C) && !isadmissible(C)
-        d = data(C)::Matrix{S}
-        for (A, B) in pairs
-            _mul_dense!(d, A, B, a)
+        if threads
+            @dspawn begin
+                @RW(C)
+                @R(R)
+                @R(pairs)
+                isnothing(R) && isempty(pairs) && (return C)
+                d = data(C)::Matrix{S}
+                for (A, B) in pairs
+                    _mul_dense!(d, A, B, a)
+                end
+                # isnothing(R) || axpy!(true, R, d)
+                isnothing(R) || mul!(d, R.A, adjoint(R.B), true, true)
+            end label = "hmul_leaf($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))"
+        else
+            d = data(C)::Matrix{S}
+            for (A, B) in pairs
+                _mul_dense!(d, A, B, a)
+            end
+            # isnothing(R) || axpy!(true, R, d)
+            isnothing(R) || mul!(d, R.A, adjoint(R.B), true, true)
         end
-        # isnothing(R) || axpy!(true, R, d)
-        isnothing(R) || mul!(d, R.A, adjoint(R.B), true, true)
     else
-        L = MulLinearOp{S}(data(C), R, pairs, a)
-        buf = take!(bufs)
-        R = compressor(L, axes(L, 1), axes(L, 2), buf)
-        put!(bufs, buf)
-        setdata!(C, R)
+        if threads
+            @dspawn begin
+                @RW(C)
+                @RW(R)
+                @R(pairs)
+                isnothing(R) && isempty(pairs) && (return C)
+                L = MulLinearOp{S}(data(C), R, pairs, a)
+                # buf = take!(bufs)
+                R = compressor(L, axes(L, 1), axes(L, 2), nothing)
+                # put!(bufs, buf)
+                setdata!(C, R)
+            end label = "hmul_comp($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))\nl=$(isleaf(C))"
+        else
+            L = MulLinearOp{S}(data(C), R, pairs, a)
+            buf = take!(bufs)
+            R = compressor(L, axes(L, 1), axes(L, 2), buf)
+            put!(bufs, buf)
+            setdata!(C, R)
+        end
     end
     return C
 end

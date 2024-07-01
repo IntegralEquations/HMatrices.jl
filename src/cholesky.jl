@@ -74,7 +74,7 @@ function _cholesky!(M::HermitianHMatrix, compressor, threads, bufs = nothing)
             _cholesky!(chdM[i, i], compressor, threads, bufs)
             for j in (i+1):n
                 Lᵢᵢ = adjoint(UpperTriangular(chdM[i, i]))
-                ldiv!(Lᵢᵢ, chdM[i, j], compressor, bufs)
+                ldiv!(Lᵢᵢ, chdM[i, j], compressor, false, bufs)
             end
             for j in (i+1):m
                 for k in (i+1):n
@@ -85,6 +85,7 @@ function _cholesky!(M::HermitianHMatrix, compressor, threads, bufs = nothing)
                         -1,
                         1,
                         compressor,
+                        false,
                         bufs,
                     )
                 end

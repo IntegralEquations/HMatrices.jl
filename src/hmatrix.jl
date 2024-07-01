@@ -491,31 +491,108 @@ end
 Return `true` if B is a submatrix of A.
 """
 function issubmatrix(A::HMatrix, B::HMatrix)
-    for ancB in ancestors(B)
-        if A === ancB
+    W = B
+    while W !== parentnode(W)
+        W = parentnode(W)
+        if A === W
             return true
         end
     end
     return false
 end
 
+"""
+    DataFlowTasks.memory_overlap(A::HMatrix, B::HMatrix)
+
+Return `true` if A and B have a memeory overlap. 
+Meanwhile, we assume that each node has only one parant node
+then each node is presented only in one tree. We also assume
+that all HMatrices are constructed correctly and have a unique location
+in memory for the `data` field.
+"""
 function DataFlowTasks.memory_overlap(A::HMatrix, B::HMatrix)
     # TODO: compare leaves in more efficient way.
-    if A === B
-        return true
-    elseif issubmatrix(A, B) || issubmatrix(B, A)
-        return true
+    return A === B || issubmatrix(A, B) || issubmatrix(B, A)
+end
+
+# TODO: Cannot create a generic memory overlap function
+function DataFlowTasks.memory_overlap(
+    C::HMatrix,
+    V::Vector{
+        Tuple{
+            HMatrix{ClusterTree{3,Float64},Float64},
+            HMatrix{ClusterTree{3,Float64},Float64},
+        },
+    },
+)
+    for (A, B) in V
+        if DataFlowTasks.memory_overlap(A, C) || DataFlowTasks.memory_overlap(B, C)
+            return true
+        end
     end
-    chdA = leaves(A)
-    chdB = leaves(B)
-    for i in eachindex(chdA)
-        for j in eachindex(chdB)
-            if data(chdA[i]) === data(chdB[j])
+    return false
+end
+
+# TODO: Cannot create a generic memory overlap function
+function DataFlowTasks.memory_overlap(
+    V::Vector{
+        Tuple{
+            HMatrix{ClusterTree{3,Float64},Float64},
+            HMatrix{ClusterTree{3,Float64},Float64},
+        },
+    },
+    C::HMatrix,
+)
+    return DataFlowTasks.memory_overlap(C, V)
+end
+
+function DataFlowTasks.memory_overlap(R::RkMatrix, H::HMatrix)
+    d = data(H)
+    if d isa RkMatrix && d.A === R.A && d.B === R.B
+        return true
+    else
+        chdnH = children(H)
+        for chdH in chdnH
+            if DataFlowTasks.memory_overlap(R, chdH)
                 return true
             end
         end
     end
     return false
+end
+
+DataFlowTasks.memory_overlap(H::HMatrix, R::RkMatrix) = DataFlowTasks.memory_overlap(R, H)
+DataFlowTasks.memory_overlap(A::RkMatrix, B::RkMatrix) = A.A === B.A || A.B === B.B
+
+# TODO: Cannot create a generic memory overlap function
+function DataFlowTasks.memory_overlap(
+    C::RkMatrix,
+    V::Vector{
+        Tuple{
+            HMatrix{ClusterTree{3,Float64},Float64},
+            HMatrix{ClusterTree{3,Float64},Float64},
+        },
+    },
+)
+    for (A, B) in V
+        if DataFlowTasks.memory_overlap(A, C) || DataFlowTasks.memory_overlap(B, C)
+            return true
+        end
+    end
+    return false
+end
+
+# TODO: Cannot create a generic memory overlap function
+function DataFlowTasks.memory_overlap(
+    V::Vector{
+        Tuple{
+            HMatrix{ClusterTree{3,Float64},Float64},
+            HMatrix{ClusterTree{3,Float64},Float64},
+        },
+    },
+    C::RkMatrix,
+)
+    return DataFlowTasks.memory_overlap(C, V)
 end
 
 ############################################################################################

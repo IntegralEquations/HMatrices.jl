@@ -24,7 +24,7 @@ adm = StrongAdmissibilityStd(3)
 comp = PartialACA(; atol = 1e-10)
 for threads in (false, true)
     H = assemble_hmatrix(Hermitian(K), Xclt, Yclt; adm, comp, threads, distributed = false)
-    hchol = cholesky(H; atol = 1e-10)
+    hchol = cholesky(H; atol = 1e-10, threads = threads)
     y = rand(m)
     M = Matrix(K)
     exact = M \ y

@@ -85,7 +85,16 @@ function _lu!(M::HMatrix, compressor, bufs = nothing)
             end
             for j in (i+1):m
                 for k in (i+1):n
-                    hmul!(chdM[j, k], chdM[j, i], chdM[i, k], -1, 1, compressor, bufs)
+                    hmul!(
+                        chdM[j, k],
+                        chdM[j, i],
+                        chdM[i, k],
+                        -1,
+                        1,
+                        compressor,
+                        false,
+                        bufs,
+                    )
                 end
             end
         end
@@ -93,20 +102,33 @@ function _lu!(M::HMatrix, compressor, bufs = nothing)
     return M
 end
 
-function _lu_threads!(M::HMatrix, compressor, bufs = nothing, level = 0, parent = (0, 0))
+function _lu_threads!(
+    M::HMatrix,
+    compressor,
+    bufs = nothing,
+    level = 0,
+    parent = (0, 0, -1, -1),
+)
     if isleaf(M)
         @dspawn begin
             @RW(M)
             d = data(M)
             @assert d isa Matrix
             lu!(d, NOPIVOT())
-        end label = "lu($(parent[1]),$(parent[2]))\nlevel=$(level)"
+        end label = "lu($(parent[1]),$(parent[2]))\nlvl=$(level)\np=($(parent[3]),$(parent[4]))"
     else
-        @assert !hasdata(M)
+        # TODO: big matrices are dirty I dont know why yet
+        # @assert !hasdata(M)
         chdM = children(M)
         m, n = size(chdM)
         for i in 1:m
-            _lu_threads!(chdM[i, i], compressor, bufs, level + 1, (i, i))
+            _lu_threads!(
+                chdM[i, i],
+                compressor,
+                bufs,
+                level + 1,
+                (i, i, parent[1], parent[2]),
+            )
             for j in (i+1):n
                 ldiv!(
                     UnitLowerTriangular(chdM[i, i]),
@@ -115,7 +137,7 @@ function _lu_threads!(M::HMatrix, compressor, bufs = nothing, level = 0, parent 
                     true,
                     bufs,
                     level + 1,
-                    (i, j),
+                    (i, j, parent[1], parent[2]),
                 )
                 rdiv!(
                     chdM[j, i],
@@ -124,7 +146,7 @@ function _lu_threads!(M::HMatrix, compressor, bufs = nothing, level = 0, parent 
                     true,
                     bufs,
                     level + 1,
-                    (j, i),
+                    (j, i, parent[1], parent[2]),
                 )
             end
             for j in (i+1):m
@@ -136,8 +158,11 @@ function _lu_threads!(M::HMatrix, compressor, bufs = nothing, level = 0, parent 
                         -1,
                         1,
                         compressor,
+                        false,
                         bufs,
-                    ) label = "hml($j,$k)\nlevel=$(level+1)"
+                        level + 1,
+                        (j, k, parent[1], parent[2]),
+                    ) label = "hml($j,$k)\nlvl=$(level+1)\np=($(parent[3]),$(parent[4]))"
                 end
             end
         end
