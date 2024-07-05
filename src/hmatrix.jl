@@ -546,55 +546,6 @@ function DataFlowTasks.memory_overlap(
     return DataFlowTasks.memory_overlap(C, V)
 end
 
-function DataFlowTasks.memory_overlap(R::RkMatrix, H::HMatrix)
-    d = data(H)
-    if d isa RkMatrix && d.A === R.A && d.B === R.B
-        return true
-    else
-        chdnH = children(H)
-        for chdH in chdnH
-            if DataFlowTasks.memory_overlap(R, chdH)
-                return true
-            end
-        end
-    end
-    return false
-end
-
-DataFlowTasks.memory_overlap(H::HMatrix, R::RkMatrix) = DataFlowTasks.memory_overlap(R, H)
-DataFlowTasks.memory_overlap(A::RkMatrix, B::RkMatrix) = A.A === B.A || A.B === B.B
-
-# TODO: Cannot create a generic memory overlap function
-function DataFlowTasks.memory_overlap(
-    C::RkMatrix,
-    V::Vector{
-        Tuple{
-            HMatrix{ClusterTree{3,Float64},Float64},
-            HMatrix{ClusterTree{3,Float64},Float64},
-        },
-    },
-)
-    for (A, B) in V
-        if DataFlowTasks.memory_overlap(A, C) || DataFlowTasks.memory_overlap(B, C)
-            return true
-        end
-    end
-    return false
-end
-
-# TODO: Cannot create a generic memory overlap function
-function DataFlowTasks.memory_overlap(
-    V::Vector{
-        Tuple{
-            HMatrix{ClusterTree{3,Float64},Float64},
-            HMatrix{ClusterTree{3,Float64},Float64},
-        },
-    },
-    C::RkMatrix,
-)
-    return DataFlowTasks.memory_overlap(C, V)
-end
-
 ############################################################################################
 # Recipes
 ############################################################################################

@@ -33,7 +33,7 @@ function hmul!(
     b == true || rmul!(C, b)
     dict = IdDict{T,Vector{Tuple{eltype(children(A)),eltype(children(B))}}}()
     _plan_dict!(dict, C, A, B, Cflag)
-    _hmul!(C, compressor, dict, a, nothing, threads, bufs, level, parentBlock, Cflag)
+    _hmul!(C, compressor, dict, a, threads, bufs, level, parentBlock, Cflag)
     return C
 end
 
@@ -68,37 +68,19 @@ function _plan_dict!(dict, C::T, A::HTypes, B::HTypes, Cflag) where {T<:HMatrix}
     return dict
 end
 
-function _hmul!(
-    C::HMatrix,
-    compressor,
-    dict,
-    a,
-    R,
-    threads,
-    bufs,
-    level,
-    parentBlock,
-    Cflag,
-)
-    execute_node!(C, compressor, dict, a, R, threads, bufs, level, parentBlock)
-    shift = pivot(C) .- 1
+function _hmul!(C::HMatrix, compressor, dict, a, threads, bufs, level, parentBlock, Cflag)
+    execute_node!(C, compressor, dict, a, threads, bufs, level, parentBlock)
     C_children = children(C)
     ni, nj = size(C_children)
     for i in 1:ni
         for j in 1:nj
             (Cflag == 'U' && (i > j)) && continue
             (Cflag == 'L' && (j > i)) && continue
-            chd    = C_children[i, j]
-            irange = rowrange(chd) .- shift[1]
-            jrange = colrange(chd) .- shift[2]
-            Rp     = data(C)
-            Rv     = hasdata(C) ? RkMatrix(Rp.A[irange, :], Rp.B[jrange, :]) : nothing
             _hmul!(
-                chd,
+                C_children[i, j],
                 compressor,
                 dict,
                 a,
-                Rv,
                 threads,
                 bufs,
                 level + 1,
@@ -118,20 +100,23 @@ function _hmul!(
     return C
 end
 
+function getparantdata(C::HMatrix)
+    Cp = parentnode(C)
+    Cp === C && (return nothing)
+
+    shift = pivot(Cp) .- 1
+    irange = rowrange(C) .- shift[1]
+    jrange = colrange(C) .- shift[2]
+    Rp = data(Cp)
+    Rv = hasdata(Cp) ? RkMatrix(Rp.A[irange, :], Rp.B[jrange, :]) : nothing
+    return Rv
+end
+
 # non-recursive execution
-function execute_node!(
-    C::HMatrix,
-    compressor,
-    dict,
-    a,
-    R,
-    threads,
-    bufs,
-    level,
-    parentBlock,
-)
+function execute_node!(C::HMatrix, compressor, dict, a, threads, bufs, level, parentBlock)
     T = typeof(C)
     S = eltype(C)
+    R = getparantdata(C)
     pairs = get(dict, C, Tuple{T,T}[])
     if !threads
         isnothing(R) && isempty(pairs) && (return C)
@@ -140,8 +125,8 @@ function execute_node!(
         if threads
             @dspawn begin
                 @RW(C)
-                @R(R)
                 @R(pairs)
+                R = getparantdata(C)
                 isnothing(R) && isempty(pairs) && (return C)
                 d = data(C)::Matrix{S}
                 for (A, B) in pairs
@@ -162,13 +147,13 @@ function execute_node!(
         if threads
             @dspawn begin
                 @RW(C)
-                @RW(R)
                 @R(pairs)
+                R = getparantdata(C)
                 isnothing(R) && isempty(pairs) && (return C)
                 L = MulLinearOp{S}(data(C), R, pairs, a)
-                # buf = take!(bufs)
-                R = compressor(L, axes(L, 1), axes(L, 2), nothing)
-                # put!(bufs, buf)
+                buf = take!(bufs)
+                R = compressor(L, axes(L, 1), axes(L, 2), buf)
+                put!(bufs, buf)
                 setdata!(C, R)
             end label = "hmul_comp($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))\nl=$(isleaf(C))"
         else

@@ -87,6 +87,8 @@ function _cholesky!(M::HermitianHMatrix, compressor, threads, bufs = nothing)
                         compressor,
                         false,
                         bufs,
+                        0,
+                        (0, 0, -1, -1),
                     )
                 end
             end
