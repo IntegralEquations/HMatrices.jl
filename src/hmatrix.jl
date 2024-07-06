@@ -470,18 +470,22 @@ end
 ############################################################################################
 # Recipes
 ############################################################################################
-@recipe function f(hmat::HMatrix)
+@recipe function f(hmat::HTypes)
     legend --> false
     grid --> false
     aspect_ratio --> :equal
     yflip := true
     seriestype := :shape
     linecolor --> :black
-    # all leaves
+    ylims --> (1, length(rowtree(hmat)))
+    xlims --> (1, length(coltree(hmat)))
     for block in leaves(hmat)
         mat = data(block)
         @series begin
-            if isadmissible(block)
+            if mat isa Adjoint # data is stored elsewhere, make it transparent
+                fillcolor --> :lightgray
+                seriesalpha --> 0.1
+            elseif isadmissible(block)
                 fillcolor --> :blue
                 r = rank(mat)
                 m, n = size(mat)
