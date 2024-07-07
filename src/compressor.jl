@@ -134,6 +134,14 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
         if svdvals(δ)[end] == 0
             @debug "zero pivot found during partial aca"
             i = findfirst(x -> x == true, I)
+            if isnothing(i)
+                # ran out of candidate rows. Good case: the matrix is zero. Bad
+                # case: aca failed
+                all(j -> iszero(K[first(irange), j]), jrange) &&
+                    all(i -> iszero(K[i, first(jrange)]), irange) ||
+                    @warn "aca possibly failed on $irange × $jrange"
+                break
+            end
         else # δ != 0
             iδ = inv(δ)
             # rdiv!(b,δ) # b <-- b/δ

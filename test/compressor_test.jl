@@ -31,6 +31,10 @@ Random.seed!(1)
         R = aca(M, irange, jrange)
         @test rank(R) == r
 
+        # test zero matrix
+        R = aca(zero(M), irange, jrange)
+        @test norm(Matrix(R)) ≈ 0.0
+
         # test fast update of frobenius norm
         m, n = 10000, 1000
         r = 10
