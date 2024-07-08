@@ -49,8 +49,7 @@ function LinearAlgebra.ldiv!(L::HLowerTriangular, B::AbstractMatrix)
         d = data(H)
         ldiv!(_wraptriangular(d, L), B) # B <-- L\B
     else
-        # TODO: big matrices are dirty I dont know why yet
-        # @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
+        @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
         shift = pivot(H) .- 1
         chdH = children(H)
         m, n = size(chdH)
@@ -108,35 +107,18 @@ function LinearAlgebra.ldiv!(
         for k in 1:size(chdX, 2)
             for i in 1:m
                 for j in 1:(i-1)# j<i
-                    if threads
-                        @dspawn begin
-                            hmul!(
-                                @RW(chdX[i, k]),
-                                @R(chdH[i, j]),
-                                @R(chdX[j, k]),
-                                -1,
-                                1,
-                                compressor,
-                                false, # so as not to create a lot of tasks for now
-                                bufs,
-                                level + 1,
-                                (i, k, parentBlock[1], parentBlock[2]),
-                            )
-                        end label = "lhmul($i,$k)\nlvl=$(level+1)\np=($(parentBlock[1]),$(parentBlock[2]))"
-                    else
-                        hmul!(
-                            chdX[i, k],
-                            chdH[i, j],
-                            chdX[j, k],
-                            -1,
-                            1,
-                            compressor,
-                            false,
-                            bufs,
-                            level + 1,
-                            (i, k, parentBlock[1], parentBlock[2]),
-                        )
-                    end
+                    hmul!(
+                        chdX[i, k],
+                        chdH[i, j],
+                        chdX[j, k],
+                        -1,
+                        1,
+                        compressor,
+                        threads,
+                        bufs,
+                        level + 1,
+                        (i, k, parentBlock[1], parentBlock[2]),
+                    )
                 end
                 ldiv!(
                     _wraptriangular(chdH[i, i], L),
@@ -159,8 +141,7 @@ function LinearAlgebra.ldiv!(U::HUpperTriangular, B::AbstractMatrix)
         d = data(H)
         ldiv!(_wraptriangular(d, U), B) # B <-- L\B
     else
-        # TODO: big matrices are dirty I dont know why yet
-        # @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
+        @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
         shift = pivot(H) .- 1
         chdH = children(H)
         m, n = size(chdH)
@@ -187,8 +168,7 @@ function LinearAlgebra.rdiv!(B::StridedMatrix, U::HUpperTriangular)
         d = data(H)
         rdiv!(B, _wraptriangular(d, U)) # b <-- b/L
     else
-        # TODO: big matrices are dirty I dont know why yet
-        # @assert !hasdata(H) "only leaves are allowed to have data when using `rdiv`!"
+        @assert !hasdata(H) "only leaves are allowed to have data when using `rdiv`!"
         shift = reverse(pivot(H) .- 1)
         chdH = children(H)
         m, n = size(chdH)
@@ -241,43 +221,25 @@ function LinearAlgebra.rdiv!(
     elseif isleaf(H)
         error()
     else
-        # TODO: big matrices are dirty I dont know why yet
-        # @assert !hasdata(H) # only leaves are allowed to have data for the inversion
+        @assert threads || !hasdata(H) # only leaves are allowed to have data for the inversion
         chdX = children(X)
         chdH = children(H)
         m, n = size(chdH)
         for k in 1:size(chdX, 1)
             for i in 1:m
                 for j in 1:(i-1)
-                    if threads
-                        @dspawn begin
-                            hmul!(
-                                @RW(chdX[k, i]),
-                                @R(chdX[k, j]),
-                                @R(chdH[j, i]),
-                                -1,
-                                1,
-                                compressor,
-                                false, # so as not to create a lot of tasks for now
-                                bufs,
-                                level + 1,
-                                (k, i, parentBlock[1], parentBlock[2]),
-                            )
-                        end label = "rhmul($k,$i)\nlvl=$(level+1)\np=($(parentBlock[1]),$(parentBlock[2]))"
-                    else
-                        hmul!(
-                            chdX[k, i],
-                            chdX[k, j],
-                            chdH[j, i],
-                            -1,
-                            1,
-                            compressor,
-                            false,
-                            bufs,
-                            level + 1,
-                            (k, i, parentBlock[1], parentBlock[2]),
-                        )
-                    end
+                    hmul!(
+                        chdX[k, i],
+                        chdX[k, j],
+                        chdH[j, i],
+                        -1,
+                        1,
+                        compressor,
+                        threads,
+                        bufs,
+                        level + 1,
+                        (k, i, parentBlock[1], parentBlock[2]),
+                    )
                 end
                 rdiv!(
                     chdX[k, i],
@@ -300,8 +262,7 @@ function LinearAlgebra.ldiv!(L::HLowerTriangular, y::AbstractVector)
         d = data(H)
         ldiv!(_wraptriangular(d, L), y) # B <-- L\B
     else
-        # TODO: big matrices are dirty I dont know why yet
-        # @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
+        @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
         shift = pivot(H) .- 1
         chdH = children(H)
         m, n = size(chdH)
@@ -327,8 +288,7 @@ function LinearAlgebra.ldiv!(U::HUpperTriangular, y::AbstractVector)
         d = data(H)
         ldiv!(_wraptriangular(d, U), y) # B <-- L\B
     else
-        # TODO: big matrices are dirty I dont know why yet
-        # @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
+        @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
         shift = pivot(H) .- 1
         chdH = children(H)
         m, n = size(chdH)

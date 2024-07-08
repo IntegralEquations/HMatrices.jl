@@ -32,16 +32,9 @@ function LinearAlgebra.lu!(M::HMatrix, compressor; threads = use_threads())
     nt = Threads.nthreads()
     chn = Channel{ACABuffer{T}}(nt)
     foreach(i -> put!(chn, ACABuffer(T)), 1:nt)
-    if (threads)
-        _lu_threads!(M, compressor, chn)
-        # wrap the result in the LU structure
-        d = @dspawn LU(@R(M), Int[], 0) label = "result"
-        return fetch(d)
-    else
-        _lu!(M, compressor, chn)
-        # wrap the result in the LU structure
-        return LU(M, Int[], 0)
-    end
+    _lu!(M, compressor, threads, chn)
+    # wrap the result in the LU structure
+    return LU(M, Int[], 0)
 end
 
 """
@@ -68,20 +61,59 @@ Hierarchical LU factorization. See [`lu!`](@ref) for the available options.
 """
 LinearAlgebra.lu(M::HMatrix, args...; kwargs...) = lu!(deepcopy(M), args...; kwargs...)
 
-function _lu!(M::HMatrix, compressor, bufs = nothing)
+function _lu!(
+    M::HMatrix,
+    compressor,
+    threads,
+    bufs = nothing,
+    level = 0,
+    parent = (0, 0, -1, -1),
+)
     if isleaf(M)
-        d = data(M)
-        @assert d isa Matrix
-        lu!(d, NOPIVOT())
+        if threads
+            @dspawn begin
+                @RW(M)
+                d = data(M)
+                @assert d isa Matrix
+                lu!(d, NOPIVOT())
+            end label = "lu($(parent[1]),$(parent[2]))\nlvl=$(level)\np=($(parent[3]),$(parent[4]))"
+        else
+            d = data(M)
+            @assert d isa Matrix
+            lu!(d, NOPIVOT())
+        end
     else
-        @assert !hasdata(M)
+        @assert threads || !hasdata(M)
         chdM = children(M)
         m, n = size(chdM)
         for i in 1:m
-            _lu!(chdM[i, i], compressor, bufs)
+            _lu!(
+                chdM[i, i],
+                compressor,
+                threads,
+                bufs,
+                level + 1,
+                (i, i, parent[1], parent[2]),
+            )
             for j in (i+1):n
-                ldiv!(UnitLowerTriangular(chdM[i, i]), chdM[i, j], compressor, false, bufs)
-                rdiv!(chdM[j, i], UpperTriangular(chdM[i, i]), compressor, false, bufs)
+                ldiv!(
+                    UnitLowerTriangular(chdM[i, i]),
+                    chdM[i, j],
+                    compressor,
+                    threads,
+                    bufs,
+                    level + 1,
+                    (i, j, parent[1], parent[2]),
+                )
+                rdiv!(
+                    chdM[j, i],
+                    UpperTriangular(chdM[i, i]),
+                    compressor,
+                    threads,
+                    bufs,
+                    level + 1,
+                    (j, i, parent[1], parent[2]),
+                )
             end
             for j in (i+1):m
                 for k in (i+1):n
@@ -92,77 +124,11 @@ function _lu!(M::HMatrix, compressor, bufs = nothing)
                         -1,
                         1,
                         compressor,
-                        false,
-                        bufs,
-                    )
-                end
-            end
-        end
-    end
-    return M
-end
-
-function _lu_threads!(
-    M::HMatrix,
-    compressor,
-    bufs = nothing,
-    level = 0,
-    parent = (0, 0, -1, -1),
-)
-    if isleaf(M)
-        @dspawn begin
-            @RW(M)
-            d = data(M)
-            @assert d isa Matrix
-            lu!(d, NOPIVOT())
-        end label = "lu($(parent[1]),$(parent[2]))\nlvl=$(level)\np=($(parent[3]),$(parent[4]))"
-    else
-        # TODO: big matrices are dirty I dont know why yet
-        # @assert !hasdata(M)
-        chdM = children(M)
-        m, n = size(chdM)
-        for i in 1:m
-            _lu_threads!(
-                chdM[i, i],
-                compressor,
-                bufs,
-                level + 1,
-                (i, i, parent[1], parent[2]),
-            )
-            for j in (i+1):n
-                ldiv!(
-                    UnitLowerTriangular(chdM[i, i]),
-                    chdM[i, j],
-                    compressor,
-                    true,
-                    bufs,
-                    level + 1,
-                    (i, j, parent[1], parent[2]),
-                )
-                rdiv!(
-                    chdM[j, i],
-                    UpperTriangular(chdM[i, i]),
-                    compressor,
-                    true,
-                    bufs,
-                    level + 1,
-                    (j, i, parent[1], parent[2]),
-                )
-            end
-            for j in (i+1):m
-                for k in (i+1):n
-                    @dspawn hmul!(
-                        @RW(chdM[j, k]),
-                        @R(chdM[j, i]),
-                        @R(chdM[i, k]),
-                        -1,
-                        1,
-                        compressor,
-                        false,
+                        threads,
                         bufs,
                         level + 1,
                         (j, k, parent[1], parent[2]),
-                    ) label = "hml($j,$k)\nlvl=$(level+1)\np=($(parent[3]),$(parent[4]))"
+                    )
                 end
             end
         end

@@ -93,7 +93,7 @@ function _hmul!(C::HMatrix, compressor, dict, a, threads, bufs, level, parentBlo
         isleaf(C) || @dspawn begin
             @W(C)
             (setdata!(C, nothing))
-        end label = "hmul_clean($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))"
+        end label = "hmclean($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))"
     else
         isleaf(C) || (setdata!(C, nothing))
     end
@@ -134,7 +134,7 @@ function execute_node!(C::HMatrix, compressor, dict, a, threads, bufs, level, pa
                 end
                 # isnothing(R) || axpy!(true, R, d)
                 isnothing(R) || mul!(d, R.A, adjoint(R.B), true, true)
-            end label = "hmul_leaf($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))"
+            end label = "hmleaf($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))"
         else
             d = data(C)::Matrix{S}
             for (A, B) in pairs
@@ -155,7 +155,7 @@ function execute_node!(C::HMatrix, compressor, dict, a, threads, bufs, level, pa
                 R = compressor(L, axes(L, 1), axes(L, 2), buf)
                 put!(bufs, buf)
                 setdata!(C, R)
-            end label = "hmul_comp($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))\nl=$(isleaf(C))"
+            end label = "hmcomp($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))\nl=$(isleaf(C))"
         else
             L = MulLinearOp{S}(data(C), R, pairs, a)
             buf = take!(bufs)
