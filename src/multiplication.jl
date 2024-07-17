@@ -1,4 +1,26 @@
 """
+    mutable struct ITerm{T}
+
+Structure to be used in the inexact product. 
+
+"""
+mutable struct ITerm{R,T}<:AbstractMatrix{T}
+    hmatrix::HMatrix{R,T}
+    rtol::Float64
+end
+
+Base.size(H::ITerm) = size(H.hmatrix)
+
+function Base.show(io::IO,hmat::ITerm)
+    isclean(hmat.hmatrix) || return print(io,"Dirty HMatrix in the ITerm")
+    print(io, "Inexact Product with tol $(hmat.rtol) of HMatrix of $(eltype(hmat.hmatrix)) with range $(rowrange(hmat.hmatrix)) × $(colrange(hmat.hmatrix))")
+    _show(io, hmat.hmatrix, false)
+    return io
+end
+
+Base.show(io::IO, ::MIME"text/plain", hmat::ITerm) = show(io, hmat)
+
+"""
     hmul!(C::HMatrix,A::HMatrix,B::HMatrix,a,b,compressor)
 
 Similar to `mul!` : compute `C <-- A*B*a + C*b`, where `A,B,C` are hierarchical
@@ -554,11 +576,10 @@ end
 
 function LinearAlgebra.mul!(
     y::AbstractVector,
-    A::Union{HTypes,HTriangular},
+    A::ITerm,
     x::AbstractVector,
     a::Number,
-    b::Number,
-    tol::Float64;
+    b::Number;
     global_index = use_global_index(),
     threads = use_threads(),
 )
@@ -570,8 +591,8 @@ function LinearAlgebra.mul!(
     # permuting the result  back C <-- inv(Pr)*C at the end.
     if global_index
         # permute input
-        x = x[colperm(A)]
-        y = permute!(y, rowperm(A))
+        x = x[colperm(A.hmatrix)]
+        y = permute!(y, rowperm(A.hmatrix))
         rmul!(x, a) # multiply in place since this is a new copy, so does not mutate exterior x
     elseif a != 1
         x = a * x # new copy of x since we should not mutate the external x in mul!
@@ -579,15 +600,15 @@ function LinearAlgebra.mul!(
     iszero(b) ? fill!(y, zero(eltype(y))) : rmul!(y, b)
     # offset in case A is not indexed starting at (1,1); e.g. A is not the root
     # of and HMatrix
-    offset = pivot(A) .- 1
+    offset = pivot(A.hmatrix) .- 1
     if threads
-        _hgemv_threads!(y, x, leaves(A), offset,tol)  # threaded implementation
+        _hgemv_threads!(y, x, leaves(A.hmatrix), offset,A.rtol)  # threaded implementation
     else
-        _hgemv_recursive!(y, A, x, offset,tol) # serial implementation
+        _hgemv_recursive!(y, A.hmatrix, x, offset,A.rtol) # serial implementation
     end
     #_hgemv_recursive!(y, A, x, offset,tol) # serial implementation
     # permute output
-    global_index && invpermute!(y, rowperm(A))
+    global_index && invpermute!(y, rowperm(A.hmatrix))
     return y
 end
 
