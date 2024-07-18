@@ -48,7 +48,7 @@ In order to assemble an [`HMatrix`](@ref), you need the following
 
 To illustrate how this is done for a concrete problem, consider two set of
 points $X = \left\{ \boldsymbol{x}_i \right\}_{i=1}^m$ and $Y
-=\left\{\boldsymbol{x}_j \right\}_{j=1}^n$ in $\mathbb{R}^3$, and let `K` be a 
+=\left\{\boldsymbol{x}_j \right\}_{j=1}^n$ in $\mathbb{R}^2$, and let `K` be a 
 $m \times n$ matrix with entries given by:
 
 ```math
