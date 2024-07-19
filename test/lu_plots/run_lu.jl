@@ -15,7 +15,7 @@ const FILE_PATH = joinpath(ARGS[1], "lu_results.jld2")
 Random.seed!(1)
 
 # 3D Laplace on sphere
-problem_size = (100, 500, 1000)
+problem_size = (1000, 5000, 10000, 50000)
 threads = Threads.nthreads() > 1
 
 results = Dict{String,Dict{Int,Float64}}()

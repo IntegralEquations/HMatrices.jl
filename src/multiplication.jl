@@ -89,82 +89,82 @@ function _hmul!(C::HMatrix, compressor, dict, a, threads, bufs, level, parentBlo
             )
         end
     end
-    if threads
-        isleaf(C) || @dspawn begin
-            @W(C)
-            (setdata!(C, nothing))
-        end label = "hmclean($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))"
-    else
-        isleaf(C) || (setdata!(C, nothing))
-    end
     return C
-end
-
-function getparantdata(C::HMatrix)
-    Cp = parentnode(C)
-    Cp === C && (return nothing)
-
-    shift = pivot(Cp) .- 1
-    irange = rowrange(C) .- shift[1]
-    jrange = colrange(C) .- shift[2]
-    Rp = data(Cp)
-    Rv = hasdata(Cp) ? RkMatrix(Rp.A[irange, :], Rp.B[jrange, :]) : nothing
-    return Rv
 end
 
 # non-recursive execution
 function execute_node!(C::HMatrix, compressor, dict, a, threads, bufs, level, parentBlock)
     T = typeof(C)
     S = eltype(C)
-    R = getparantdata(C)
     pairs = get(dict, C, Tuple{T,T}[])
-    if !threads
-        isnothing(R) && isempty(pairs) && (return C)
-    end
+    isempty(pairs) && (return C)
+
     if isleaf(C) && !isadmissible(C)
         if threads
             @dspawn begin
                 @RW(C)
                 @R(pairs)
-                R = getparantdata(C)
-                isnothing(R) && isempty(pairs) && (return C)
                 d = data(C)::Matrix{S}
                 for (A, B) in pairs
                     _mul_dense!(d, A, B, a)
                 end
-                # isnothing(R) || axpy!(true, R, d)
-                isnothing(R) || mul!(d, R.A, adjoint(R.B), true, true)
             end label = "hmleaf($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))"
         else
             d = data(C)::Matrix{S}
             for (A, B) in pairs
                 _mul_dense!(d, A, B, a)
             end
-            # isnothing(R) || axpy!(true, R, d)
-            isnothing(R) || mul!(d, R.A, adjoint(R.B), true, true)
         end
     else
         if threads
             @dspawn begin
                 @RW(C)
                 @R(pairs)
-                R = getparantdata(C)
-                isnothing(R) && isempty(pairs) && (return C)
-                L = MulLinearOp{S}(data(C), R, pairs, a)
+                L = MulLinearOp{S}(data(C), nothing, pairs, a)
                 buf = take!(bufs)
-                R = compressor(L, axes(L, 1), axes(L, 2), buf)
+                setdata!(C, compressor(L, axes(L, 1), axes(L, 2), buf))
                 put!(bufs, buf)
-                setdata!(C, R)
+                flush_to_children!(C)
             end label = "hmcomp($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))\nl=$(isleaf(C))"
         else
-            L = MulLinearOp{S}(data(C), R, pairs, a)
+            L = MulLinearOp{S}(data(C), nothing, pairs, a)
             buf = take!(bufs)
-            R = compressor(L, axes(L, 1), axes(L, 2), buf)
+            setdata!(C, compressor(L, axes(L, 1), axes(L, 2), buf))
             put!(bufs, buf)
-            setdata!(C, R)
+            flush_to_children!(C)
         end
     end
     return C
+end
+
+"""
+    flush_to_children!(H::HMatrix,compressor)
+
+Transfer the blocks `data` to its children. At the end, set `H.data` to `nothing`.
+"""
+function flush_to_children!(H::HMatrix)
+    T = eltype(H)
+    isleaf(H) && (return H)
+    hasdata(H) || (return H)
+    R::RkMatrix{T} = data(H)
+    _add_to_children!(H, R)
+    setdata!(H, nothing)
+    return H
+end
+
+function _add_to_children!(H, R::RkMatrix)
+    shift = pivot(H) .- 1
+    for block in children(H)
+        irange = rowrange(block) .- shift[1]
+        jrange = colrange(block) .- shift[2]
+        bdata = data(block)
+        tmp = RkMatrix(R.A[irange, :], R.B[jrange, :])
+        if bdata === nothing
+            setdata!(block, tmp)
+        else
+            mul!(bdata, tmp.A, adjoint(tmp.B), true, true)
+        end
+    end
 end
 
 """

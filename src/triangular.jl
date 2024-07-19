@@ -92,7 +92,7 @@ function LinearAlgebra.ldiv!(
                 @RW(X)
                 d = data(X)
                 ldiv!(L, d)
-            end label = "ldiv($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4])"
+            end label = "ldiv($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))"
         else
             d = data(X)
             ldiv!(L, d)
@@ -213,7 +213,7 @@ function LinearAlgebra.rdiv!(
                 @RW(X)
                 d = data(X)
                 rdiv!(d, U) # b <-- b/L
-            end label = "rdiv($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4])"
+            end label = "rdiv($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))"
         else
             d = data(X)
             rdiv!(d, U) # b <-- b/L
