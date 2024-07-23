@@ -108,7 +108,7 @@ function execute_node!(C::HMatrix, compressor, dict, a, threads, bufs, level, pa
                 for (A, B) in pairs
                     _mul_dense!(d, A, B, a)
                 end
-            end label = "hmleaf($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))"
+            end label = "hmdense($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))"
         else
             d = data(C)::Matrix{S}
             for (A, B) in pairs
@@ -124,45 +124,54 @@ function execute_node!(C::HMatrix, compressor, dict, a, threads, bufs, level, pa
                 buf = take!(bufs)
                 setdata!(C, compressor(L, axes(L, 1), axes(L, 2), buf))
                 put!(bufs, buf)
-                flush_to_children!(C)
+                flush_to_leaves!(C, compressor, dict)
             end label = "hmcomp($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))\nl=$(isleaf(C))"
         else
             L = MulLinearOp{S}(data(C), nothing, pairs, a)
             buf = take!(bufs)
             setdata!(C, compressor(L, axes(L, 1), axes(L, 2), buf))
             put!(bufs, buf)
-            flush_to_children!(C)
+            flush_to_leaves!(C, compressor, dict)
         end
     end
     return C
 end
 
 """
-    flush_to_children!(H::HMatrix,compressor)
+    flush_to_leaves!(H::HMatrix, compressor, dict)
 
-Transfer the blocks `data` to its children. At the end, set `H.data` to `nothing`.
+Transfer the blocks `data` to its leaves. At the end, set `H.data` to `nothing`.
 """
-function flush_to_children!(H::HMatrix)
+function flush_to_leaves!(H::HMatrix, compressor, dict)
     T = eltype(H)
     isleaf(H) && (return H)
     hasdata(H) || (return H)
     R::RkMatrix{T} = data(H)
-    _add_to_children!(H, R)
+    _add_to_leaves!(H, R, compressor, dict)
     setdata!(H, nothing)
     return H
 end
 
-function _add_to_children!(H, R::RkMatrix)
+function _add_to_leaves!(H, R::RkMatrix, compressor, dict)
+    T = typeof(H)
+    S = eltype(H)
     shift = pivot(H) .- 1
-    for block in children(H)
+    for block in leaves(H)
         irange = rowrange(block) .- shift[1]
         jrange = colrange(block) .- shift[2]
         bdata = data(block)
         tmp = RkMatrix(R.A[irange, :], R.B[jrange, :])
         if bdata === nothing
             setdata!(block, tmp)
-        else
+        elseif bdata isa Matrix
             mul!(bdata, tmp.A, adjoint(tmp.B), true, true)
+        elseif bdata isa RkMatrix
+            if haskey(dict, block)
+                setdata!(block, RkMatrix(hcat(bdata.A, tmp.A), hcat(bdata.B, tmp.B)))
+            else
+                L = MulLinearOp{S}(bdata, tmp, Tuple{T,T}[], 0)
+                setdata!(block, compressor(L, axes(L, 1), axes(L, 2), nothing))
+            end
         end
     end
 end
