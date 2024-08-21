@@ -2,6 +2,7 @@ using HMatrices
 using LoopVectorization
 using StaticArrays
 using LinearAlgebra
+using Gmsh
 
 const EPS = 1e-8
 
@@ -201,4 +202,24 @@ function points_on_cylinder(n, radius, shift = SVector(0, 0, 0))
         result[i+1] = shift + SVector(x, y, z)
     end
     return result
+end
+
+"""
+    points_on_airplain(meshsize)
+
+Returns a vector of 3D points of A319 airplane. 
+mshesize=92.2 -> points_size=100501
+mshesize=345 -> points_size=10318
+"""
+function points_on_airplain(meshsize)
+    gmsh.initialize()
+    path_to_file = joinpath(HMatrices.PROJECT_ROOT, "test", "airplane", "A319.geo")
+    gmsh.open(path_to_file)
+    gmsh.option.setNumber("Mesh.MeshSizeMax", meshsize)
+    gmsh.option.setNumber("Mesh.MeshSizeMin", meshsize)
+    gmsh.model.mesh.generate(2)
+    node_tags, coords, pcoords = gmsh.model.mesh.getNodes()
+    points = [SVector{3,Float64}(coords[i:i+2]) for i in 1:3:length(coords)]
+    gmsh.finalize()
+    return points
 end
