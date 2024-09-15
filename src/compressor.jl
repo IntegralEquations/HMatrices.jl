@@ -254,7 +254,7 @@ Base.@kwdef struct TSVD
     rtol::Float64 = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64))
 end
 
-function (tsvd::TSVD)(K, rowtree::ClusterTree, coltree::ClusterTree)
+function (tsvd::TSVD)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs = nothing)
     irange = index_range(rowtree)
     jrange = index_range(coltree)
     return tsvd(K, irange, jrange)
