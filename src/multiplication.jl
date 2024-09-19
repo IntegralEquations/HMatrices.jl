@@ -1,5 +1,3 @@
-using DataFlowTasks
-
 """
     hmul!(C::HMatrix,A::HMatrix,B::HMatrix,a,b,compressor)
 
@@ -99,6 +97,18 @@ function execute_node!(C::HMatrix, compressor, dict, a, threads, bufs, level, pa
     pairs = get(dict, C, Tuple{T,T}[])
     isempty(pairs) && (return C)
 
+    # if (isempty(pairs)) 
+    #     if threads
+    #         @dspawn begin
+    #             @RW(C)
+    #             flush_to_children!(C, compressor, dict, threads)
+    #         end label = "hmflush($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))"
+    #     else
+    #         flush_to_children!(C, compressor, dict, threads)
+    #     end
+    #     return C
+    # end
+
     if isleaf(C) && !isadmissible(C)
         if threads
             @dspawn begin
@@ -124,17 +134,56 @@ function execute_node!(C::HMatrix, compressor, dict, a, threads, bufs, level, pa
                 buf = take!(bufs)
                 setdata!(C, compressor(L, axes(L, 1), axes(L, 2), buf))
                 put!(bufs, buf)
-                flush_to_leaves!(C, compressor, dict)
+                flush_to_leaves!(C, compressor, dict, threads)
+                # flush_to_children!(C, compressor, dict, threads)
             end label = "hmcomp($(parentBlock[1]),$(parentBlock[2]))\nlvl=$(level)\np=($(parentBlock[3]),$(parentBlock[4]))\nl=$(isleaf(C))"
         else
             L = MulLinearOp{S}(data(C), nothing, pairs, a)
             buf = take!(bufs)
             setdata!(C, compressor(L, axes(L, 1), axes(L, 2), buf))
             put!(bufs, buf)
-            flush_to_leaves!(C, compressor, dict)
+            flush_to_leaves!(C, compressor, dict, threads)
+            # flush_to_children!(C, compressor, dict, threads)
         end
     end
     return C
+end
+
+"""
+    flush_to_children!(H::HMatrix, compressor, dict)
+
+Transfer the blocks `data` to its children. At the end, set `H.data` to `nothing`.
+"""
+function flush_to_children!(H::HMatrix, compressor, dict, threads)
+    isleaf(H) && (return H)
+    hasdata(H) || (return H)
+    if threads
+        _add_to_children_t!(H, compressor, dict)
+    else
+        _add_to_children!(H, compressor, dict)
+    end
+    setdata!(H, nothing)
+    return H
+end
+
+function _add_to_children!(H, compressor, dict)
+    shift = pivot(H) .- 1
+    R::RkMatrix = data(H)
+    for block in children(H)
+        irange = rowrange(block) .- shift[1]
+        jrange = colrange(block) .- shift[2]
+        _add_to_node!(H, block, RkMatrix(R.A[irange, :], R.B[jrange, :]), compressor, dict)
+    end
+end
+
+function _add_to_children_t!(H, compressor, dict)
+    shift = pivot(H) .- 1
+    R::RkMatrix = data(H)
+    Threads.@threads for block in children(H)
+        irange = rowrange(block) .- shift[1]
+        jrange = colrange(block) .- shift[2]
+        _add_to_node!(H, block, RkMatrix(R.A[irange, :], R.B[jrange, :]), compressor, dict)
+    end
 end
 
 """
@@ -142,36 +191,52 @@ end
 
 Transfer the blocks `data` to its leaves. At the end, set `H.data` to `nothing`.
 """
-function flush_to_leaves!(H::HMatrix, compressor, dict)
-    T = eltype(H)
+function flush_to_leaves!(H::HMatrix, compressor, dict, threads)
     isleaf(H) && (return H)
     hasdata(H) || (return H)
-    R::RkMatrix{T} = data(H)
-    _add_to_leaves!(H, R, compressor, dict)
+    if threads
+        _add_to_leaves!(H, compressor, dict)
+    else
+        _add_to_leaves!(H, compressor, dict)
+    end
     setdata!(H, nothing)
     return H
 end
 
-function _add_to_leaves!(H, R::RkMatrix, compressor, dict)
-    T = typeof(H)
-    S = eltype(H)
+function _add_to_leaves!(H, compressor, dict)
     shift = pivot(H) .- 1
+    R::RkMatrix = data(H)
     for block in leaves(H)
         irange = rowrange(block) .- shift[1]
         jrange = colrange(block) .- shift[2]
-        bdata = data(block)
-        tmp = RkMatrix(R.A[irange, :], R.B[jrange, :])
-        if bdata === nothing
-            setdata!(block, tmp)
-        elseif bdata isa Matrix
-            mul!(bdata, tmp.A, adjoint(tmp.B), true, true)
-        elseif bdata isa RkMatrix
-            if haskey(dict, block)
-                setdata!(block, RkMatrix(hcat(bdata.A, tmp.A), hcat(bdata.B, tmp.B)))
-            else
-                L = MulLinearOp{S}(bdata, tmp, Tuple{T,T}[], 0)
-                setdata!(block, compressor(L, axes(L, 1), axes(L, 2), nothing))
-            end
+        _add_to_node!(H, block, RkMatrix(R.A[irange, :], R.B[jrange, :]), compressor, dict)
+    end
+end
+
+function _add_to_leaves_t!(H, compressor, dict)
+    shift = pivot(H) .- 1
+    R::RkMatrix = data(H)
+    Threads.@threads for block in leaves(H)
+        irange = rowrange(block) .- shift[1]
+        jrange = colrange(block) .- shift[2]
+        _add_to_node!(H, block, RkMatrix(R.A[irange, :], R.B[jrange, :]), compressor, dict)
+    end
+end
+
+function _add_to_node!(H, N, R::RkMatrix, compressor, dict)
+    T = typeof(H)
+    S = eltype(H)
+    bdata = data(N)
+    if bdata === nothing
+        setdata!(N, R)
+    elseif bdata isa Matrix
+        mul!(bdata, R.A, adjoint(R.B), true, true)
+    elseif bdata isa RkMatrix
+        if haskey(dict, N)
+            setdata!(N, RkMatrix(hcat(bdata.A, R.A), hcat(bdata.B, R.B)))
+        else
+            L = MulLinearOp{S}(bdata, R, Tuple{T,T}[], 0)
+            setdata!(N, compressor(L, axes(L, 1), axes(L, 2), nothing))
         end
     end
 end

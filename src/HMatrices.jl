@@ -2,6 +2,7 @@ module HMatrices
 
 const PROJECT_ROOT = pkgdir(HMatrices)
 
+using DataFlowTasks
 using StaticArrays
 using LinearAlgebra
 using Statistics: median, mean

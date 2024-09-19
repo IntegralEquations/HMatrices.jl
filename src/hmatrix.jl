@@ -1,5 +1,3 @@
-using DataFlowTasks
-
 """
     mutable struct HMatrix{R,T} <: AbstractMatrix{T}
 
@@ -511,20 +509,10 @@ that all HMatrices are constructed correctly and have a unique location
 in memory for the `data` field.
 """
 function DataFlowTasks.memory_overlap(A::HMatrix, B::HMatrix)
-    # TODO: compare leaves in more efficient way.
     return A === B || issubmatrix(A, B) || issubmatrix(B, A)
 end
 
-# TODO: Cannot create a generic memory overlap function
-function DataFlowTasks.memory_overlap(
-    C::HMatrix,
-    V::Vector{
-        Tuple{
-            HMatrix{ClusterTree{3,Float64},Float64},
-            HMatrix{ClusterTree{3,Float64},Float64},
-        },
-    },
-)
+function DataFlowTasks.memory_overlap(C::HMatrix, V::Vector{<:Tuple{HMatrix,HMatrix}})
     for (A, B) in V
         if DataFlowTasks.memory_overlap(A, C) || DataFlowTasks.memory_overlap(B, C)
             return true
@@ -533,16 +521,7 @@ function DataFlowTasks.memory_overlap(
     return false
 end
 
-# TODO: Cannot create a generic memory overlap function
-function DataFlowTasks.memory_overlap(
-    V::Vector{
-        Tuple{
-            HMatrix{ClusterTree{3,Float64},Float64},
-            HMatrix{ClusterTree{3,Float64},Float64},
-        },
-    },
-    C::HMatrix,
-)
+function DataFlowTasks.memory_overlap(V::Vector{<:Tuple{HMatrix,HMatrix}}, C::HMatrix)
     return DataFlowTasks.memory_overlap(C, V)
 end
 

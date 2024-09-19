@@ -1,5 +1,3 @@
-using DataFlowTasks
-
 const NOPIVOT = VERSION >= v"1.7" ? NoPivot : Val{false}
 
 const HLU = LU{<:Any,<:HMatrix}
@@ -34,7 +32,8 @@ function LinearAlgebra.lu!(M::HMatrix, compressor; threads = use_threads())
     foreach(i -> put!(chn, ACABuffer(T)), 1:nt)
     _lu!(M, compressor, threads, chn)
     # wrap the result in the LU structure
-    return LU(M, Int[], 0)
+    r = @dspawn LU(@R(M), Int[], 0) label = "LU result"
+    return fetch(r)
 end
 
 """
