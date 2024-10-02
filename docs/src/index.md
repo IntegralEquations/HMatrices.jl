@@ -89,8 +89,8 @@ K = LaplaceMatrix(X,Y)
 
 The next step consists in partitioning the point clouds `X` and `Y` into a
 tree-like data structure so that blocks corresponding to well-separated points
-can be easily distinguished and compressed. The `IntegralEquationsBase` package provides
-the `ClusterTree` struct for this purpose (see its documentation for more
+can be easily distinguished and compressed. This package provides
+the [`ClusterTree`](@ref) struct for this purpose (see its documentation for more
 details on available options):
 
 ```@example assemble-basic
