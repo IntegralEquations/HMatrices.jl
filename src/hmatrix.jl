@@ -156,8 +156,8 @@ function _show(io, hmat, allow_empty = false)
     points_per_leaf = map(length, leaves_)
     @printf(io, "\n\t min number of elements per leaf: %i", minimum(points_per_leaf))
     @printf(io, "\n\t max number of elements per leaf: %i", maximum(points_per_leaf))
-    depth_per_node = map(depth, nodes_)
-    @printf(io, "\n\t depth of tree: %i", maximum(depth_per_node))
+    depth_per_leaf = map(depth, leaves_)
+    @printf(io, "\n\t depth of tree: %i", maximum(depth_per_leaf))
     @printf(io, "\n\t compression ratio: %f\n", compression_ratio(hmat))
     return io
 end
