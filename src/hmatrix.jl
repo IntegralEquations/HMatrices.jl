@@ -68,7 +68,8 @@ const HTriangular = Union{HLowerTriangular,HUpperTriangular}
 # NOTE: parent here refers to the underlying data of the view, NOT the
 # parentnode. Ducktype and hope for the best.
 hasdata(H) = !isnothing(data(parent(H)))
-isroot(H) = H.parentnode === H
+isroot(H) = parent(H) === H
+isrootnode(H) = H.parentnode === H
 rowrange(H) = index_range(rowtree(H))
 colrange(H) = index_range(coltree(H))
 rowperm(H) = loc2glob(rowtree(H))
@@ -155,8 +156,8 @@ function _show(io, hmat, allow_empty = false)
     points_per_leaf = map(length, leaves_)
     @printf(io, "\n\t min number of elements per leaf: %i", minimum(points_per_leaf))
     @printf(io, "\n\t max number of elements per leaf: %i", maximum(points_per_leaf))
-    depth_per_leaf = map(depth, leaves_)
-    @printf(io, "\n\t depth of tree: %i", maximum(depth_per_leaf))
+    depth_per_node = map(depth, nodes_)
+    @printf(io, "\n\t depth of tree: %i", maximum(depth_per_node))
     @printf(io, "\n\t compression ratio: %f\n", compression_ratio(hmat))
     return io
 end
