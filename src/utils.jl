@@ -85,7 +85,7 @@ function depth(tree, acc = 0)
     if isroot(tree)
         return acc
     else
-        depth(parent(tree), acc + 1)
+        depth(parentnode(tree), acc + 1)
     end
 end
 

@@ -24,7 +24,6 @@ function hmul!(
     else
         bufs_
     end
-    @assert isroot(C) || !hasdata(parent(C))
     b == true || rmul!(C, b)
     dict = IdDict{T,Vector{Tuple{eltype(children(A)),eltype(children(B))}}}()
     _plan_dict!(dict, C, A, B, Cflag)
