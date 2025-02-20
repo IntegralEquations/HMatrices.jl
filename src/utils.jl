@@ -82,7 +82,7 @@ Overload this function if your structure has a more efficient way to compute
 `depth` (e.g. if it stores it in a field).
 """
 function depth(tree, acc = 0)
-    if isrootnode(tree)
+    if isroot(tree)
         return acc
     else
         depth(parentnode(tree), acc + 1)

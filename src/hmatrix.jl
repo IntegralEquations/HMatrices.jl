@@ -68,8 +68,7 @@ const HTriangular = Union{HLowerTriangular,HUpperTriangular}
 # NOTE: parent here refers to the underlying data of the view, NOT the
 # parentnode. Ducktype and hope for the best.
 hasdata(H) = !isnothing(data(parent(H)))
-isroot(H) = parent(H) === H
-isrootnode(H) = H.parentnode === H
+isroot(H) = parentnode(H) === H
 rowrange(H) = index_range(rowtree(H))
 colrange(H) = index_range(coltree(H))
 rowperm(H) = loc2glob(rowtree(H))
