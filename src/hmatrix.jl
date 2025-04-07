@@ -334,7 +334,7 @@ end
     _assemble_threads!(hmat::HMatrix,K,comp)
 
 Like [`_assemble_cpu!`](@ref), but uses threads to assemble the leaves. Note
-that the threads are spanwned using `Threads.@spawn`, which means they are
+that the threads are spawned using `Threads.@spawn`, which means they are
 spawned on the same worker as the caller.
 """
 function _assemble_threads!(hmat, K, comp)
