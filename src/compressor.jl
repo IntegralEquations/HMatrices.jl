@@ -143,8 +143,8 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
                 break
             end
         else # δ != 0
-            iδ = inv(δ)
-            # rdiv!(b,δ) # b <-- b/δ
+            iδ = T <: AbstractArray ? pinv(δ; rtol = 1e-8) : inv(δ)
+            # b <-- b/δ
             for k in eachindex(b)
                 b[k] = b[k] * iδ
             end
