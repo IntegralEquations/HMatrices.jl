@@ -99,8 +99,8 @@ function _build_block_structure_distribute_cols!(
         row_children = [X]
         col_children = Y.children
         children = [
-            DHMatrix{R,T}(r, c, nothing, nothing, current_node) for r in row_children,
-            c in col_children
+            DHMatrix{R,T}(r, c, nothing, nothing, current_node) for
+            r in row_children, c in col_children
         ]
         current_node.children = children
         for child in children

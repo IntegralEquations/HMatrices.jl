@@ -58,8 +58,9 @@ end
 Hierarchical cholesky factorization. See [`cholesky!`](@ref) for the available
 options.
 """
-LinearAlgebra.cholesky(M::HermitianHMatrix, args...; kwargs...) =
-    cholesky!(deepcopy(M), args...; kwargs...)
+function LinearAlgebra.cholesky(M::HermitianHMatrix, args...; kwargs...)
+    return cholesky!(deepcopy(M), args...; kwargs...)
+end
 
 function _cholesky!(M::HermitianHMatrix, compressor, threads, bufs = nothing)
     if isleaf(M)

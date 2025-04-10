@@ -136,7 +136,7 @@ reset!(A::VectorOfVectors) = (A.m = 0; A.k = 0)
 
 function Base.getindex(A::VectorOfVectors, i)
     i <= A.k || throw(BoundsError(A, i))
-    return view(A.data, (i-1)*A.m+1:i*A.m)
+    return view(A.data, ((i-1)*A.m+1):(i*A.m))
 end
 
 function Base.Matrix(A::VectorOfVectors{T}) where {T}
