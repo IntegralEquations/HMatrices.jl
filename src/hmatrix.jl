@@ -567,7 +567,7 @@ function _axpy!(a, X::AbstractSparseArray, Y::HMatrix)
                         a = zeros(T, m)
                         b = zeros(T, n)
                         a[i-irange.start+1] = vals[idx]
-                        b[j-jrange.start+1] = 1
+                        b[j-jrange.start+1] = one(T)
                         R.A = hcat(R.A, a)
                         R.B = hcat(R.B, b)
                     else
