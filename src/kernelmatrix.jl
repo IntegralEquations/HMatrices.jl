@@ -48,6 +48,12 @@ function KernelMatrix(f, X, Y)
     return KernelMatrix{typeof(f),typeof(X),typeof(Y),T}(f, X, Y)
 end
 
+# light wrapper for Hermitian
+const HermitianKernelMatrix = Hermitian{<:Any,<:KernelMatrix}
+
+rowelements(K::HermitianKernelMatrix) = K |> parent |> rowelements
+colelements(K::HermitianKernelMatrix) = K |> parent |> colelements
+
 """
     assemble_hmatrix(K::AbstractKernelMatrix[; atol, rank, rtol, kwargs...])
 
@@ -57,7 +63,8 @@ arguments are passed to the [`PartialACA`](@ref) constructor, and the remaining
 keyword arguments are forwarded to the main `assemble_hmatrix` function.
 """
 function assemble_hmatrix(
-    K::AbstractKernelMatrix;
+    K::Union{KernelMatrix,HermitianKernelMatrix};
+    # K::KernelMatrix;
     atol = 0,
     rank = typemax(Int),
     rtol = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),

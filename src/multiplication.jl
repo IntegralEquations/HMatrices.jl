@@ -221,26 +221,26 @@ Multiplication when the target is a dense matrix. The numbering system in the fo
 function _mul_dense!(C::Base.Matrix, A, B, a)
     Adata = isleaf(A) ? data(A) : A
     Bdata = isleaf(B) ? data(B) : B
-    if Adata isa HMatrix
-        if Bdata isa Matrix
+    if parent(Adata) isa HMatrix
+        if parent(Bdata) isa Matrix
             _mul131!(C, Adata, Bdata, a)
-        elseif Bdata isa RkMatrix
+        elseif parent(Bdata) isa RkMatrix
             _mul132!(C, Adata, Bdata, a)
         end
-    elseif Adata isa AdjOrMat
-        if Bdata isa Matrix
+    elseif parent(Adata) isa AdjOrMat
+        if parent(Bdata) isa Matrix
             _mul111!(C, Adata, Bdata, a)
-        elseif Bdata isa RkMatrix
+        elseif parent(Bdata) isa RkMatrix
             _mul112!(C, Adata, Bdata, a)
-        elseif Bdata isa HMatrix
+        elseif parent(Bdata) isa HMatrix
             _mul113!(C, Adata, Bdata, a)
         end
-    elseif Adata isa RkMatrix
-        if Bdata isa Matrix
+    elseif parent(Adata) isa RkMatrix
+        if parent(Bdata) isa Matrix
             _mul121!(C, Adata, Bdata, a)
-        elseif Bdata isa RkMatrix
+        elseif parent(Bdata) isa RkMatrix
             _mul122!(C, Adata, Bdata, a)
-        elseif Bdata isa HMatrix
+        elseif parent(Bdata) isa HMatrix
             _mul123!(C, Adata, Bdata, a)
         end
     else
