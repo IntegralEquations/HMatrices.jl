@@ -137,9 +137,13 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
             if isnothing(i)
                 # ran out of candidate rows. Good case: the matrix is zero. Bad
                 # case: aca failed
-                all(j -> iszero(K[first(irange), j]), jrange) &&
-                all(i -> iszero(K[i, first(jrange)]), irange) ||
-                    @warn "aca possibly failed on $irange × $jrange"
+                try
+                  all(j -> iszero(K[first(irange), j]), jrange) &&
+                  all(i -> iszero(K[i, first(jrange)]), irange) ||
+                      @warn "aca possibly failed on $irange × $jrange"
+                catch
+                  @warn "aca possibly failed on $irange × $jrange"
+                end
                 break
             end
         else # δ != 0
