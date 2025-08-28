@@ -1,6 +1,6 @@
 name = "HMatrices"
 uuid = "8646bddf-ab1c-4fa7-9c51-ba187d647618"
-version = "0.2.12"
+version = "0.2.13"
 
 [deps]
 Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
