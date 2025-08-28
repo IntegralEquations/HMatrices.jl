@@ -138,11 +138,11 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
                 # ran out of candidate rows. Good case: the matrix is zero. Bad
                 # case: aca failed
                 if K isa KernelMatrix
-                  all(j -> iszero(K[first(irange), j]), jrange) &&
-                  all(i -> iszero(K[i, first(jrange)]), irange) ||
-                      @warn "aca possibly failed on $irange × $jrange" maxlog=1
+                    all(j -> iszero(K[first(irange), j]), jrange) &&
+                    all(i -> iszero(K[i, first(jrange)]), irange) ||
+                        @warn "aca possibly failed on $irange × $jrange" maxlog=1
                 else
-                  @warn "aca possibly failed on $irange × $jrange" maxlog=1
+                    @warn "aca possibly failed on $irange × $jrange" maxlog=1
                 end
                 break
             end
