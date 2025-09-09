@@ -68,6 +68,10 @@ include("triangular.jl")
 include("lu.jl")
 include("cholesky.jl")
 
+if !isdefined(Base, :get_extension) # for julia version < 1.9
+    include("../ext/HBEAST/HBEAST.jl")
+end
+
 export ClusterTree,
     CardinalitySplitter,
     DyadicSplitter,
