@@ -8,6 +8,7 @@
 Status](https://github.com/IntegralEquations/HMatrices.jl/workflows/CI/badge.svg)](https://github.com/IntegralEquations/HMatrices.jl/actions)
 [![codecov](https://codecov.io/gh/IntegralEquations/HMatrices.jl/branch/main/graph/badge.svg?token=DRT75WR7V2)](https://codecov.io/gh/IntegralEquations/HMatrices.jl)
 ![Lifecycle](https://img.shields.io/badge/lifecycle-stable-blue.svg)
+[![Runic formatting](https://img.shields.io/badge/code%20style-runic-blue)](https://github.com/fredrikekre/Runic.jl)
 
 ## Installation
 Install from the Pkg REPL:
