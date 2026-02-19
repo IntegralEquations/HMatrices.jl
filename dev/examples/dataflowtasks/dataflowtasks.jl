@@ -30,7 +30,7 @@ include(joinpath(HMatrices.PROJECT_ROOT, "test", "testutils.jl"))
 N = 50_000
 nmax = 200
 eta = 3
-rtol = 1e-5
+rtol = 1.0e-5
 radius = 1
 
 X = points_on_cylinder(N, radius)
@@ -51,7 +51,7 @@ GC.gc()
 @time H = assemble_hmatrix(K, Xclt, Xclt; adm, comp, threads = true, distributed = false)
 Hc = deepcopy(H)
 GC.gc()
-@time F = lu!(Hc; atol = 1e-4, threads)
+@time F = lu!(Hc; atol = 1.0e-4, threads)
 Hc = deepcopy(H)
 GC.gc()
-loginfo = DataFlowTasks.@log lu!(Hc; atol = 1e-4, threads)
+loginfo = DataFlowTasks.@log lu!(Hc; atol = 1.0e-4, threads)
