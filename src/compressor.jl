@@ -131,7 +131,7 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
         end
         j = _aca_partial_pivot(b, J)
         δ = b[j]
-        if svdvals(δ)[end] == 0
+        if min_svd_vals(δ) == 0
             @debug "zero pivot found during partial aca"
             i = findfirst(x -> x == true, I)
             if isnothing(i)
@@ -212,12 +212,23 @@ kernels; see
 (https://www.sciencedirect.com/science/article/pii/S0021999117306721)[https://www.sciencedirect.com/science/article/pii/S0021999117306721]
 for more details.
 """
+min_svd_vals(x::Number) = abs(x)
+function min_svd_vals(A::AbstractMatrix{T}) where {T}
+    n, m = size(A)
+    if (n == 2) || (n == 3)
+        max(zero(T), eigmin(adjoint(A)*A)) |> sqrt
+    else
+        svdvals(A)[end]
+    end
+end
+min_svd_vals(A::Any) = svdvals(A::Any)[end] # fallback
+
 function _aca_partial_pivot(v, J)
     idx = -1
     val = -Inf
-    for n in 1:length(J)
+    for n = 1:length(J)
         x = v[n]
-        σ = svdvals(x)[end]
+        σ = min_svd_vals(x)
         if σ > val && J[n]
             idx = n
             val = σ
