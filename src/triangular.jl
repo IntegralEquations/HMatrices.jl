@@ -5,9 +5,9 @@ _wraptriangular(d, ::UnitUpperTriangular) = UnitUpperTriangular(d)
 _wraptriangular(d, ::UnitLowerTriangular) = UnitLowerTriangular(d)
 
 isadmissible(H::HTriangular) = H |> parent |> isadmissible
-data(t::HTriangular)         = _wraptriangular(data(parent(t)), t)
-rowtree(H::HTriangular)      = H |> parent |> rowtree
-coltree(H::HTriangular)      = H |> parent |> coltree
+data(t::HTriangular) = _wraptriangular(data(parent(t)), t)
+rowtree(H::HTriangular) = H |> parent |> rowtree
+coltree(H::HTriangular) = H |> parent |> coltree
 function children(T::HTriangular)
     H = parent(T)
     chdH = children(H)
@@ -25,9 +25,9 @@ function children(T::HTriangular)
     end
     return v
 end
-parentnode(H::HTriangular)  = H |> parent |> parentnode |> adjoint
+parentnode(H::HTriangular) = H |> parent |> parentnode |> adjoint
 setdata!(H::HTriangular, d) = setdata!(parentnode(H), d)
-isleaf(H::HTriangular)      = isempty(children(H))
+isleaf(H::HTriangular) = isempty(children(H))
 
 hasdata(t::HTriangular) = hasdata(parent(t))
 
@@ -55,7 +55,7 @@ function LinearAlgebra.ldiv!(L::HLowerTriangular, B::AbstractMatrix)
         for i in 1:m
             irows = colrange(chdH[i, i]) .- shift[2]
             bi = view(B, irows, :)
-            for j in 1:(i-1)# j<i
+            for j in 1:(i - 1) # j<i
                 jrows = colrange(chdH[i, j]) .- shift[2]
                 bj = view(B, jrows, :)
                 _mul131!(bi, chdH[i, j], bj, -1)
@@ -87,7 +87,7 @@ function LinearAlgebra.ldiv!(L::HLowerTriangular, X::HMatrix, compressor, bufs =
         @assert m == n
         for k in 1:size(chdX, 2)
             for i in 1:m
-                for j in 1:(i-1)# j<i
+                for j in 1:(i - 1) # j<i
                     hmul!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor, bufs)
                 end
                 ldiv!(_wraptriangular(chdH[i, i], L), chdX[i, k], compressor, bufs)
@@ -111,7 +111,7 @@ function LinearAlgebra.ldiv!(U::HUpperTriangular, B::AbstractMatrix)
         for i in m:-1:1
             irows = colrange(chdH[i, i]) .- shift[2]
             bi = view(B, irows, :)
-            for j in (i+1):n # j>i
+            for j in (i + 1):n # j>i
                 jrows = colrange(chdH[i, j]) .- shift[2]
                 bj = view(B, jrows, :)
                 _mul131!(bi, chdH[i, j], bj, -1)
@@ -138,7 +138,7 @@ function LinearAlgebra.rdiv!(B::StridedMatrix, U::HUpperTriangular)
         for i in 1:m
             icols = rowrange(chdH[i, i]) .- shift[1]
             bi = view(B, :, icols)
-            for j in 1:(i-1)
+            for j in 1:(i - 1)
                 jcols = rowrange(chdH[j, i]) .- shift[1]
                 bj = view(B, :, jcols)
                 _mul113!(bi, bj, chdH[j, i], -1)
@@ -172,7 +172,7 @@ function LinearAlgebra.rdiv!(X::HMatrix, U::HUpperTriangular, compressor, bufs =
         m, n = size(chdH)
         for k in 1:size(chdX, 1)
             for i in 1:m
-                for j in 1:(i-1)
+                for j in 1:(i - 1)
                     hmul!(chdX[k, i], chdX[k, j], chdH[j, i], -1, 1, compressor, bufs)
                 end
                 rdiv!(chdX[k, i], _wraptriangular(chdH[i, i], U), compressor, bufs)
@@ -196,7 +196,7 @@ function LinearAlgebra.ldiv!(L::HLowerTriangular, y::AbstractVector)
         for i in 1:m
             irows = colrange(chdH[i, i]) .- shift[2]
             bi = view(y, irows)
-            for j in 1:(i-1)# j<i
+            for j in 1:(i - 1) # j<i
                 jrows = colrange(chdH[i, j]) .- shift[2]
                 bj = view(y, jrows)
                 _mul131!(bi, chdH[i, j], bj, -1)
@@ -222,7 +222,7 @@ function LinearAlgebra.ldiv!(U::HUpperTriangular, y::AbstractVector)
         for i in m:-1:1
             irows = colrange(chdH[i, i]) .- shift[2]
             bi = view(y, irows)
-            for j in (i+1):n # j>i
+            for j in (i + 1):n # j>i
                 jrows = colrange(chdH[i, j]) .- shift[2]
                 bj = view(y, jrows)
                 _mul131!(bi, chdH[i, j], bj, -1)

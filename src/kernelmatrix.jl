@@ -30,7 +30,7 @@ K = KernelMatrix(X,Y) do x,y
 end
 ```
 """
-struct KernelMatrix{Tf,Tx,Ty,T} <: AbstractKernelMatrix{T}
+struct KernelMatrix{Tf, Tx, Ty, T} <: AbstractKernelMatrix{T}
     f::Tf
     X::Tx
     Y::Ty
@@ -45,7 +45,7 @@ kernel(K::KernelMatrix) = K.f
 
 function KernelMatrix(f, X, Y)
     T = Base.promote_op(f, eltype(X), eltype(Y))
-    return KernelMatrix{typeof(f),typeof(X),typeof(Y),T}(f, X, Y)
+    return KernelMatrix{typeof(f), typeof(X), typeof(Y), T}(f, X, Y)
 end
 
 """
@@ -57,12 +57,12 @@ arguments are passed to the [`PartialACA`](@ref) constructor, and the remaining
 keyword arguments are forwarded to the main `assemble_hmatrix` function.
 """
 function assemble_hmatrix(
-    K::AbstractKernelMatrix;
-    atol = 0,
-    rank = typemax(Int),
-    rtol = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
-    kwargs...,
-)
+        K::AbstractKernelMatrix;
+        atol = 0,
+        rank = typemax(Int),
+        rtol = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
+        kwargs...,
+    )
     comp = PartialACA(; rtol, atol, rank)
     adm = StrongAdmissibilityStd()
     X = map(center, rowelements(K))

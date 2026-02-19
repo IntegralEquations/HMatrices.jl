@@ -26,9 +26,9 @@ Benchmark the compression using:
 
 SUITE["Compressors"] = BenchmarkGroup(["aca", "compression", "rkmatrix"])
 
-rtol = 1e-6
+rtol = 1.0e-6
 N = 1000
-X = rand(SVector{3,Float64}, N)
+X = rand(SVector{3, Float64}, N)
 Y = map(x -> x + SVector(3, 3, 3), X)
 K = laplace_matrix(X, Y)
 irange = 1:N
@@ -46,10 +46,10 @@ Problem parameters
 
 ===========================================================================================#
 
-N      = 50_000
-nmax   = 200
-eta    = 3
-rtol   = 1e-4
+N = 50_000
+nmax = 200
+eta = 3
+rtol = 1.0e-4
 radius = 1
 
 X = points_on_cylinder(N, radius)
@@ -90,33 +90,33 @@ for (name, (K, p)) in kernels
             # the setup cost
             SUITE[name]["gemv threads=$threads"] =
                 @benchmarkable mul!(y, H, x; threads = $threads) setup = (
-                    H = assemble_hmatrix(
-                        $K,
-                        $Xclt,
-                        $Xclt;
-                        adm = $adm,
-                        comp = $comp,
-                        threads = true,
-                        distributed = false,
-                        global_index = $p,
-                    );
-                    x = randn($N);
-                    y = zeros($N)
-                ) samples = 1 evals = 50
+                H = assemble_hmatrix(
+                    $K,
+                    $Xclt,
+                    $Xclt;
+                    adm = $adm,
+                    comp = $comp,
+                    threads = true,
+                    distributed = false,
+                    global_index = $p,
+                );
+                x = randn($N);
+                y = zeros($N)
+            ) samples = 1 evals = 50
             # LU factorization. The assemble is considered in a setup-phase.
             SUITE[name]["LU threads=$threads"] =
                 @benchmarkable lu!(H, $comp; threads = $threads) setup = (
-                    H = assemble_hmatrix(
-                        $K,
-                        $Xclt,
-                        $Xclt;
-                        adm = $adm,
-                        comp = $comp,
-                        threads = true,
-                        distributed = false,
-                        global_index = $p,
-                    )
-                ) samples = 4 evals = 1
+                H = assemble_hmatrix(
+                    $K,
+                    $Xclt,
+                    $Xclt;
+                    adm = $adm,
+                    comp = $comp,
+                    threads = true,
+                    distributed = false,
+                    global_index = $p,
+                )
+            ) samples = 4 evals = 1
         end
     end
 end

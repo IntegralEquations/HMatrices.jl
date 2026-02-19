@@ -35,7 +35,7 @@ end
     end
 
     @testset "2d" begin
-        points = rand(SVector{2,Float64}, 1000)
+        points = rand(SVector{2, Float64}, 1000)
         splitter = HMatrices.GeometricSplitter(; nmax = 1)
         clt = HMatrices.ClusterTree(points, splitter)
         @test test_cluster_tree(clt)
@@ -48,7 +48,7 @@ end
     end
 
     @testset "3d" begin
-        points = rand(SVector{3,Float64}, 1000)
+        points = rand(SVector{3, Float64}, 1000)
         splitter = HMatrices.GeometricSplitter(; nmax = 32)
         clt = HMatrices.ClusterTree(points, splitter)
         @test test_cluster_tree(clt)
@@ -62,7 +62,7 @@ end
 
     @testset "3d + threads" begin
         threads = true
-        points = rand(SVector{3,Float64}, 1000)
+        points = rand(SVector{3, Float64}, 1000)
         splitter = HMatrices.GeometricSplitter(; nmax = 32)
         clt = HMatrices.ClusterTree(points, splitter; threads)
         @test test_cluster_tree(clt)

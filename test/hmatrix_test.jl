@@ -8,11 +8,11 @@ include(joinpath(HMatrices.PROJECT_ROOT, "test", "testutils.jl"))
 
 @testset "Assemble" begin
     m, n = 1_000, 1_000
-    X = Y = rand(SVector{3,Float64}, m)
+    X = Y = rand(SVector{3, Float64}, m)
     splitter = CardinalitySplitter(; nmax = 20)
     Xclt = Yclt = ClusterTree(X, splitter)
     adm = StrongAdmissibilityStd(; eta = 3)
-    rtol = 1e-5
+    rtol = 1.0e-5
     comp = PartialACA(; rtol = rtol)
     # Laplace
     for threads in (true, false)
@@ -41,13 +41,13 @@ end
     m = 1000
     n = 1000
 
-    X = rand(SVector{3,Float64}, m)
+    X = rand(SVector{3, Float64}, m)
     Y = X
     splitter = CardinalitySplitter(; nmax = 40)
     Xclt = ClusterTree(X, splitter)
     Yclt = ClusterTree(Y, splitter)
     adm = StrongAdmissibilityStd(; eta = 3)
-    rtol = 1e-5
+    rtol = 1.0e-5
     comp = PartialACA(; rtol = rtol)
     @testset "Scalar problem (laplace)" begin
         K = laplace_matrix(X, Y)
@@ -75,15 +75,15 @@ end
     m = 1000
     n = 1000
 
-    X = rand(SVector{3,Float64}, m)
+    X = rand(SVector{3, Float64}, m)
     Y = X
     splitter = CardinalitySplitter(; nmax = 40)
     Xclt = ClusterTree(X, splitter)
     Yclt = ClusterTree(Y, splitter)
     adm = StrongAdmissibilityStd(; eta = 3)
-    rtol = 1e-5
+    rtol = 1.0e-5
     comp = PartialACA(; rtol = rtol)
-    U = rand(SVector{3,Float64}, m)
+    U = rand(SVector{3, Float64}, m)
     @testset "Scalar problem (laplace)" begin
         K = laplace_matrix(X, Y)
         H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false, distributed = false)
@@ -92,7 +92,7 @@ end
         m, n = size(H)
         S = sprand(T, m, n, 0.01)
         Hnew = axpy!(true, S, deepcopy(H))
-        @test norm(Hnew * U - (H_full + Matrix(S)) * U) < 1e-5 * norm(Hnew * U)
+        @test norm(Hnew * U - (H_full + Matrix(S)) * U) < 1.0e-5 * norm(Hnew * U)
     end
     @testset "Vector problem (elasticity)" begin
         K = elastostatic_matrix(X, Y, 1, 1)
@@ -102,6 +102,6 @@ end
         m, n = size(H)
         S = sprand(T, m, n, 0.1)
         Hnew = axpy!(true, S, deepcopy(H))
-        @test norm(Hnew * U - (H_full + Matrix(S)) * U) < 1e-5 * norm(Hnew * U)
+        @test norm(Hnew * U - (H_full + Matrix(S)) * U) < 1.0e-5 * norm(Hnew * U)
     end
 end

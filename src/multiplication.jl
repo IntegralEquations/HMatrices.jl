@@ -7,15 +7,15 @@ of the multiplication to avoid growring the rank of admissible blocks after
 addition is performed.
 """
 function hmul!(
-    C::T,
-    A::HTypes,
-    B::HTypes,
-    a,
-    b,
-    compressor,
-    bufs_ = nothing,
-    Cflag = 'N',
-) where {T<:HMatrix}
+        C::T,
+        A::HTypes,
+        B::HTypes,
+        a,
+        b,
+        compressor,
+        bufs_ = nothing,
+        Cflag = 'N',
+    ) where {T <: HMatrix}
     bufs = if isnothing(bufs_)
         S = eltype(C)
         chn = Channel{ACABuffer{S}}(Threads.nthreads())
@@ -25,7 +25,7 @@ function hmul!(
         bufs_
     end
     b == true || rmul!(C, b)
-    dict = IdDict{T,Vector{Tuple{eltype(children(A)),eltype(children(B))}}}()
+    dict = IdDict{T, Vector{Tuple{eltype(children(A)), eltype(children(B))}}}()
     _plan_dict!(dict, C, A, B, Cflag)
     _hmul!(C, compressor, dict, a, nothing, bufs, Cflag)
     return C
@@ -33,8 +33,8 @@ end
 
 hmul!(C::HermitianHMatrix, args...) = hmul!(parent(C), args..., C.uplo)
 
-function _plan_dict!(dict, C::T, A::HTypes, B::HTypes, Cflag) where {T<:HMatrix}
-    pairs = get!(dict, C, Tuple{T,T}[])
+function _plan_dict!(dict, C::T, A::HTypes, B::HTypes, Cflag) where {T <: HMatrix}
+    pairs = get!(dict, C, Tuple{T, T}[])
     if isleaf(A) || isleaf(B) || isleaf(C)
         push!(pairs, (A, B))
     else
@@ -71,11 +71,11 @@ function _hmul!(C::HMatrix, compressor, dict, a, R, bufs, Cflag)
         for j in 1:nj
             (Cflag == 'U' && (i > j)) && continue
             (Cflag == 'L' && (j > i)) && continue
-            chd    = C_children[i, j]
+            chd = C_children[i, j]
             irange = rowrange(chd) .- shift[1]
             jrange = colrange(chd) .- shift[2]
-            Rp     = data(C)
-            Rv     = hasdata(C) ? RkMatrix(Rp.A[irange, :], Rp.B[jrange, :]) : nothing
+            Rp = data(C)
+            Rv = hasdata(C) ? RkMatrix(Rp.A[irange, :], Rp.B[jrange, :]) : nothing
             _hmul!(chd, compressor, dict, a, Rv, bufs, i == j ? Cflag : 'N')
         end
     end
@@ -87,7 +87,7 @@ end
 function execute_node!(C::HMatrix, compressor, dict, a, R, bufs)
     T = typeof(C)
     S = eltype(C)
-    pairs = get(dict, C, Tuple{T,T}[])
+    pairs = get(dict, C, Tuple{T, T}[])
     isnothing(R) && isempty(pairs) && (return C)
     if isleaf(C) && !isadmissible(C)
         d = data(C)::Matrix{S}
@@ -121,15 +121,15 @@ Note: this structure is used to group the operations required when multiplying
 hierarchical matrices so that they can later be executed in a way that minimizes
 recompression of intermediate computations.
 """
-struct MulLinearOp{T,V,S} <: AbstractMatrix{T}
-    R::Union{RkMatrix{T},Nothing}
-    P::Union{RkMatrix{T},Nothing}
+struct MulLinearOp{T, V, S} <: AbstractMatrix{T}
+    R::Union{RkMatrix{T}, Nothing}
+    P::Union{RkMatrix{T}, Nothing}
     pairs::Vector{V}
     multiplier::S
 end
 
-function MulLinearOp{T}(R, P, pairs::Vector{V}, multiplier::S) where {T,V,S}
-    return MulLinearOp{T,V,S}(R, P, pairs, multiplier)
+function MulLinearOp{T}(R, P, pairs::Vector{V}, multiplier::S) where {T, V, S}
+    return MulLinearOp{T, V, S}(R, P, pairs, multiplier)
 end
 
 # AbstractMatrix interface
@@ -141,7 +141,7 @@ function Base.size(L::MulLinearOp)
     return (size(A, 1), size(B, 2))
 end
 
-function Base.getindex(L::Union{MulLinearOp,Adjoint{<:Any,<:MulLinearOp}}, args...)
+function Base.getindex(L::Union{MulLinearOp, Adjoint{<:Any, <:MulLinearOp}}, args...)
     return error("calling `getindex` of a `MulLinearOp` has been disabled")
 end
 
@@ -178,7 +178,7 @@ function getblock!(out, L::MulLinearOp, irange, j::Int)
     return getcol!(out, L, j)
 end
 
-function getcol!(col, adjL::Adjoint{<:Any,<:MulLinearOp}, j)
+function getcol!(col, adjL::Adjoint{<:Any, <:MulLinearOp}, j)
     fill!(col, zero(eltype(col)))
     L = parent(adjL)
     T = eltype(L)
@@ -205,7 +205,7 @@ function getcol!(col, adjL::Adjoint{<:Any,<:MulLinearOp}, j)
     return col
 end
 
-function getblock!(out, L::Adjoint{<:Any,<:MulLinearOp}, irange, j::Int)
+function getblock!(out, L::Adjoint{<:Any, <:MulLinearOp}, irange, j::Int)
     @assert irange == 1:size(L, 1)
     return getcol!(out, L, j)
 end
@@ -221,7 +221,7 @@ Multiplication when the target is a dense matrix. The numbering system in the fo
 function _mul_dense!(C::Base.Matrix, A, B, a)
     Adata = isleaf(A) ? data(A) : A
     Bdata = isleaf(B) ? data(B) : B
-    if Adata isa HMatrix || Adata isa AdjointHMatrix
+    return if Adata isa HMatrix || Adata isa AdjointHMatrix
         if Bdata isa Matrix
             _mul131!(C, Adata, Bdata, a)
         elseif Bdata isa RkMatrix
@@ -255,22 +255,22 @@ function _mul111!(C, A, B, a)
 end
 
 function _mul112!(
-    C::Union{Matrix,SubArray,Adjoint},
-    M::Union{Matrix,SubArray,Adjoint},
-    R::RkMatrix,
-    a::Number,
-)
+        C::Union{Matrix, SubArray, Adjoint},
+        M::Union{Matrix, SubArray, Adjoint},
+        R::RkMatrix,
+        a::Number,
+    )
     buffer = M * R.A
     _mul111!(C, buffer, R.Bt, a)
     return C
 end
 
 function _mul113!(
-    C::Union{Matrix,SubArray,Adjoint},
-    M::Union{Matrix,SubArray,Adjoint},
-    H::HMatrix,
-    a::Number,
-)
+        C::Union{Matrix, SubArray, Adjoint},
+        M::Union{Matrix, SubArray, Adjoint},
+        H::HMatrix,
+        a::Number,
+    )
     T = eltype(C)
     if hasdata(H)
         mat = data(H)
@@ -294,26 +294,26 @@ function _mul113!(
 end
 
 function _mul121!(
-    C::Union{Matrix,SubArray,Adjoint},
-    R::RkMatrix,
-    M::Union{Matrix,SubArray,Adjoint},
-    a::Number,
-)
+        C::Union{Matrix, SubArray, Adjoint},
+        R::RkMatrix,
+        M::Union{Matrix, SubArray, Adjoint},
+        a::Number,
+    )
     buffer = R.Bt * M
     return _mul111!(C, R.A, buffer, a)
 end
 function _mul121!(
-    C::Union{Matrix,SubArray,Adjoint},
-    adjR::AdjRk,
-    M::Union{Matrix,SubArray,Adjoint},
-    a::Number,
-)
+        C::Union{Matrix, SubArray, Adjoint},
+        adjR::AdjRk,
+        M::Union{Matrix, SubArray, Adjoint},
+        a::Number,
+    )
     R = parent(adjR)
     buffer = R.At * M
     return _mul111!(C, R.B, buffer, a)
 end
 
-function _mul122!(C::Union{Matrix,SubArray,Adjoint}, R::RkMatrix, S::RkMatrix, a::Number)
+function _mul122!(C::Union{Matrix, SubArray, Adjoint}, R::RkMatrix, S::RkMatrix, a::Number)
     if rank(R) < rank(S)
         _mul111!(C, R.A, (R.Bt * S.A) * S.Bt, a)
     else
@@ -322,7 +322,7 @@ function _mul122!(C::Union{Matrix,SubArray,Adjoint}, R::RkMatrix, S::RkMatrix, a
     return C
 end
 
-function _mul123!(C::Union{Matrix,SubArray,Adjoint}, R::RkMatrix, H::HMatrix, a::Number)
+function _mul123!(C::Union{Matrix, SubArray, Adjoint}, R::RkMatrix, H::HMatrix, a::Number)
     T = promote_type(eltype(R), eltype(H))
     tmp = zeros(T, size(R.Bt, 1), size(H, 2))
     _mul113!(tmp, R.Bt, H, 1)
@@ -331,11 +331,11 @@ function _mul123!(C::Union{Matrix,SubArray,Adjoint}, R::RkMatrix, H::HMatrix, a:
 end
 
 function _mul131!(
-    C::Union{Matrix,SubArray,Adjoint},
-    H::HTypes,
-    M::Union{Matrix,SubArray,Adjoint},
-    a::Number,
-)
+        C::Union{Matrix, SubArray, Adjoint},
+        H::HTypes,
+        M::Union{Matrix, SubArray, Adjoint},
+        a::Number,
+    )
     if isleaf(H)
         mat = data(H)
         if mat isa AdjOrMat
@@ -357,7 +357,7 @@ function _mul131!(
     return C
 end
 
-function _mul132!(C::Union{Matrix,SubArray,Adjoint}, H::HMatrix, R::RkMatrix, a::Number)
+function _mul132!(C::Union{Matrix, SubArray, Adjoint}, H::HMatrix, R::RkMatrix, a::Number)
     T = promote_type(eltype(H), eltype(R))
     buffer = zeros(T, size(H, 1), size(R.A, 2))
     _mul131!(buffer, H, R.A, 1)
@@ -373,12 +373,12 @@ end
 
 # 1.2.1
 function LinearAlgebra.mul!(
-    y::AbstractVector,
-    R::RkMatrix,
-    x::AbstractVector,
-    a::Number,
-    b::Number,
-)
+        y::AbstractVector,
+        R::RkMatrix,
+        x::AbstractVector,
+        a::Number,
+        b::Number,
+    )
     tmp = R.Bt * x
     # tmp = mul!(R.buffer, adjoint(R.B), x)
     return mul!(y, R.A, tmp, a, b)
@@ -386,12 +386,12 @@ end
 
 # 1.2.1
 function LinearAlgebra.mul!(
-    y::AbstractVector,
-    adjR::Adjoint{<:Any,<:RkMatrix},
-    x::AbstractVector,
-    a::Number,
-    b::Number,
-)
+        y::AbstractVector,
+        adjR::Adjoint{<:Any, <:RkMatrix},
+        x::AbstractVector,
+        a::Number,
+        b::Number,
+    )
     R = parent(adjR)
     tmp = R.At * x
     # tmp = mul!(R.buffer, adjoint(R.A), x)
@@ -405,14 +405,14 @@ end
 Perform `y <-- H*x*a + y*b` in place.
 """
 function LinearAlgebra.mul!(
-    y::AbstractVector,
-    A::Union{HTypes,HTriangular},
-    x::AbstractVector,
-    a::Number = 1,
-    b::Number = 0;
-    global_index = use_global_index(),
-    threads = use_threads(),
-)
+        y::AbstractVector,
+        A::Union{HTypes, HTriangular},
+        x::AbstractVector,
+        a::Number = 1,
+        b::Number = 0;
+        global_index = use_global_index(),
+        threads = use_threads(),
+    )
     # since the HMatrix represents A = inv(Pr)*H*Pc, where Pr and Pc are row and column
     # permutations, we need first to rewrite C <-- b*C + a*(inv(Pr)*H*Pc)*B as
     # C <-- inv(Pr)*(b*Pr*C + a*H*(Pc*B)). Following this rewrite, the
@@ -445,13 +445,13 @@ end
 # routine. This is a somewhat inneficient way of doing things, but it is simple
 # enough.
 function LinearAlgebra.mul!(
-    Y::AbstractMatrix,
-    A::HTypes,
-    X::AbstractMatrix,
-    a::Number = 1,
-    b::Number = 0;
-    kwargs...,
-)
+        Y::AbstractMatrix,
+        A::HTypes,
+        X::AbstractMatrix,
+        a::Number = 1,
+        b::Number = 0;
+        kwargs...,
+    )
     size(Y, 2) == size(X, 2) || Throw(DimensionMismatch("size(Y,2) != size(X,2)"))
     for k in 1:size(Y, 2)
         mul!(view(Y, :, k), A, view(X, :, k), a, b; kwargs...)

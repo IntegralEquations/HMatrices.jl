@@ -21,15 +21,15 @@ splitter = CardinalitySplitter(; nmax = 50)
 Xclt = ClusterTree(X, splitter)
 Yclt = ClusterTree(Y, splitter)
 adm = StrongAdmissibilityStd(3)
-comp = PartialACA(; atol = 1e-10)
+comp = PartialACA(; atol = 1.0e-10)
 for threads in (false, true)
     H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads, distributed = false)
-    hlu = lu(H; atol = 1e-10)
+    hlu = lu(H; atol = 1.0e-10)
     y = rand(m)
     M = Matrix(K)
     exact = M \ y
     approx = hlu \ y
-    @test norm(exact - approx, Inf) < 1e-10
+    @test norm(exact - approx, Inf) < 1.0e-10
     # test multiplication by checking if the solution is correct
     @test hlu.L * (hlu.U * approx) ≈ y
 end

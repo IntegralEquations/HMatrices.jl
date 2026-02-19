@@ -15,8 +15,8 @@ T = Float64
 X = points_on_sphere(m)
 Y = X
 struct ExponentialKernel <: AbstractMatrix{Float64}
-    X::Vector{SVector{3,Float64}}
-    Y::Vector{SVector{3,Float64}}
+    X::Vector{SVector{3, Float64}}
+    Y::Vector{SVector{3, Float64}}
 end
 function Base.getindex(K::ExponentialKernel, i::Int, j::Int)
     x, y = K.X[i], K.Y[j]
@@ -51,7 +51,7 @@ H_full = Matrix(H; global_index = false)
     @test exact ≈ Matrix(approx)
 
     ## 3.3
-    compressor = PartialACA(; atol = 1e-8)
+    compressor = PartialACA(; atol = 1.0e-8)
     exact = ldiv!(UnitLowerTriangular(H_full), copy(H_full))
     approx = ldiv!(UnitLowerTriangular(H), deepcopy(H), compressor)
     @test exact ≈ Matrix(approx; global_index = false)
@@ -72,7 +72,7 @@ end
     @test exact ≈ Matrix(approx)
 
     ## 3.3
-    compressor = PartialACA(; atol = 1e-8)
+    compressor = PartialACA(; atol = 1.0e-8)
     exact = rdiv!(deepcopy(H_full), UpperTriangular(H_full))
     approx = rdiv!(deepcopy(H), UpperTriangular(H), compressor)
     @test exact ≈ Matrix(approx; global_index = false)

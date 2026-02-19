@@ -12,17 +12,17 @@ Random.seed!(1)
 @testset "Scalar" begin
     T = ComplexF64
     m, n = 100, 100
-    X = rand(SVector{3,Float64}, m)
-    Y = map(i -> SVector(10, 0, 0) + rand(SVector{3,Float64}), 1:n)
+    X = rand(SVector{3, Float64}, m)
+    Y = map(i -> SVector(10, 0, 0) + rand(SVector{3, Float64}), 1:n)
     K = helmholtz_matrix(X, Y, 1.0)
     M = Matrix(K)
     irange, jrange = 1:m, 1:n
     @testset "aca_partial" begin
-        atol = 1e-5
+        atol = 1.0e-5
         aca = PartialACA(; atol = atol)
         R = aca(M, irange, jrange)
         @test norm(Matrix(R) - M) < atol
-        rtol = 1e-5
+        rtol = 1.0e-5
         aca = PartialACA(; rtol = rtol)
         R = aca(M, irange, jrange)
         @test norm(Matrix(R) - M) < rtol * norm(M)
@@ -52,17 +52,17 @@ Random.seed!(1)
 
         # test simple case where things are not compressible
         A = rand(2, 2)
-        comp = PartialACA(; rtol = 1e-5)
+        comp = PartialACA(; rtol = 1.0e-5)
         @test comp(A, 1:2, 1:2) ≈ A
     end
     @testset "truncated svd" begin
-        atol = 1e-5
+        atol = 1.0e-5
         tsvd = TSVD(; atol = atol)
         R = tsvd(M, irange, jrange)
         # the inequality below is guaranteed to be true  for  the spectral norm
         # i.e. (the `opnorm` with `p=2`).
         @test opnorm(Matrix(R) - M) < atol
-        rtol = 1e-5
+        rtol = 1.0e-5
         tsvd = TSVD(; rtol = rtol)
         R = tsvd(M, irange, jrange)
         @test opnorm(Matrix(R) - M) < rtol * opnorm(M)
@@ -79,22 +79,22 @@ Random.seed!(1)
 end
 
 @testset "Tensorial" begin
-    T = SMatrix{3,3,ComplexF64,9}
+    T = SMatrix{3, 3, ComplexF64, 9}
     # T = SMatrix{3,3,Float64,9}
     m, n = 100, 100
-    X = rand(SVector{3,Float64}, m)
-    Y = map(i -> SVector(10, 0, 0) + rand(SVector{3,Float64}), 1:n)
+    X = rand(SVector{3, Float64}, m)
+    Y = map(i -> SVector(10, 0, 0) + rand(SVector{3, Float64}), 1:n)
     K = elastosdynamic_matrix(X, Y, 1.0, 2.0, 1.0, 1.0)
     # K = ElastostaticMatrix(X,Y,1.0,2.0)
     M = Matrix(K)
     irange, jrange = 1:m, 1:n
 
     @testset "aca_partial" begin
-        atol = 1e-5
+        atol = 1.0e-5
         aca = PartialACA(; atol = atol)
         R = aca(M, irange, jrange)
         @test norm(Matrix(R) - M) < atol
-        rtol = 1e-5
+        rtol = 1.0e-5
         aca = PartialACA(; rtol = rtol)
         R = aca(M, irange, jrange)
         @test norm(Matrix(R) - M) < rtol * norm(M)
@@ -104,7 +104,7 @@ end
         @test rank(R) == r
 
         # test fast update of frobenius norm
-        T = SMatrix{3,3,Float64,9}
+        T = SMatrix{3, 3, Float64, 9}
         A = VectorOfVectors(T, m, r)
         B = VectorOfVectors(T, n, r)
         A.data .= rand(T, m * r)

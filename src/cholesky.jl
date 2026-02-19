@@ -1,4 +1,4 @@
-const HChol = Cholesky{<:Any,<:HermitianHMatrix}
+const HChol = Cholesky{<:Any, <:HermitianHMatrix}
 
 function Base.getproperty(chol::HChol, s::Symbol)
     flag = getfield(chol, :uplo)
@@ -42,12 +42,12 @@ Hierarhical cholesky facotrization of `M`, using the
 `PartialACA(;atol,rtol;rank)` compressor.
 """
 function LinearAlgebra.cholesky!(
-    M::HermitianHMatrix;
-    atol = 0,
-    rank = typemax(Int),
-    rtol = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
-    kwargs...,
-)
+        M::HermitianHMatrix;
+        atol = 0,
+        rank = typemax(Int),
+        rtol = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
+        kwargs...,
+    )
     compressor = PartialACA(atol, rank, rtol)
     return cholesky!(M, compressor; kwargs...)
 end
@@ -73,12 +73,12 @@ function _cholesky!(M::HermitianHMatrix, compressor, threads, bufs = nothing)
         m, n = size(chdM)
         for i in 1:m
             _cholesky!(chdM[i, i], compressor, threads, bufs)
-            for j in (i+1):n
+            for j in (i + 1):n
                 Lᵢᵢ = adjoint(UpperTriangular(chdM[i, i]))
                 ldiv!(Lᵢᵢ, chdM[i, j], compressor, bufs)
             end
-            for j in (i+1):m
-                for k in (i+1):n
+            for j in (i + 1):m
+                for k in (i + 1):n
                     hmul!(
                         chdM[j, k],
                         adjoint(chdM[i, j]),

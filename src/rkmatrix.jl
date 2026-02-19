@@ -63,15 +63,15 @@ function getcol!(col, R::RkMatrix, j::Int, ::Val{T} = Val(false)) where {T}
     end
 end
 
-const AdjRk = Adjoint{<:Any,<:RkMatrix}
-const AdjRkOrRk = Union{AdjRk,RkMatrix}
+const AdjRk = Adjoint{<:Any, <:RkMatrix}
+const AdjRkOrRk = Union{AdjRk, RkMatrix}
 
 function getcol!(
-    col,
-    Ra::Adjoint{<:Any,<:RkMatrix},
-    j::Int,
-    ::Val{T} = Val(false),
-) where {T}
+        col,
+        Ra::Adjoint{<:Any, <:RkMatrix},
+        j::Int,
+        ::Val{T} = Val(false),
+    ) where {T}
     # NOTE: using a `Val` argument to dispatch on the type of `T` is important
     # for performance
     R = parent(Ra)
@@ -106,7 +106,7 @@ end
 function Base.Matrix(R::RkMatrix{<:Number})
     return R.A * R.Bt
 end
-function Base.Matrix(adjR::Adjoint{<:Any,<:RkMatrix})
+function Base.Matrix(adjR::Adjoint{<:Any, <:RkMatrix})
     R = parent(adjR)
     return R.B * R.At
 end
@@ -123,12 +123,12 @@ end
 # C and B are a vectors of static matrices, and A is a matrix of static
 # matrices. Should eventually be removed.
 function LinearAlgebra.mul!(
-    C::AbstractVector,
-    Rk::RkMatrix{T},
-    F::AbstractVector,
-    a::Number,
-    b::Number,
-) where {T<:SMatrix}
+        C::AbstractVector,
+        Rk::RkMatrix{T},
+        F::AbstractVector,
+        a::Number,
+        b::Number,
+    ) where {T <: SMatrix}
     m, n = size(Rk)
     r = rank(Rk)
     tmp = Rk.Bt * F

@@ -17,7 +17,7 @@ end
 
 A light wrapper for a `Future` storing an `HMatrix`.
 """
-struct RemoteHMatrix{S,T}
+struct RemoteHMatrix{S, T}
     future::Future
 end
 
@@ -25,7 +25,7 @@ Base.fetch(r::RemoteHMatrix) = fetch(r.future)
 
 function Base.getindex(r::RemoteHMatrix, i::Int, j::Int)
     pid = r.future.where
-    @fetchfrom pid getindex(fetch(r), i, j)
+    return @fetchfrom pid getindex(fetch(r), i, j)
 end
 
 """
@@ -38,17 +38,17 @@ leaves store a [`RemoteHMatrix`](@ref) object.
 The `data` on the leaves of a `DHMatrix` may live on a different worker, so
 calling `fetch` on them should be avoided whenever possible.
 """
-mutable struct DHMatrix{R,T} <: AbstractMatrix{T}
+mutable struct DHMatrix{R, T} <: AbstractMatrix{T}
     rowtree::R
     coltree::R
     # admissible:: Bool --> false
-    data::Union{RemoteHMatrix{R,T},Nothing}
-    children::Matrix{DHMatrix{R,T}}
-    parentnode::DHMatrix{R,T}
+    data::Union{RemoteHMatrix{R, T}, Nothing}
+    children::Matrix{DHMatrix{R, T}}
+    parentnode::DHMatrix{R, T}
     # inner constructor which handles `nothing` fields.
-    function DHMatrix{R,T}(rowtree, coltree, data, children, parentnode) where {R,T}
-        dhmat = new{R,T}(rowtree, coltree, data)
-        dhmat.children = isnothing(children) ? Matrix{DHMatrix{R,T}}(undef, 0, 0) : children
+    function DHMatrix{R, T}(rowtree, coltree, data, children, parentnode) where {R, T}
+        dhmat = new{R, T}(rowtree, coltree, data)
+        dhmat.children = isnothing(children) ? Matrix{DHMatrix{R, T}}(undef, 0, 0) : children
         dhmat.parentnode = isnothing(parentnode) ? dhmat : parentnode
         return dhmat
     end
@@ -66,12 +66,12 @@ for distributed computing. Currently, the only available options is
 into `floor(log2(nw))` parts, where `nw` is the number of workers available.
 """
 function DHMatrix{T}(
-    rowtree::R,
-    coltree::R;
-    partition_strategy = :distribute_columns,
-) where {R,T}
+        rowtree::R,
+        coltree::R;
+        partition_strategy = :distribute_columns,
+    ) where {R, T}
     #build root
-    root = DHMatrix{R,T}(rowtree, coltree, nothing, nothing, nothing)
+    root = DHMatrix{R, T}(rowtree, coltree, nothing, nothing, nothing)
     # depending on the partition strategy, dispatch to appropriate (recursive)
     # method
     if partition_strategy == :distribute_columns
@@ -85,10 +85,10 @@ function DHMatrix{T}(
 end
 
 function _build_block_structure_distribute_cols!(
-    current_node::DHMatrix{R,T},
-    dmax,
-    d = 0,
-) where {R,T}
+        current_node::DHMatrix{R, T},
+        dmax,
+        d = 0,
+    ) where {R, T}
     if d == dmax
         return current_node
     else
@@ -99,8 +99,8 @@ function _build_block_structure_distribute_cols!(
         row_children = [X]
         col_children = Y.children
         children = [
-            DHMatrix{R,T}(r, c, nothing, nothing, current_node) for
-            r in row_children, c in col_children
+            DHMatrix{R, T}(r, c, nothing, nothing, current_node) for
+                r in row_children, c in col_children
         ]
         current_node.children = children
         for child in children
@@ -128,6 +128,7 @@ function Base.show(io::IO, ::MIME"text/plain", hmat::DHMatrix)
         irange, jrange = @fetchfrom pid rowrange(fetch(r)), colrange(fetch(r))
         println("\t\t leaf $i on process $pid spanning $irange × $jrange")
     end
+    return
 end
 
 """
@@ -137,14 +138,14 @@ Internal methods called **after** the `DHMatrix` structure has been initialized
 in order to construct the `HMatrix` on each of the leaves of the `DHMatrix`.
 """
 function _assemble_hmat_distributed(
-    K,
-    rtree,
-    ctree;
-    adm = StrongAdmissibilityStd(),
-    comp = PartialACA(),
-    global_index = use_global_index(),
-    threads = use_threads(),
-)
+        K,
+        rtree,
+        ctree;
+        adm = StrongAdmissibilityStd(),
+        comp = PartialACA(),
+        global_index = use_global_index(),
+        threads = use_threads(),
+    )
     #
     R = typeof(rtree)
     T = eltype(K)
@@ -164,20 +165,20 @@ function _assemble_hmat_distributed(
             threads,
             distributed = false,
         )
-        leaf.data = RemoteHMatrix{R,T}(r)
+        leaf.data = RemoteHMatrix{R, T}(r)
     end
     return root
 end
 
 function LinearAlgebra.mul!(
-    y::AbstractVector,
-    A::DHMatrix,
-    x::AbstractVector,
-    a::Number,
-    b::Number;
-    global_index = use_global_index(),
-    threads = use_threads(),
-)
+        y::AbstractVector,
+        A::DHMatrix,
+        x::AbstractVector,
+        a::Number,
+        b::Number;
+        global_index = use_global_index(),
+        threads = use_threads(),
+    )
     # since the HMatrix represents A = Pr*H*Pc, where Pr and Pc are row and column
     # permutations, we need first to rewrite C <-- b*C + a*(Pc*H*Pb)*B as
     # C <-- Pr*(b*inv(Pr)*C + a*H*(Pc*B)). Following this rewrite, the

@@ -12,7 +12,7 @@ using StaticArrays
     splitter = CardinalitySplitter(; nmax = 100)
     Xclt = Yclt = ClusterTree(X, splitter)
     adm = StrongAdmissibilityStd(; eta = 3)
-    atol = 1e-6
+    atol = 1.0e-6
     comp = PartialACA(; atol)
     # Laplace
     K = laplace_matrix(X, Y)

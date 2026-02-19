@@ -4,22 +4,22 @@
 A hierarchial matrix constructed from a `rowtree` and `coltree` of type `R` and
 holding elements of type `T`.
 """
-mutable struct HMatrix{R,T} <: AbstractMatrix{T}
+mutable struct HMatrix{R, T} <: AbstractMatrix{T}
     rowtree::R
     coltree::R
     admissible::Bool
-    data::Union{Matrix{T},RkMatrix{T},Nothing}
-    children::Matrix{HMatrix{R,T}}
+    data::Union{Matrix{T}, RkMatrix{T}, Nothing}
+    children::Matrix{HMatrix{R, T}}
     # NOTE: to avoid confusion with Base.parent, which returns the underlying
     # parent object of a view, we use `parentnode` to refer to the tree parent.
-    parentnode::HMatrix{R,T}
+    parentnode::HMatrix{R, T}
     # inner constructor which handles `nothing` fields.
-    function HMatrix{R,T}(rowtree, coltree, adm, data, children, parentnode) where {R,T}
+    function HMatrix{R, T}(rowtree, coltree, adm, data, children, parentnode) where {R, T}
         if data !== nothing
             @assert (length(rowtree), length(coltree)) === size(data) "$(length(rowtree)),$(length(coltree)) != $(size(data))"
         end
-        hmat = new{R,T}(rowtree, coltree, adm, data)
-        hmat.children = isnothing(children) ? Matrix{HMatrix{R,T}}(undef, 0, 0) : children
+        hmat = new{R, T}(rowtree, coltree, adm, data)
+        hmat.children = isnothing(children) ? Matrix{HMatrix{R, T}}(undef, 0, 0) : children
         hmat.parentnode = isnothing(parentnode) ? hmat : parentnode
         return hmat
     end
@@ -27,43 +27,43 @@ end
 
 # setters and getters defined for HMatrix.
 isadmissible(H::HMatrix) = H.admissible
-data(H::HMatrix)         = H.data
-rowtree(H::HMatrix)      = H.rowtree
-coltree(H::HMatrix)      = H.coltree
-children(H::HMatrix)     = H.children
-parentnode(H::HMatrix)   = H.parentnode
-setdata!(H::HMatrix, d)  = setfield!(H, :data, d)
+data(H::HMatrix) = H.data
+rowtree(H::HMatrix) = H.rowtree
+coltree(H::HMatrix) = H.coltree
+children(H::HMatrix) = H.children
+parentnode(H::HMatrix) = H.parentnode
+setdata!(H::HMatrix, d) = setfield!(H, :data, d)
 
 # light wrapper for adjoint
-const AdjointHMatrix{R,T} = Adjoint{T,HMatrix{R,T}}
+const AdjointHMatrix{R, T} = Adjoint{T, HMatrix{R, T}}
 
 isadmissible(H::AdjointHMatrix) = H |> parent |> isadmissible
-data(H::AdjointHMatrix)         = H |> parent |> data |> adjoint
-rowtree(H::AdjointHMatrix)      = H |> parent |> coltree
-coltree(H::AdjointHMatrix)      = H |> parent |> rowtree
-children(H::AdjointHMatrix)     = H |> parent |> children |> adjoint
-parentnode(H::AdjointHMatrix)   = H |> parent |> parentnode |> adjoint
-setdata!(H::AdjointHMatrix, d)  = setdata!(parentnode(H), d)
+data(H::AdjointHMatrix) = H |> parent |> data |> adjoint
+rowtree(H::AdjointHMatrix) = H |> parent |> coltree
+coltree(H::AdjointHMatrix) = H |> parent |> rowtree
+children(H::AdjointHMatrix) = H |> parent |> children |> adjoint
+parentnode(H::AdjointHMatrix) = H |> parent |> parentnode |> adjoint
+setdata!(H::AdjointHMatrix, d) = setdata!(parentnode(H), d)
 
 # light wrapper for Hermitian
-const HermitianHMatrix{R,T} = Hermitian{T,HMatrix{R,T}}
+const HermitianHMatrix{R, T} = Hermitian{T, HMatrix{R, T}}
 
 isadmissible(H::HermitianHMatrix) = H |> parent |> isadmissible
-data(H::HermitianHMatrix)         = H |> parent |> data |> Hermitian
-rowtree(H::HermitianHMatrix)      = H |> parent |> rowtree
-coltree(H::HermitianHMatrix)      = H |> parent |> coltree
-children(H::HermitianHMatrix)     = H |> parent |> children |> Hermitian
-parentnode(H::HermitianHMatrix)   = H |> parent |> parentnode |> Hermitian
-setdata!(H::HermitianHMatrix, d)  = setdata!(parentnode(H), d)
+data(H::HermitianHMatrix) = H |> parent |> data |> Hermitian
+rowtree(H::HermitianHMatrix) = H |> parent |> rowtree
+coltree(H::HermitianHMatrix) = H |> parent |> coltree
+children(H::HermitianHMatrix) = H |> parent |> children |> Hermitian
+parentnode(H::HermitianHMatrix) = H |> parent |> parentnode |> Hermitian
+setdata!(H::HermitianHMatrix, d) = setdata!(parentnode(H), d)
 
-const HTypes = Union{HMatrix,AdjointHMatrix,HermitianHMatrix}
+const HTypes = Union{HMatrix, AdjointHMatrix, HermitianHMatrix}
 
 # forward definition of triangular types
 const HLowerTriangular =
-    Union{UnitLowerTriangular{<:Any,<:HTypes},LowerTriangular{<:Any,<:HTypes}}
+    Union{UnitLowerTriangular{<:Any, <:HTypes}, LowerTriangular{<:Any, <:HTypes}}
 const HUpperTriangular =
-    Union{UnitUpperTriangular{<:Any,<:HTypes},UpperTriangular{<:Any,<:HTypes}}
-const HTriangular = Union{HLowerTriangular,HUpperTriangular}
+    Union{UnitUpperTriangular{<:Any, <:HTypes}, UpperTriangular{<:Any, <:HTypes}}
+const HTriangular = Union{HLowerTriangular, HUpperTriangular}
 
 # NOTE: parent here refers to the underlying data of the view, NOT the
 # parentnode. Ducktype and hope for the best.
@@ -118,7 +118,7 @@ store `H` as a dense matrix.
 """
 function compression_ratio(H::HTypes)
     ns = Base.summarysize(H) # size in bytes
-    nr = length(H) * sizeof(eltype(H))# represented entries
+    nr = length(H) * sizeof(eltype(H)) # represented entries
     return nr / ns
 end
 
@@ -134,9 +134,9 @@ function _show(io, hmat, allow_empty = false)
     nodes_ = nodes(hmat)
     @printf io "\n\t number of nodes in tree: %i" length(nodes_)
     # filter empty leaves
-    leaves_       = allow_empty ? filter(x -> !isnothing(data(x)), leaves(hmat)) : leaves(hmat)
+    leaves_ = allow_empty ? filter(x -> !isnothing(data(x)), leaves(hmat)) : leaves(hmat)
     sparse_leaves = filter(x -> isadmissible(x), leaves_)
-    dense_leaves  = filter(!isadmissible, leaves_)
+    dense_leaves = filter(!isadmissible, leaves_)
     @printf(
         io,
         "\n\t number of leaves: %i (%i admissible + %i full)",
@@ -212,17 +212,17 @@ The type paramter `T` is used to specify the type of the entries of the matrix,
 by default is inferred from `K` using `eltype(K)`.
 """
 function assemble_hmatrix(
-    ::Type{T},
-    K,
-    rowtree,
-    coltree;
-    adm = StrongAdmissibilityStd(3),
-    comp = PartialACA(),
-    global_index = use_global_index(),
-    threads = use_threads(),
-    distributed = false,
-) where {T}
-    if distributed
+        ::Type{T},
+        K,
+        rowtree,
+        coltree;
+        adm = StrongAdmissibilityStd(3),
+        comp = PartialACA(),
+        global_index = use_global_index(),
+        threads = use_threads(),
+        distributed = false,
+    ) where {T}
+    return if distributed
         _assemble_hmat_distributed(K, rowtree, coltree; adm, comp, global_index, threads)
     else
         # create first the structure. No parellelism used as this should be light.
@@ -256,9 +256,9 @@ admissibility condition `adm`. This function builds the skeleton for the
 hierarchical matrix, but **does not compute `data`** field in the blocks. See
 [`assemble_hmatrix`](@ref) for assembling a hierarhical matrix.
 """
-function HMatrix{T}(rowtree::R, coltree::R, adm) where {R,T}
+function HMatrix{T}(rowtree::R, coltree::R, adm) where {R, T}
     #build root
-    root = HMatrix{R,T}(rowtree, coltree, false, nothing, nothing, nothing)
+    root = HMatrix{R, T}(rowtree, coltree, false, nothing, nothing, nothing)
     # recurse
     _build_block_structure!(adm, root)
     return root
@@ -269,7 +269,7 @@ end
 
 Recursive constructor for [`HMatrix`](@ref) block structure. Should not be called directly.
 """
-function _build_block_structure!(adm, current_node::HMatrix{R,T}) where {R,T}
+function _build_block_structure!(adm, current_node::HMatrix{R, T}) where {R, T}
     X = current_node.rowtree
     Y = current_node.coltree
     if (isleaf(X) || isleaf(Y))
@@ -281,8 +281,8 @@ function _build_block_structure!(adm, current_node::HMatrix{R,T}) where {R,T}
         row_children = X.children
         col_children = Y.children
         children = [
-            HMatrix{R,T}(r, c, false, nothing, nothing, current_node) for
-            r in row_children, c in col_children
+            HMatrix{R, T}(r, c, false, nothing, nothing, current_node) for
+                r in row_children, c in col_children
         ]
         current_node.children = children
         for child in children
@@ -323,7 +323,7 @@ function _process_leaf!(leaf, K, comp, bufs)
         throw(ArgumentError("Invalid leaf type: $(typeof(leaf))"))
     end
     #
-    if isadmissible(H)
+    return if isadmissible(H)
         _assemble_sparse_block!(H, K, comp, bufs)
     else
         _assemble_dense_block!(H, K)
@@ -369,7 +369,7 @@ function _assemble_dense_block!(hmat, K)
     return hmat
 end
 
-function Base.show(io::IO, adjH::Adjoint{<:Any,<:HMatrix})
+function Base.show(io::IO, adjH::Adjoint{<:Any, <:HMatrix})
     hmat = parent(adjH)
     isclean(hmat) || return print(io, "Dirty HMatrix")
     print(
@@ -379,9 +379,9 @@ function Base.show(io::IO, adjH::Adjoint{<:Any,<:HMatrix})
     _show(io, hmat, false)
     return io
 end
-Base.show(io::IO, ::MIME"text/plain", adjH::Adjoint{<:Any,<:HMatrix}) = show(io, adjH)
+Base.show(io::IO, ::MIME"text/plain", adjH::Adjoint{<:Any, <:HMatrix}) = show(io, adjH)
 
-function Base.show(io::IO, hermH::Hermitian{<:Any,<:HMatrix})
+function Base.show(io::IO, hermH::Hermitian{<:Any, <:HMatrix})
     hmat = parent(hermH)
     print(
         io,
@@ -390,7 +390,7 @@ function Base.show(io::IO, hermH::Hermitian{<:Any,<:HMatrix})
     _show(io, hmat, true)
     return io
 end
-Base.show(io::IO, ::MIME"text/plain", hermH::Hermitian{<:Any,<:HMatrix}) = show(io, hermH)
+Base.show(io::IO, ::MIME"text/plain", hermH::Hermitian{<:Any, <:HMatrix}) = show(io, hermH)
 
 """
     struct StrongAdmissibilityStd
@@ -531,11 +531,11 @@ Base.:(+)(X::HMatrix, Y::UniformScaling) = Y + X
 # implementation is done to recompress blocks which may increase rank during the
 # process. If the rank increases by a large amount, we just print a warning for now.
 function LinearAlgebra.axpy!(
-    a,
-    X::AbstractSparseArray{<:Any,<:Any,2},
-    Y::HMatrix;
-    global_index = true,
-)
+        a,
+        X::AbstractSparseArray{<:Any, <:Any, 2},
+        Y::HMatrix;
+        global_index = true,
+    )
     rp = loc2glob(rowtree(Y))
     cp = loc2glob(coltree(Y))
     global_index && (X = permute(X, rp, cp))
@@ -566,13 +566,13 @@ function _axpy!(a, X::AbstractSparseArray, Y::HMatrix)
                         # create a rank one matrix and add it to R
                         a = zeros(T, m)
                         b = zeros(T, n)
-                        a[i-irange.start+1] = vals[idx]
-                        b[j-jrange.start+1] = one(T)
+                        a[i - irange.start + 1] = vals[idx]
+                        b[j - jrange.start + 1] = one(T)
                         R.A = hcat(R.A, a)
                         R.B = hcat(R.B, b)
                     else
                         M = data(Y)::Matrix{T} #
-                        M[i-irange.start+1, j-jrange.start+1] += a * vals[idx]
+                        M[i - irange.start + 1, j - jrange.start + 1] += a * vals[idx]
                     end
                 else
                     break # go to next column

@@ -15,7 +15,7 @@ splitter = CardinalitySplitter(; nmax = 5)
 Xclt = ClusterTree(X, splitter)
 Yclt = ClusterTree(Y, splitter)
 adm = StrongAdmissibilityStd(3)
-comp = PartialACA(; atol = 1e-10)
+comp = PartialACA(; atol = 1.0e-10)
 H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false, distributed = false)
 Hsym = assemble_hmatrix(
     Hermitian(K),

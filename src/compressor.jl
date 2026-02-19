@@ -139,15 +139,15 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
                 # case: aca failed
                 if K isa KernelMatrix
                     all(j -> iszero(K[first(irange), j]), jrange) &&
-                    all(i -> iszero(K[i, first(jrange)]), irange) ||
-                        @warn "aca possibly failed on $irange × $jrange" maxlog=1
+                        all(i -> iszero(K[i, first(jrange)]), irange) ||
+                        @warn "aca possibly failed on $irange × $jrange" maxlog = 1
                 else
-                    @warn "aca possibly failed on $irange × $jrange" maxlog=1
+                    @warn "aca possibly failed on $irange × $jrange" maxlog = 1
                 end
                 break
             end
         else # δ != 0
-            iδ = T <: AbstractArray ? pinv(δ; rtol = 1e-8) : inv(δ)
+            iδ = T <: AbstractArray ? pinv(δ; rtol = 1.0e-8) : inv(δ)
             # b <-- b/δ
             for k in eachindex(b)
                 b[k] = b[k] * iδ
@@ -192,7 +192,7 @@ compute the Frobenius norm of `Rₖ₊₁ = A*adjoint(B)` efficiently.
     a = A[k]
     b = B[k]
     out = norm(a)^2 * norm(b)^2
-    for l in 1:(k-1)
+    for l in 1:(k - 1)
         out += 2 * real(dot(A[l], a) * (dot(b, B[l])))
     end
     return sqrt(cur^2 + out)
@@ -215,8 +215,8 @@ for more details.
 min_svd_vals(x::Number) = abs(x)
 function min_svd_vals(A::AbstractMatrix{T}) where {T}
     n, m = size(A)
-    if (n == 2) || (n == 3)
-        max(zero(T), eigmin(adjoint(A)*A)) |> sqrt
+    return if (n == 2) || (n == 3)
+        max(zero(T), eigmin(adjoint(A) * A)) |> sqrt
     else
         svdvals(A)[end]
     end
@@ -226,7 +226,7 @@ min_svd_vals(A::Any) = svdvals(A::Any)[end] # fallback
 function _aca_partial_pivot(v, J)
     idx = -1
     val = -Inf
-    for n = 1:length(J)
+    for n in 1:length(J)
         x = v[n]
         σ = min_svd_vals(x)
         if σ > val && J[n]

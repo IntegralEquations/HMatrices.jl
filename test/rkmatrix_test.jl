@@ -30,7 +30,7 @@ using HMatrices: RkMatrix
         m = 20
         n = 30
         r = 10
-        T = SMatrix{3,3,ComplexF64,9}
+        T = SMatrix{3, 3, ComplexF64, 9}
         A = rand(T, m, r)
         B = rand(T, n, r)
         R = RkMatrix(A, B)

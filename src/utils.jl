@@ -5,14 +5,14 @@ Structured used to reprensent the permutation of a matrix-like object. The
 original matrix is stored in the `data::K` field, and the permutations are
 stored in `rowperm` and `colperm`.
 """
-struct PermutedMatrix{K,T} <: AbstractMatrix{T}
+struct PermutedMatrix{K, T} <: AbstractMatrix{T}
     data::K # original matrix
     rowperm::Vector{Int}
     colperm::Vector{Int}
     function PermutedMatrix(orig, rowperm, colperm)
         K = typeof(orig)
         T = eltype(orig)
-        return new{K,T}(orig, rowperm, colperm)
+        return new{K, T}(orig, rowperm, colperm)
     end
 end
 Base.size(M::PermutedMatrix) = size(M.data)
@@ -136,7 +136,7 @@ reset!(A::VectorOfVectors) = (A.m = 0; A.k = 0)
 
 function Base.getindex(A::VectorOfVectors, i)
     i <= A.k || throw(BoundsError(A, i))
-    return view(A.data, ((i-1)*A.m+1):(i*A.m))
+    return view(A.data, ((i - 1) * A.m + 1):(i * A.m))
 end
 
 function Base.Matrix(A::VectorOfVectors{T}) where {T}

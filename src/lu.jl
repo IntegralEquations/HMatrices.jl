@@ -1,6 +1,6 @@
 const NOPIVOT = VERSION >= v"1.7" ? NoPivot : Val{false}
 
-const HLU = LU{<:Any,<:HMatrix}
+const HLU = LU{<:Any, <:HMatrix}
 
 function Base.getproperty(LU::HLU, s::Symbol)
     H = getfield(LU, :factors) # the underlying hierarchical matrix
@@ -42,12 +42,12 @@ end
 Hierarhical LU facotrization of `M`, using the `PartialACA(;atol,rtol;rank)` compressor.
 """
 function LinearAlgebra.lu!(
-    M::HMatrix;
-    atol = 0,
-    rank = typemax(Int),
-    rtol = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
-    kwargs...,
-)
+        M::HMatrix;
+        atol = 0,
+        rank = typemax(Int),
+        rtol = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
+        kwargs...,
+    )
     compressor = PartialACA(atol, rank, rtol)
     return lu!(M, compressor; kwargs...)
 end
@@ -70,12 +70,12 @@ function _lu!(M::HMatrix, compressor, threads, bufs = nothing)
         m, n = size(chdM)
         for i in 1:m
             _lu!(chdM[i, i], compressor, threads, bufs)
-            for j in (i+1):n
+            for j in (i + 1):n
                 ldiv!(UnitLowerTriangular(chdM[i, i]), chdM[i, j], compressor, bufs)
                 rdiv!(chdM[j, i], UpperTriangular(chdM[i, i]), compressor, bufs)
             end
-            for j in (i+1):m
-                for k in (i+1):n
+            for j in (i + 1):m
+                for k in (i + 1):n
                     hmul!(chdM[j, k], chdM[j, i], chdM[i, k], -1, 1, compressor, bufs)
                 end
             end

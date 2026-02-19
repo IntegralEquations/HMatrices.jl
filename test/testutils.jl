@@ -3,7 +3,7 @@ using LoopVectorization
 using StaticArrays
 using LinearAlgebra
 
-const EPS = 1e-8
+const EPS = 1.0e-8
 
 # some simple implementation of laplace and helmholtz single layer matrices.
 function laplace_matrix(X, Y)
@@ -16,7 +16,7 @@ end
 
 function helmholtz_matrix(X, Y, k)
     f = (x, y) -> begin
-        EPS = 1e-8 # fudge factor to avoid division by zero
+        EPS = 1.0e-8 # fudge factor to avoid division by zero
         d = norm(x - y) + EPS
         exp(im * k * d) * inv(4π * d)
     end
@@ -37,21 +37,21 @@ end
 function elastosdynamic_matrix(X, Y, μ, λ, ω, ρ)
     f =
         (x, y) -> begin
-            c1 = sqrt((λ + 2μ) / ρ)
-            c2 = sqrt(μ / ρ)
-            r = x - y
-            d = norm(r) + EPS
-            RRT = r * transpose(r) # r ⊗ rᵗ
-            s = -im * ω
-            z1 = s * d / c1
-            z2 = s * d / c2
-            α = 4
-            ψ =
-                exp(-z2) / d + (1 + z2) / (z2^2) * exp(-z2) / d -
-                c2^2 / c1^2 * (1 + z1) / (z1^2) * exp(-z1) / d
-            chi = 3 * ψ - 2 * exp(-z2) / d - c2^2 / c1^2 * exp(-z1) / d
-            return 1 / (α * π * μ) * (ψ * I - chi * RRT / d^2) + x * transpose(y)
-        end
+        c1 = sqrt((λ + 2μ) / ρ)
+        c2 = sqrt(μ / ρ)
+        r = x - y
+        d = norm(r) + EPS
+        RRT = r * transpose(r) # r ⊗ rᵗ
+        s = -im * ω
+        z1 = s * d / c1
+        z2 = s * d / c2
+        α = 4
+        ψ =
+            exp(-z2) / d + (1 + z2) / (z2^2) * exp(-z2) / d -
+            c2^2 / c1^2 * (1 + z1) / (z1^2) * exp(-z1) / d
+        chi = 3 * ψ - 2 * exp(-z2) / d - c2^2 / c1^2 * exp(-z1) / d
+        return 1 / (α * π * μ) * (ψ * I - chi * RRT / d^2) + x * transpose(y)
+    end
     return KernelMatrix(f, X, Y)
 end
 
@@ -60,12 +60,12 @@ end
 
 Vectorized version of [`laplace_matrix`](@ref).
 """
-struct LaplaceMatrixVec{T,Td} <: AbstractKernelMatrix{T}
+struct LaplaceMatrixVec{T, Td} <: AbstractKernelMatrix{T}
     X::Matrix{Td}
     Y::Matrix{Td}
-    function LaplaceMatrixVec{T}(X::Matrix{Td}, Y::Matrix{Td}) where {T,Td}
+    function LaplaceMatrixVec{T}(X::Matrix{Td}, Y::Matrix{Td}) where {T, Td}
         @assert size(X, 2) == size(Y, 2) == 3
-        return new{T,Td}(X, Y)
+        return new{T, Td}(X, Y)
     end
 end
 
@@ -73,9 +73,9 @@ Base.size(K::LaplaceMatrixVec) = size(K.X, 1), size(K.Y, 1)
 
 # constructor based on Vector of StaticVector
 function LaplaceMatrixVec{T}(
-    _X::Vector{SVector{3,Td}},
-    _Y::Vector{SVector{3,Td}},
-) where {T,Td}
+        _X::Vector{SVector{3, Td}},
+        _Y::Vector{SVector{3, Td}},
+    ) where {T, Td}
     X = collect(transpose(reshape(reinterpret(Td, _X), 3, :)))
     Y = collect(transpose(reshape(reinterpret(Td, _Y), 3, :)))
     return LaplaceMatrixVec{T}(X, Y)
@@ -109,13 +109,13 @@ end
 
 Vectorized version of [`helmholtz_matrix`](@ref).
 """
-struct HelmholtzMatrixVec{T,Td,Tk} <: AbstractKernelMatrix{T}
+struct HelmholtzMatrixVec{T, Td, Tk} <: AbstractKernelMatrix{T}
     X::Matrix{Td}
     Y::Matrix{Td}
     k::Tk
-    function HelmholtzMatrixVec{T}(X::Matrix{Td}, Y::Matrix{Td}, k::Tk) where {T,Td,Tk}
+    function HelmholtzMatrixVec{T}(X::Matrix{Td}, Y::Matrix{Td}, k::Tk) where {T, Td, Tk}
         @assert size(X, 2) == size(Y, 2) == 3
-        return new{T,Td,Tk}(X, Y, k)
+        return new{T, Td, Tk}(X, Y, k)
     end
 end
 HelmholtzMatrixVec(args...) = HelmholtzMatrixVec{ComplexF64}(args...)
@@ -123,10 +123,10 @@ HelmholtzMatrixVec(args...) = HelmholtzMatrixVec{ComplexF64}(args...)
 Base.size(K::HelmholtzMatrixVec) = size(K.X, 1), size(K.Y, 1)
 
 function HelmholtzMatrixVec{T}(
-    _X::Vector{SVector{3,Td}},
-    _Y::Vector{SVector{3,Td}},
-    k,
-) where {T,Td}
+        _X::Vector{SVector{3, Td}},
+        _Y::Vector{SVector{3, Td}},
+        k,
+    ) where {T, Td}
     X = collect(transpose(reshape(reinterpret(Td, _X), 3, :)))
     Y = collect(transpose(reshape(reinterpret(Td, _Y), 3, :)))
     return HelmholtzMatrixVec{T}(X, Y, k)
@@ -138,10 +138,10 @@ function Base.getindex(K::HelmholtzMatrixVec{T}, i::Int, j::Int)::T where {T}
     return inv(4π * d) * exp(im * K.k * d)
 end
 function Base.getindex(
-    K::HelmholtzMatrixVec{Complex{T}},
-    I::UnitRange,
-    J::UnitRange,
-) where {T}
+        K::HelmholtzMatrixVec{Complex{T}},
+        I::UnitRange,
+        J::UnitRange,
+    ) where {T}
     k = K.k
     m = length(I)
     n = length(J)
@@ -172,7 +172,7 @@ end
 function Base.getindex(K::HelmholtzMatrixVec, I::UnitRange, j::Int)
     return vec(K[I, j:j])
 end
-function Base.getindex(adjK::Adjoint{<:Any,<:HelmholtzMatrixVec}, I::UnitRange, j::Int)
+function Base.getindex(adjK::Adjoint{<:Any, <:HelmholtzMatrixVec}, I::UnitRange, j::Int)
     K = parent(adjK)
     return vec(conj!(K[j:j, I]))
 end
@@ -184,21 +184,21 @@ function points_on_sphere(npts, R = 1)
     y = @. R * sin(theta) * sin(phi)
     z = @. R * cos(theta)
     data = vcat(x', y', z')
-    pts = collect(reinterpret(SVector{3,Float64}, vec(data)))
+    pts = collect(reinterpret(SVector{3, Float64}, vec(data)))
     return pts
 end
 
 function points_on_cylinder(n, radius, shift = SVector(0, 0, 0))
     step = 1.75 * π * radius / sqrt(n)
-    result = Vector{SVector{3,Float64}}(undef, n)
+    result = Vector{SVector{3, Float64}}(undef, n)
     length = 2 * π * radius
     pointsPerCircle = length / step
     angleStep = 2 * π / pointsPerCircle
-    for i in 0:(n-1)
+    for i in 0:(n - 1)
         x = radius * cos(angleStep * i)
         y = radius * sin(angleStep * i)
         z = step * i / pointsPerCircle
-        result[i+1] = shift + SVector(x, y, z)
+        result[i + 1] = shift + SVector(x, y, z)
     end
     return result
 end

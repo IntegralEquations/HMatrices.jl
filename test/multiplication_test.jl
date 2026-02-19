@@ -13,13 +13,13 @@ Random.seed!(1)
 m = 2000
 n = 2000
 
-X = rand(SVector{3,Float64}, m)
-Y = [rand(SVector{3,Float64}) for _ in 1:n]
+X = rand(SVector{3, Float64}, m)
+Y = [rand(SVector{3, Float64}) for _ in 1:n]
 splitter = CardinalitySplitter(; nmax = 50)
 Xclt = ClusterTree(X, splitter)
 Yclt = ClusterTree(Y, splitter)
 adm = StrongAdmissibilityStd(; eta = 3)
-atol = 1e-5
+atol = 1.0e-5
 comp = PartialACA(; atol)
 K = laplace_matrix(X, Y)
 H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false, distributed = false)
@@ -35,12 +35,12 @@ P = HMatrices.RkMatrix(rand(m, 10), rand(n, 10))
 @testset "hmul!" begin
     C = deepcopy(H)
     tmp = β * H_full + α * H_full * H_full
-    HMatrices.hmul!(C, H, H, α, β, PartialACA(; atol = 1e-6))
+    HMatrices.hmul!(C, H, H, α, β, PartialACA(; atol = 1.0e-6))
     @test Matrix(C; global_index = false) ≈ tmp
     # adjoint
     C = deepcopy(H)
     tmp = β * H_full + α * adjoint(H_full) * H_full
-    HMatrices.hmul!(C, adjoint(H), H, α, β, PartialACA(; atol = 1e-6))
+    HMatrices.hmul!(C, adjoint(H), H, α, β, PartialACA(; atol = 1.0e-6))
     @test Matrix(C; global_index = false) ≈ tmp
 end
 

@@ -14,24 +14,24 @@ Tree structure used to cluster poitns of type `SVector{N,T}` into [`HyperRectang
 - `children::Vector{ClusterTree{N,T}}`
 - `parent::ClusterTree{N,T}`
 """
-mutable struct ClusterTree{N,T}
-    _elements::Vector{SVector{N,T}}
-    container::HyperRectangle{N,T}
+mutable struct ClusterTree{N, T}
+    _elements::Vector{SVector{N, T}}
+    container::HyperRectangle{N, T}
     index_range::UnitRange{Int}
     loc2glob::Vector{Int}
     glob2loc::Vector{Int}
-    children::Vector{ClusterTree{N,T}}
-    parentnode::ClusterTree{N,T}
+    children::Vector{ClusterTree{N, T}}
+    parentnode::ClusterTree{N, T}
     function ClusterTree(
-        els::Vector{SVector{N,T}},
-        container,
-        loc_idxs,
-        loc2glob,
-        glob2loc,
-        children,
-        parentnode,
-    ) where {N,T}
-        clt = new{N,T}(els, container, loc_idxs, loc2glob, glob2loc)
+            els::Vector{SVector{N, T}},
+            container,
+            loc_idxs,
+            loc2glob,
+            glob2loc,
+            children,
+            parentnode,
+        ) where {N, T}
+        clt = new{N, T}(els, container, loc_idxs, loc2glob, glob2loc)
         clt.children = isnothing(children) ? Vector{typeof(clt)}() : children
         clt.parentnode = isnothing(parentnode) ? clt : parentnode
         return clt
@@ -117,11 +117,11 @@ strategy encoded in `splitter`. If `copy_elements` is set to false, the
 during the tree construction.
 """
 function ClusterTree(
-    elements,
-    splitter = GeometricSplitter();
-    copy_elements = true,
-    threads = false,
-)
+        elements,
+        splitter = GeometricSplitter();
+        copy_elements = true,
+        threads = false,
+    )
     copy_elements && (elements = deepcopy(elements))
     bbox = bounding_box(elements)
     n = length(elements)
@@ -156,7 +156,7 @@ function _build_cluster_tree!(current_node, splitter, threads, depth = 0)
     return current_node
 end
 
-function Base.show(io::IO, tree::ClusterTree{N,T}) where {N,T}
+function Base.show(io::IO, tree::ClusterTree{N, T}) where {N, T}
     return print(io, "ClusterTree with $(length(tree.index_range)) points.")
 end
 
@@ -171,5 +171,5 @@ function Base.summary(clt::ClusterTree)
     @printf "\n\t max number of elements per leaf: %i" maximum(points_per_leaf)
     depth_per_leaf = map(depth, leaves_)
     @printf "\n\t min depth of leaves: %i" minimum(depth_per_leaf)
-    @printf "\n\t max depth of leaves: %i" maximum(depth_per_leaf)
+    return @printf "\n\t max depth of leaves: %i" maximum(depth_per_leaf)
 end

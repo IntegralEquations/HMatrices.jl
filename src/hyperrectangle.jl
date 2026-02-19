@@ -4,9 +4,9 @@
 Axis-aligned hyperrectangle in `N` dimensions given by `low_corner::SVector{N,T}` and
 `high_corner::SVector{N,T}`.
 """
-struct HyperRectangle{N,T}
-    low_corner::SVector{N,T}
-    high_corner::SVector{N,T}
+struct HyperRectangle{N, T}
+    low_corner::SVector{N, T}
+    high_corner::SVector{N, T}
 end
 HyperRectangle(l::Tuple, h::Tuple) = HyperRectangle(SVector(l), SVector(h))
 HyperRectangle(l::SVector, h::SVector) = HyperRectangle(promote(l, h)...)
