@@ -239,7 +239,7 @@ function assemble_hmatrix(
         if threads
             _assemble_threads!(hmat, K, comp)
         else
-            _assemble_cpu!(hmat, K, comp, ACABuffer(T))
+            _assemble_cpu!(hmat, K, comp, allocate_buffer(comp, T))
         end
     end
 end
@@ -344,7 +344,7 @@ function _assemble_threads!(hmat, K, comp)
     np = Threads.nthreads()
     @sync for _ in 1:np
         Threads.@spawn begin
-            buf = ACABuffer(eltype(hmat))
+            buf = allocate_buffer(comp, eltype(hmat))
             while true
                 i = Threads.atomic_add!(acc, 1)
                 i > length(c) && break

@@ -83,7 +83,10 @@ export ClusterTree,
     WeakAdmissibilityStd,
     PartialACA,
     TSVD,
+    ACAWithRecompression,
+    ACAWithRecompressionBuffer,
     # functions
+    allocate_buffer,
     compression_ratio,
     assemble_hmatrix
 

@@ -77,6 +77,23 @@ function ACABuffer(T, m = 0, n = 0)
     )
 end
 
+struct ACAWithRecompressionBuffer{T}
+    aca::ACABuffer{T}
+    data::Vector{T}   # flat scratch, grown via resize!, never shrunk
+end
+
+function ACAWithRecompressionBuffer(T)
+    return ACAWithRecompressionBuffer{T}(ACABuffer(T), Vector{T}(undef, 0))
+end
+
+function _get_scratch!(buf::ACAWithRecompressionBuffer{T}, k) where {T}
+    n = k * k
+    if length(buf.data) < n
+        resize!(buf.data, n)
+    end
+    return reshape(view(buf.data, 1:n), k, k)
+end
+
 """
     _aca_partial(K,irange,jrange,atol,rmax,rtol,istart=1)
 
@@ -215,10 +232,12 @@ for more details.
 min_svd_vals(x::Number) = abs(x)
 function min_svd_vals(A::AbstractMatrix{T}) where {T}
     n, m = size(A)
-    return if (n == 2) || (n == 3)
-        max(zero(T), eigmin(adjoint(A) * A)) |> sqrt
+    if (n == 2) || (n == 3)
+        λ = eigmin(Hermitian(adjoint(A) * A))
+        # try to avoid some floating point issues
+        return max(λ, zero(λ)) |> sqrt
     else
-        svdvals(A)[end]
+        return svdvals(A)[end]
     end
 end
 min_svd_vals(A::Any) = svdvals(A::Any)[end] # fallback
@@ -334,3 +353,54 @@ function compress!(M::Base.Matrix, tsvd::TSVD)
     end
     return RkMatrix(A, B)
 end
+
+"""
+    struct ACAWithRecompression
+
+A two-stage compressor that applies [`PartialACA`](@ref) followed by
+recompression via [`TSVD`](@ref). The ACA step produces a low-rank approximation
+quickly using partial pivoting; the subsequent SVD step can reduce the rank
+further, at the cost of a small additional computation.
+"""
+struct ACAWithRecompression
+    aca::PartialACA
+end
+
+function _recompress!(R::RkMatrix{T}, atol, rtol, rmax, bufs = nothing) where {T}
+    m, n = size(R)
+    k = rank(R)
+    QA, RA = qr!(R.A)
+    QB, RB = qr!(R.B)
+    if isnothing(bufs)
+        C = RA * adjoint(RB)
+    else
+        C = _get_scratch!(bufs, k)
+        mul!(C, RA, adjoint(RB))
+    end
+    F = svd!(C)
+    sp_norm = F.S[1]
+    r = findlast(x -> x > max(atol, rtol * sp_norm), F.S)
+    isnothing(r) && (r = min(k, m, n))
+    r = min(r, rmax)
+    R.A = QA * (F.U[:, 1:r] * Diagonal(F.S[1:r]))
+    R.B = QB * F.V[:, 1:r]
+    return R
+end
+
+function (comp::ACAWithRecompression)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs = nothing)
+    aca_buf = isnothing(bufs) ? nothing : bufs.aca
+    R = comp.aca(K, rowtree, coltree, aca_buf)
+    return _recompress!(R, comp.aca.atol, comp.aca.rtol, comp.aca.rank, bufs)
+end
+
+function (comp::ACAWithRecompression)(K, irange::AbstractRange, jrange::AbstractRange, bufs = nothing)
+    aca_buf = isnothing(bufs) ? nothing : bufs.aca
+    R = comp.aca(K, irange, jrange, aca_buf)
+    return _recompress!(R, comp.aca.atol, comp.aca.rtol, comp.aca.rank, bufs)
+end
+
+(comp::ACAWithRecompression)(K::AbstractMatrix) = comp(K, axes(K, 1), axes(K, 2))
+
+allocate_buffer(::PartialACA, T) = ACABuffer(T)
+allocate_buffer(::ACAWithRecompression, T) = ACAWithRecompressionBuffer(T)
+allocate_buffer(::Any, T) = nothing

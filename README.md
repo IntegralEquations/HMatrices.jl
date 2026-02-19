@@ -1,6 +1,6 @@
 # HMatrices.jl
 
-*A package for assembling and factoring hierarchical matrices*
+_A package for assembling and factoring hierarchical matrices_
 
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://IntegralEquations.github.io/HMatrices.jl/stable)
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://IntegralEquations.github.io/HMatrices.jl/dev)
@@ -8,10 +8,12 @@
 Status](https://github.com/IntegralEquations/HMatrices.jl/workflows/CI/badge.svg)](https://github.com/IntegralEquations/HMatrices.jl/actions)
 [![codecov](https://codecov.io/gh/IntegralEquations/HMatrices.jl/branch/main/graph/badge.svg?token=DRT75WR7V2)](https://codecov.io/gh/IntegralEquations/HMatrices.jl)
 ![Lifecycle](https://img.shields.io/badge/lifecycle-stable-blue.svg)
-[![Runic formatting](https://img.shields.io/badge/code%20style-runic-blue)](https://github.com/fredrikekre/Runic.jl)
+[![code style: runic](https://img.shields.io/badge/code_style-%E1%9A%B1%E1%9A%A2%E1%9A%BE%E1%9B%81%E1%9A%B2-black)](https://github.com/fredrikekre/Runic.jl)
 
 ## Installation
+
 Install from the Pkg REPL:
+
 ```
 pkg> add HMatrices
 ```
@@ -21,10 +23,10 @@ pkg> add HMatrices
 This package provides some functionality for assembling as well as for doing
 linear algebra with [hierarchical
 matrices](https://en.wikipedia.org/wiki/Hierarchical_matrix) with a strong focus
-in applications arising in **boundary integral equation** methods. 
+in applications arising in **boundary integral equation** methods.
 
 For the purpose of illustration, let us consider an abstract matrix `K` with
-entry `i,j` given by the evaluation of some *kernel function* `G` on points
+entry `i,j` given by the evaluation of some _kernel function_ `G` on points
 `X[i]` and `Y[j]`, where `X` and `Y` are vector of points (in 3D here); that is,
 `K[i,j]=G(X[i],Y[j])`. This object can be constructed as follows:
 
@@ -34,7 +36,7 @@ const Point3D = SVector{3,Float64}
 # sample some points on a sphere
 m = 100_000
 X = Y = [Point3D(sin(θ)cos(ϕ),sin(θ)*sin(ϕ),cos(θ)) for (θ,ϕ) in zip(π*rand(m),2π*rand(m))]
-function G(x,y) 
+function G(x,y)
   d = norm(x-y) + 1e-8
   1/(4π*d)
 end
@@ -53,14 +55,16 @@ approximation to `K` as a hierarchical matrix using:
 H = assemble_hmatrix(K;atol=1e-6)
 ```
 
-> **Tip**: For a smaller problem size (say `m=10_000`), you may try 
+> **Tip**: For a smaller problem size (say `m=10_000`), you may try
+>
 > ```julia
 > using Plots
 > plot(H)
 > ```
+>
 > to visualize the underlying block-structure. You should see something similar
 > to the figure below:
->![HMatrix](docs/src/assets/hmatrix.png "HMatrix")
+> ![HMatrix](docs/src/assets/hmatrix.png "HMatrix")
 
 Calling `HMatrices.compression_ratio(H)` reveals that storing a dense version of
 `K` would take roughly `25` times as much space (and probably would not fit in
@@ -104,6 +108,6 @@ following packages:
   a flexible framework for hierarchical matrices implementing an abstract
   infrastructure.
 - [KernelMatrices.jl](https://bitbucket.org/cgeoga/kernelmatrices.jl): a library
-  implementing the *Hierarchically Off-Diagonal Low-Rank* structure (HODLR).
+  implementing the _Hierarchically Off-Diagonal Low-Rank_ structure (HODLR).
 - [HSSMatrices.jl](https://github.com/bonevbs/HssMatrices.jl): an implementation
-  of the *Hierarchically semi-separable* structure (HSS).
+  of the _Hierarchically semi-separable_ structure (HSS).

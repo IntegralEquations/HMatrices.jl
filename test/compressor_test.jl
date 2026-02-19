@@ -2,7 +2,14 @@ using HMatrices
 using Test
 using StaticArrays
 using LinearAlgebra
-using HMatrices: PartialACA, TSVD, RkMatrix, VectorOfVectors
+using HMatrices:
+    PartialACA,
+    TSVD,
+    ACAWithRecompression,
+    ACAWithRecompressionBuffer,
+    RkMatrix,
+    VectorOfVectors,
+    allocate_buffer
 
 include(joinpath(HMatrices.PROJECT_ROOT, "test", "testutils.jl"))
 
@@ -54,6 +61,39 @@ Random.seed!(1)
         A = rand(2, 2)
         comp = PartialACA(; rtol = 1.0e-5)
         @test comp(A, 1:2, 1:2) ≈ A
+    end
+    @testset "aca_with_recompression" begin
+        # accuracy: atol
+        atol = 1.0e-5
+        comp = ACAWithRecompression(PartialACA(; atol))
+        R = comp(M, irange, jrange)
+        @test norm(Matrix(R) - M) < 5 * atol
+        # accuracy: rtol
+        rtol = 1.0e-5
+        comp = ACAWithRecompression(PartialACA(; rtol))
+        R = comp(M, irange, jrange)
+        @test norm(Matrix(R) - M) < rtol * norm(M)
+        # rank cap is respected
+        r = 10
+        comp = ACAWithRecompression(PartialACA(; rank = r))
+        R = comp(M, irange, jrange)
+        @test rank(R) <= r
+        # recompression should not increase rank vs PartialACA alone
+        aca = PartialACA(; rtol = 1.0e-5)
+        R_aca = aca(M, irange, jrange)
+        R_recomp = ACAWithRecompression(aca)(M, irange, jrange)
+        @test rank(R_recomp) <= rank(R_aca)
+        # with explicit buffer: results should match no-buffer path
+        comp_buf = ACAWithRecompression(PartialACA(; rtol = 1.0e-5))
+        buf = ACAWithRecompressionBuffer(T)
+        R_with_buf = comp_buf(M, irange, jrange, buf)
+        R_no_buf = comp_buf(M, irange, jrange)
+        @test rank(R_with_buf) == rank(R_no_buf)
+        @test norm(Matrix(R_with_buf) - M) < 1.0e-5 * norm(M)
+        # allocate_buffer dispatch
+        @test allocate_buffer(PartialACA(), Float64) isa HMatrices.ACABuffer{Float64}
+        @test allocate_buffer(ACAWithRecompression(PartialACA()), Float64) isa ACAWithRecompressionBuffer{Float64}
+        @test allocate_buffer(TSVD(), Float64) === nothing
     end
     @testset "truncated svd" begin
         atol = 1.0e-5
