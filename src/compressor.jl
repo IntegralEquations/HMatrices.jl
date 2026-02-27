@@ -230,10 +230,10 @@ kernels; see
 for more details.
 """
 min_svd_vals(x::Number) = abs(x)
-function min_svd_vals(A::AbstractMatrix{T}) where {T}
+function min_svd_vals(A::SMatrix)
     n, m = size(A)
     if (n == 2) || (n == 3)
-        λ = eigmin(Hermitian(adjoint(A) * A))
+        λ = eigmin(SHermitianCompact(A * adjoint(A)))
         # try to avoid some floating point issues
         return max(λ, zero(λ)) |> sqrt
     else
