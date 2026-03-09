@@ -19,7 +19,7 @@ jobs:
       - uses: julia-actions/setup-julia@latest
         with:
           version: 1
-      - uses: julia-actions/cache@v2
+      - uses: julia-actions/cache@v3
 
       - name: Build AirspeedVelocity
         env:
