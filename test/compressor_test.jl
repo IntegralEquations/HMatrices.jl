@@ -116,6 +116,19 @@ Random.seed!(1)
         HMatrices.compress!(R2, tsvd)
         @test rank(R2) == r
     end
+    @testset "blocks below the tolerance" begin
+        # every singular value is below the tolerance: truncate to rank zero
+        small = 1.0e-12 * M
+        R = RkMatrix(1.0e-12 * rand(T, m, 3), rand(T, n, 3))
+        for comp in (TSVD(; atol = 1.0e-6), ACAWithRecompression(PartialACA(; atol = 1.0e-6)))
+            @test rank(comp(small)) == 0
+            @test rank(comp(zero(M))) == 0
+        end
+        @test rank(HMatrices.compress!(copy(R), TSVD(; atol = 1.0e-6))) == 0
+        # rank-zero inputs are left as they are
+        R0 = RkMatrix(zeros(T, m, 0), zeros(T, n, 0))
+        @test rank(HMatrices.compress!(R0, TSVD(; atol = 1.0e-6))) == 0
+    end
 end
 
 @testset "Tensorial" begin

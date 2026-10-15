@@ -301,6 +301,14 @@ end
 
 (comp::TSVD)(K::Base.Matrix) = comp(K, 1:size(K, 1), 1:size(K, 2))
 
+# number of singular values `S` (sorted decreasingly) above the tolerance, at most
+# `rmax` (zero if they are all below the tolerance)
+function _truncation_rank(S, atol, rtol, rmax)
+    isempty(S) && return 0
+    tol = max(atol, rtol * S[1])
+    return min(count(>(tol), S), rmax)
+end
+
 """
     compress!(M::RkMatrix,tsvd::TSVD)
 
@@ -316,10 +324,7 @@ function compress!(R::RkMatrix, tsvd::TSVD)
     U = QA * F.U
     Vt = F.Vt * adjoint(QB)
     V = adjoint(Vt)
-    sp_norm = F.S[1] # spectral norm
-    r = findlast(x -> x > max(tsvd.atol, tsvd.rtol * sp_norm), F.S)
-    isnothing(r) && (r = min(rank(R), m, n))
-    r = min(r, tsvd.rank)
+    r = _truncation_rank(F.S, tsvd.atol, tsvd.rtol, tsvd.rank)
     if m < n
         A = @views U[:, 1:r] * Diagonal(F.S[1:r])
         B = V[:, 1:r]
@@ -340,10 +345,7 @@ data in `M` is invalidated in the process.
 function compress!(M::Base.Matrix, tsvd::TSVD)
     m, n = size(M)
     F = svd!(M)
-    sp_norm = F.S[1] # spectral norm
-    r = findlast(x -> x > max(tsvd.atol, tsvd.rtol * sp_norm), F.S)
-    isnothing(r) && (r = min(m, n))
-    r = min(r, tsvd.rank)
+    r = _truncation_rank(F.S, tsvd.atol, tsvd.rtol, tsvd.rank)
     if m < n
         A = @views F.U[:, 1:r] * Diagonal(F.S[1:r])
         B = F.V[:, 1:r]
@@ -378,10 +380,7 @@ function _recompress!(R::RkMatrix{T}, atol, rtol, rmax, bufs = nothing) where {T
         mul!(C, RA, adjoint(RB))
     end
     F = svd!(C)
-    sp_norm = F.S[1]
-    r = findlast(x -> x > max(atol, rtol * sp_norm), F.S)
-    isnothing(r) && (r = min(k, m, n))
-    r = min(r, rmax)
+    r = _truncation_rank(F.S, atol, rtol, rmax)
     R.A = QA * (F.U[:, 1:r] * Diagonal(F.S[1:r]))
     R.B = QB * F.V[:, 1:r]
     return R
