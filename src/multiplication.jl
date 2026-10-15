@@ -96,7 +96,6 @@ function execute_node!(C::HMatrix, compressor, dict, a, R, bufs)
         for (A, B) in pairs
             _mul_dense!(d, A, B, a)
         end
-        # isnothing(R) || axpy!(true, R, d)
         isnothing(R) || mul!(d, R.A, adjoint(R.B), true, true)
     else
         L = MulLinearOp{S}(data(C), R, pairs, a)
@@ -347,7 +346,6 @@ function LinearAlgebra.mul!(
         b::Number,
     )
     tmp = R.Bt * x
-    # tmp = mul!(R.buffer, adjoint(R.B), x)
     return mul!(y, R.A, tmp, a, b)
 end
 
@@ -361,7 +359,6 @@ function LinearAlgebra.mul!(
     )
     R = parent(adjR)
     tmp = R.At * x
-    # tmp = mul!(R.buffer, adjoint(R.A), x)
     return mul!(y, R.B, tmp, a, b)
 end
 

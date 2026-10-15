@@ -43,7 +43,6 @@ rowtree(H::AdjointHMatrix) = H |> parent |> coltree
 coltree(H::AdjointHMatrix) = H |> parent |> rowtree
 children(H::AdjointHMatrix) = H |> parent |> children |> adjoint
 parentnode(H::AdjointHMatrix) = H |> parent |> parentnode |> adjoint
-setdata!(H::AdjointHMatrix, d) = setdata!(parentnode(H), d)
 
 # light wrapper for Hermitian
 const HermitianHMatrix{R, T} = Hermitian{T, HMatrix{R, T}}
@@ -54,7 +53,6 @@ rowtree(H::HermitianHMatrix) = H |> parent |> rowtree
 coltree(H::HermitianHMatrix) = H |> parent |> coltree
 children(H::HermitianHMatrix) = H |> parent |> children |> Hermitian
 parentnode(H::HermitianHMatrix) = H |> parent |> parentnode |> Hermitian
-setdata!(H::HermitianHMatrix, d) = setdata!(parentnode(H), d)
 
 const HTypes = Union{HMatrix, AdjointHMatrix, HermitianHMatrix}
 
@@ -499,7 +497,6 @@ end
             pt2 = pt1 .+ size(block) .- 1
             y1, y2 = pt1[1], pt2[1]
             x1, x2 = pt1[2], pt2[2]
-            # annotations := ((x1+x2)/2,(y1+y2)/2, rank(block.data))
             [x1, x2, x2, x1, x1], [y1, y1, y2, y2, y1]
         end
     end

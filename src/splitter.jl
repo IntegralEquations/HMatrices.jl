@@ -84,13 +84,8 @@ function center_of_mass(clt::ClusterTree)
     pts = clt._elements
     loc_idxs = clt.index_range
     l2g = loc2glob(clt)
-    # w    = clt.weights
     n = length(loc_idxs)
-    # M    = isempty(w) ? n : sum(i->w[i],glob_idxs)
-    # xc   = isempty(w) ? sum(i->pts[i]/M,glob_idxs) : sum(i->w[i]*pts[i]/M,glob_idxs)
-    M = n
-    xc = sum(i -> center(pts[l2g[i]]) / M, loc_idxs)
-    return xc
+    return sum(i -> center(pts[l2g[i]]) / n, loc_idxs)
 end
 
 """

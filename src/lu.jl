@@ -26,7 +26,7 @@ blocks during the multiplication routines.
 """
 function LinearAlgebra.lu!(M::HMatrix, compressor; threads = use_threads())
     # perform the lu decomposition of M in place
-    _lu!(M, compressor, threads, _buffer_channel(compressor, eltype(M)))
+    _lu!(M, compressor, _buffer_channel(compressor, eltype(M)))
     # wrap the result in the LU structure
     return LU(M, Int[], 0)
 end
@@ -55,7 +55,7 @@ Hierarchical LU factorization. See [`lu!`](@ref) for the available options.
 """
 LinearAlgebra.lu(M::HMatrix, args...; kwargs...) = lu!(deepcopy(M), args...; kwargs...)
 
-function _lu!(M::HMatrix, compressor, threads, bufs = nothing)
+function _lu!(M::HMatrix, compressor, bufs = nothing)
     if isleaf(M)
         d = data(M)
         @assert d isa Matrix
@@ -65,7 +65,7 @@ function _lu!(M::HMatrix, compressor, threads, bufs = nothing)
         chdM = children(M)
         m, n = size(chdM)
         for i in 1:m
-            _lu!(chdM[i, i], compressor, threads, bufs)
+            _lu!(chdM[i, i], compressor, bufs)
             for j in (i + 1):n
                 ldiv!(UnitLowerTriangular(chdM[i, i]), chdM[i, j], compressor, bufs)
                 rdiv!(chdM[j, i], UpperTriangular(chdM[i, i]), compressor, bufs)

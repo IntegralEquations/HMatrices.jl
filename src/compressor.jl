@@ -110,17 +110,9 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
     Kadj = adjoint(K)
     T = eltype(K)
     rtol = _rtol(rtol, T)
-    # if irange and jrange are Colon, extract the size from `K` directly. This
-    # allows for some code reuse with specializations on getindex(i,::Colon) and
-    # getindex(::Colon,j) for when `K` is a `RkMatrix`
-    if irange isa Colon && jrange isa Colon
-        m, n = size(K)
-        ishift, jshift = 0, 0
-    else
-        m, n = length(irange), length(jrange)
-        ishift, jshift = first(irange) - 1, first(jrange) - 1
-        # maps global indices to local indices
-    end
+    m, n = length(irange), length(jrange)
+    # maps local indices to indices of `K`
+    ishift, jshift = first(irange) - 1, first(jrange) - 1
     buffer = isnothing(buffer_) ? ACABuffer(T, m, n) : buffer_
     A, B, I, J = buffer.A, buffer.B, buffer.I, buffer.J # extract the individual buffers for convenience
     @assert A.k == 0 && B.k == 0 "buffers must be empty"
@@ -146,9 +138,6 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
         getblock!(b, Kadj, jrange, i + ishift)
         for k in 1:r
             axpy!(-adjoint(A[k][i]), B[k], b)
-            # for j in eachindex(row)
-            #     row[j] = row[j] - B[k][j]*adjoint(A[k][i])
-            # end
         end
         j = _aca_partial_pivot(b, J)
         δ = b[j]

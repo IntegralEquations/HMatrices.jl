@@ -35,8 +35,6 @@ function children(T::HTriangular)
     end
     return v
 end
-parentnode(H::HTriangular) = H |> parent |> parentnode |> adjoint
-setdata!(H::HTriangular, d) = setdata!(parentnode(H), d)
 isleaf(H::HTriangular) = isempty(children(H))
 
 hasdata(t::HTriangular) = hasdata(parent(t))

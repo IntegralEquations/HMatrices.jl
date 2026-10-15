@@ -1,7 +1,6 @@
 const HChol = Cholesky{<:Any, <:HermitianHMatrix}
 
 function Base.getproperty(chol::HChol, s::Symbol)
-    flag = getfield(chol, :uplo)
     H = getfield(chol, :factors) # the underlying hierarchical matrix
     if s == :L
         return adjoint(UpperTriangular(H))
@@ -25,7 +24,7 @@ blocks during the multiplication routines.
 """
 function LinearAlgebra.cholesky!(M::HermitianHMatrix, compressor; threads = use_threads())
     # perform the cholesky decomposition of M in place
-    _cholesky!(M, compressor, threads, _buffer_channel(compressor, eltype(M)))
+    _cholesky!(M, compressor, _buffer_channel(compressor, eltype(M)))
     # wrap the result in the cholesky structure
     return M |> UpperTriangular |> Cholesky
 end
@@ -58,7 +57,7 @@ function LinearAlgebra.cholesky(M::HermitianHMatrix, args...; kwargs...)
     return cholesky!(deepcopy(M), args...; kwargs...)
 end
 
-function _cholesky!(M::HermitianHMatrix, compressor, threads, bufs = nothing)
+function _cholesky!(M::HermitianHMatrix, compressor, bufs = nothing)
     if isleaf(M)
         d = data(M)
         @debug "dense cholesky! on $M"
@@ -68,7 +67,7 @@ function _cholesky!(M::HermitianHMatrix, compressor, threads, bufs = nothing)
         chdM = children(M)
         m, n = size(chdM)
         for i in 1:m
-            _cholesky!(chdM[i, i], compressor, threads, bufs)
+            _cholesky!(chdM[i, i], compressor, bufs)
             for j in (i + 1):n
                 Lᵢᵢ = adjoint(UpperTriangular(chdM[i, i]))
                 ldiv!(Lᵢᵢ, chdM[i, j], compressor, bufs)

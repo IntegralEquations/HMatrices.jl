@@ -84,9 +84,7 @@ end
 
 Base.copy(R::RkMatrix) = RkMatrix(copy(R.A), copy(R.B))
 
-Base.eltype(::RkMatrix{T}) where {T} = T
 Base.size(rmat::RkMatrix) = (size(rmat.A, 1), size(rmat.B, 1))
-Base.length(rmat::RkMatrix) = prod(size(rmat))
 function Base.isapprox(rmat::RkMatrix, B::AbstractArray, args...; kwargs...)
     return isapprox(Matrix(rmat), B, args...; kwargs...)
 end
