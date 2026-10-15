@@ -1,7 +1,7 @@
 """
     mutable struct HMatrix{R,T} <: AbstractMatrix{T}
 
-A hierarchial matrix constructed from a `rowtree` and `coltree` of type `R` and
+A hierarchical matrix constructed from a `rowtree` and `coltree` of type `R` and
 holding elements of type `T`.
 """
 mutable struct HMatrix{R, T} <: AbstractMatrix{T}
@@ -206,7 +206,7 @@ It is assumed that `K` supports `getindex(K,i,j)`, and that `comp` can be called
 as `comp(K,irange::UnitRange,jrange::UnitRange)` to produce a compressed version
 of `K[irange,jrange]` in the form of an [`RkMatrix`](@ref).
 
-The type paramter `T` is used to specify the type of the entries of the matrix,
+The type parameter `T` is used to specify the type of the entries of the matrix,
 by default is inferred from `K` using `eltype(K)`.
 """
 function assemble_hmatrix(
@@ -223,7 +223,7 @@ function assemble_hmatrix(
     return if distributed
         _assemble_hmat_distributed(K, rowtree, coltree; adm, comp, global_index, threads)
     else
-        # create first the structure. No parellelism used as this should be light.
+        # create first the structure. No parallelism used as this should be light.
         hmat_ = HMatrix{T}(rowtree, coltree, adm)
         # wrap hmat in a Hermitian if needed
         hmat = if K isa Hermitian
@@ -252,7 +252,7 @@ end
 Construct an empty `HMatrix` with `rowtree` and `coltree` using the
 admissibility condition `adm`. This function builds the skeleton for the
 hierarchical matrix, but **does not compute `data`** field in the blocks. See
-[`assemble_hmatrix`](@ref) for assembling a hierarhical matrix.
+[`assemble_hmatrix`](@ref) for assembling a hierarchical matrix.
 """
 function HMatrix{T}(rowtree::R, coltree::R, adm) where {R, T}
     #build root
@@ -295,8 +295,8 @@ end
 
 Assemble data on the leaves of `hmat`. The admissible leaves are compressed
 using the compressor `comp`. This function assumes the structure of `hmat` has
-already been intialized, and therefore should not be called directly. See
-[`HMatrix`](@ref) information on constructors.
+already been initialized, and therefore should not be called directly. See
+[`HMatrix`](@ref) for information on constructors.
 """
 function _assemble_cpu!(hmat, K, comp, bufs)
     if isleaf(hmat) # base case
@@ -311,7 +311,7 @@ function _assemble_cpu!(hmat, K, comp, bufs)
 end
 
 function _process_leaf!(leaf, K, comp, bufs)
-    # for hermitian, the upper trianglar stores the data
+    # for hermitian, the upper triangular stores the data
     (leaf isa Adjoint || leaf isa Transpose) && (return leaf)
     H = if leaf isa Hermitian
         parent(leaf) # the underlying HMatrix

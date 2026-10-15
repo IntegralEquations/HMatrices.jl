@@ -19,7 +19,7 @@ end
 """
     cholesky!(M::HMatrix,comp)
 
-Hierarhical cholesky facotrization of `M`, using `comp` to generate the compressed
+Hierarchical Cholesky factorization of `M`, using `comp` to generate the compressed
 blocks during the multiplication routines.
 """
 function LinearAlgebra.cholesky!(M::HermitianHMatrix, compressor; threads = use_threads())
@@ -30,11 +30,10 @@ function LinearAlgebra.cholesky!(M::HermitianHMatrix, compressor; threads = use_
 end
 
 """
-    cholesky!(M::HMatrix;atol=0,rank=typemax(Int),rtol=atol>0 ||
-    rank<typemax(Int) ? 0 : sqrt(eps(Float64)))
+    cholesky!(M::HMatrix; atol, rank, rtol, threads = use_threads())
 
-Hierarhical cholesky facotrization of `M`, using the
-`PartialACA(;atol,rtol;rank)` compressor.
+Hierarchical Cholesky factorization of `M`, using the
+`PartialACA(; atol, rank, rtol)` compressor.
 """
 function LinearAlgebra.cholesky!(M::HermitianHMatrix; threads = use_threads(), kwargs...)
     return cholesky!(M, PartialACA(; kwargs...); threads)

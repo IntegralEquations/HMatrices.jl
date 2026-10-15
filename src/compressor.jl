@@ -102,7 +102,7 @@ end
 
 Internal function implementing the adaptive cross-approximation algorithm with
 partial pivoting. The returned `R::RkMatrix` provides an approximation to
-`K[irange,jrange]` which has either rank `is expected to satisfy `|M - R| <
+`M = K[irange,jrange]` of rank at most `rmax`, which is expected to satisfy `|M - R| <
 max(atol,rtol*|M|)`, but this inequality may fail to hold due to the various
 errors involved in estimating the error and |M|.
 """
@@ -211,20 +211,6 @@ compute the Frobenius norm of `Rₖ₊₁ = A*adjoint(B)` efficiently.
     return sqrt(cur^2 + out)
 end
 
-"""
-    _aca_partial_pivot(v,I)
-
-Find in the valid set `I` the index of the element `x ∈ v` maximizing its
-smallest singular value. This is equivalent to minimizing the spectral norm of
-the inverse of `x`.
-
-When `x` is a scalar, this is simply the element with largest absolute value.
-
-This general implementation should work for both scalar as well as tensor-valued
-kernels; see
-(https://www.sciencedirect.com/science/article/pii/S0021999117306721)[https://www.sciencedirect.com/science/article/pii/S0021999117306721]
-for more details.
-"""
 min_svd_vals(x::Number) = abs(x)
 function min_svd_vals(A::SMatrix)
     n, m = size(A)
@@ -238,6 +224,21 @@ function min_svd_vals(A::SMatrix)
 end
 min_svd_vals(A::Any) = svdvals(A::Any)[end] # fallback
 
+"""
+    _aca_partial_pivot(v,I)
+
+Find in the valid set `I` the index of the element `x ∈ v` maximizing its
+smallest singular value. This is equivalent to minimizing the spectral norm of
+the inverse of `x`.
+
+When `x` is a scalar, this is simply the element with largest absolute value.
+Return `-1` if `I` has no valid index.
+
+This general implementation should work for both scalar as well as tensor-valued
+kernels; see
+[https://www.sciencedirect.com/science/article/pii/S0021999117306721](https://www.sciencedirect.com/science/article/pii/S0021999117306721)
+for more details.
+"""
 function _aca_partial_pivot(v, J)
     idx = -1
     val = -Inf
@@ -274,7 +275,7 @@ end
 
 function _aca_partial_initial_pivot(rowtree)
     # the method below is suggested in Bebendorf, but it does not seem to
-    # improve the  error. The idea is that the initial pivot is the closesest
+    # improve the error. The idea is that the initial pivot is the closest
     # point to the center of the cluster
     xc = center(container(rowtree))
     d = Inf

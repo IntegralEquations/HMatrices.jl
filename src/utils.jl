@@ -1,7 +1,7 @@
 """
     PermutedMatrix{K,T} <: AbstractMatrix{T}
 
-Structured used to reprensent the permutation of a matrix-like object. The
+Structure used to represent the permutation of a matrix-like object. The
 original matrix is stored in the `data::K` field, and the permutations are
 stored in `rowperm` and `colperm`.
 """
@@ -47,7 +47,7 @@ function filter_tree!(f, nodes, tree, isterminal = true)
         # terminate the search along this path if terminal=true
         isterminal || map(x -> filter_tree!(f, nodes, x, isterminal), children(tree))
     else
-        # continue on on children
+        # continue on children
         map(x -> filter_tree!(f, nodes, x, isterminal), children(tree))
     end
     return nodes
@@ -64,7 +64,7 @@ function leaves(tree)
 end
 
 """
-    leaves(tree)
+    nodes(tree)
 
 Return a vector containing all the nodes of `tree`.
 """
@@ -76,7 +76,7 @@ end
 """
     depth(tree,acc=0)
 
-Recursive function to compute the depth of `node` in a a tree-like structure.
+Recursive function to compute the depth of `node` in a tree-like structure.
 
 Overload this function if your structure has a more efficient way to compute
 `depth` (e.g. if it stores it in a field).
@@ -113,7 +113,7 @@ VectorOfVectors(T, m = 0, k = 0) = VectorOfVectors{T}(Vector{T}(undef, m * k), m
 """
     newcol!(A::VectorOfVectors)
 
-Append a new (unitialized) column to `A`, and return a view of it.
+Append a new (uninitialized) column to `A`, and return a view of it.
 """
 function newcol!(A::VectorOfVectors)
     m, k = A.m, A.k

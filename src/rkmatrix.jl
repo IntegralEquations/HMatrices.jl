@@ -117,7 +117,7 @@ end
 # FIXME: to support scalar and tensorial problems, we currently allow for T
 # to be something other than a plain number. If that is the case, we
 # implement a (slow) multiplication algorithm by hand to circumvent a
-# problem in LinearAlgebra for the generic mulplication mul!(C,A,B,a,b) when
+# problem in LinearAlgebra for the generic multiplication mul!(C,A,B,a,b) when
 # C and B are a vectors of static matrices, and A is a matrix of static
 # matrices. Should eventually be removed.
 function LinearAlgebra.mul!(

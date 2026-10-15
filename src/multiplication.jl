@@ -3,7 +3,7 @@
 
 Similar to `mul!` : compute `C <-- A*B*a + C*b`, where `A,B,C` are hierarchical
 matrices and `compressor` is a function/functor used in the intermediate stages
-of the multiplication to avoid growring the rank of admissible blocks after
+of the multiplication to avoid growing the rank of admissible blocks after
 addition is performed.
 """
 function hmul!(
@@ -108,7 +108,7 @@ function execute_node!(C::HMatrix, compressor, dict, a, R, bufs)
 end
 
 """
-    struct MulLinearOp{R,T} <: AbstractMatrix{T}
+    struct MulLinearOp{T,V,S} <: AbstractMatrix{T}
 
 Abstract matrix representing the following linear operator:
 ```
@@ -406,7 +406,7 @@ function LinearAlgebra.mul!(
 end
 
 # FIXME: for matrix multiplication, we slice into columns and call the gemv
-# routine. This is a somewhat inneficient way of doing things, but it is simple
+# routine. This is a somewhat inefficient way of doing things, but it is simple
 # enough.
 function LinearAlgebra.mul!(
         Y::AbstractMatrix,

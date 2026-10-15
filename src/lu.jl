@@ -21,7 +21,7 @@ end
 """
     lu!(M::HMatrix,comp)
 
-Hierarhical LU facotrization of `M`, using `comp` to generate the compressed
+Hierarchical LU factorization of `M`, using `comp` to generate the compressed
 blocks during the multiplication routines.
 """
 function LinearAlgebra.lu!(M::HMatrix, compressor; threads = use_threads())
@@ -32,10 +32,9 @@ function LinearAlgebra.lu!(M::HMatrix, compressor; threads = use_threads())
 end
 
 """
-    lu!(M::HMatrix;atol=0,rank=typemax(Int),rtol=atol>0 ||
-    rank<typemax(Int) ? 0 : sqrt(eps(Float64)))
+    lu!(M::HMatrix; atol, rank, rtol, threads = use_threads())
 
-Hierarhical LU facotrization of `M`, using the `PartialACA(;atol,rtol;rank)` compressor.
+Hierarchical LU factorization of `M`, using the `PartialACA(; atol, rank, rtol)` compressor.
 """
 function LinearAlgebra.lu!(M::HMatrix; threads = use_threads(), kwargs...)
     return lu!(M, PartialACA(; kwargs...); threads)

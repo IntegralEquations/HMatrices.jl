@@ -1,7 +1,7 @@
 """
     mutable struct ClusterTree{N,T}
 
-Tree structure used to cluster poitns of type `SVector{N,T}` into [`HyperRectangle`](@ref)s.
+Tree structure used to cluster points of type `SVector{N,T}` into [`HyperRectangle`](@ref)s.
 
 # Fields:
 - `_elements::Vector{SVector{N,T}}` : vector containing the sorted elements.
@@ -12,7 +12,7 @@ Tree structure used to cluster poitns of type `SVector{N,T}` into [`HyperRectang
   tree.
 - `glob2loc::Vector{Int}` : inverse of `loc2glob` permutation.
 - `children::Vector{ClusterTree{N,T}}`
-- `parent::ClusterTree{N,T}`
+- `parentnode::ClusterTree{N,T}`
 """
 mutable struct ClusterTree{N, T}
     _elements::Vector{SVector{N, T}}

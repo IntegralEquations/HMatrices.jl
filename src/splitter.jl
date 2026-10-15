@@ -23,7 +23,7 @@ function should_split end
     split!(clt::ClusterTree,splitter::AbstractSplitter)
 
 Divide `clt` using the strategy implemented by `splitter`. This function is
-reponsible of assigning the `children` and `parent` fields, as well as of
+responsible for assigning the `children` and `parentnode` fields, as well as of
 permuting the data of `clt`.
 """
 function split! end
@@ -32,7 +32,7 @@ function split! end
     struct GeometricSplitter <: AbstractSplitter
 
 Used to split a `ClusterTree` in half along the largest axis. The children boxes
-are shrank to tighly fit the data.
+are shrunk to tightly fit the data.
 """
 Base.@kwdef struct GeometricSplitter <: AbstractSplitter
     nmax::Int = 50
