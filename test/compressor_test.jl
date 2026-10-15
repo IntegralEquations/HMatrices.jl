@@ -42,6 +42,12 @@ Random.seed!(1)
         R = aca(zero(M), irange, jrange)
         @test norm(Matrix(R)) ≈ 0.0
 
+        # zero rows use up the candidate rows without increasing the rank
+        Z = zeros(T, 4, 5)
+        Z[4, :] = rand(T, 5)
+        R = PartialACA(; atol = 1.0e-10)(Z)
+        @test Matrix(R) ≈ Z
+
         # test fast update of frobenius norm
         m, n = 10000, 1000
         r = 10

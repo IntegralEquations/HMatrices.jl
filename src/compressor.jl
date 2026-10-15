@@ -187,6 +187,8 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
             # estimate the norm by || K || ≈ || R_k ||
             est_norm = _update_frob_norm(est_norm, A, B)
             i = _aca_partial_pivot(a, I)
+            # no candidate row left: every row was used, so the approximation is exact
+            i == -1 && break
             @debug r, er, m, n
         end
     end
