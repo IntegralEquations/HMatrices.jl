@@ -334,25 +334,7 @@ Recompress the matrix `R` using a truncated svd of `R`. The implementation uses
 the `qr-svd` strategy to efficiently compute `svd(R)` when `rank(R) ≪
 min(size(R))`.
 """
-function compress!(R::RkMatrix, tsvd::TSVD)
-    m, n = size(R)
-    QA, RA = qr!(R.A)
-    QB, RB = qr!(R.B)
-    F = svd!(RA * adjoint(RB)) # svd of an r×r problem
-    U = QA * F.U
-    Vt = F.Vt * adjoint(QB)
-    V = adjoint(Vt)
-    r = _truncation_rank(F.S, tsvd.atol, tsvd.rtol, tsvd.rank)
-    if m < n
-        A = @views U[:, 1:r] * Diagonal(F.S[1:r])
-        B = V[:, 1:r]
-    else
-        A = U[:, 1:r]
-        B = @views (V[:, 1:r]) * Diagonal(F.S[1:r])
-    end
-    R.A, R.B = A, B
-    return R
-end
+compress!(R::RkMatrix, tsvd::TSVD) = _recompress!(R, tsvd.atol, tsvd.rtol, tsvd.rank)
 
 """
     compress!(M::Matrix,tsvd::TSVD)
