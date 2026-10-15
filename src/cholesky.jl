@@ -25,11 +25,7 @@ blocks during the multiplication routines.
 """
 function LinearAlgebra.cholesky!(M::HermitianHMatrix, compressor; threads = use_threads())
     # perform the cholesky decomposition of M in place
-    T = eltype(M)
-    nt = Threads.nthreads()
-    chn = Channel{ACABuffer{T}}(nt)
-    foreach(i -> put!(chn, ACABuffer(T)), 1:nt)
-    _cholesky!(M, compressor, threads, chn)
+    _cholesky!(M, compressor, threads, _buffer_channel(compressor, eltype(M)))
     # wrap the result in the cholesky structure
     return M |> UpperTriangular |> Cholesky
 end

@@ -16,14 +16,7 @@ function hmul!(
         bufs_ = nothing,
         Cflag = 'N',
     ) where {T <: HMatrix}
-    bufs = if isnothing(bufs_)
-        S = eltype(C)
-        chn = Channel{ACABuffer{S}}(Threads.nthreads())
-        foreach(i -> put!(chn, ACABuffer(S)), 1:Threads.nthreads())
-        chn
-    else
-        bufs_
-    end
+    bufs = isnothing(bufs_) ? _buffer_channel(compressor, eltype(C)) : bufs_
     b == true || rmul!(C, b)
     dict = IdDict{T, Vector{Tuple{eltype(children(A)), eltype(children(B))}}}()
     _plan_dict!(dict, C, A, B, Cflag)
@@ -32,6 +25,15 @@ function hmul!(
 end
 
 hmul!(C::HermitianHMatrix, args...) = hmul!(parent(C), args..., C.uplo)
+
+# a channel holding one buffer of `compressor` per thread
+function _buffer_channel(compressor, T)
+    nt = Threads.nthreads()
+    bufs = [allocate_buffer(compressor, T) for _ in 1:nt]
+    chn = Channel{eltype(bufs)}(nt)
+    foreach(buf -> put!(chn, buf), bufs)
+    return chn
+end
 
 function _plan_dict!(dict, C::T, A::HTypes, B::HTypes, Cflag) where {T <: HMatrix}
     pairs = get!(dict, C, Tuple{T, T}[])

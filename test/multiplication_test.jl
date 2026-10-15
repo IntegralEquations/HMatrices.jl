@@ -42,6 +42,11 @@ P = HMatrices.RkMatrix(rand(m, 10), rand(n, 10))
     tmp = β * H_full + α * adjoint(H_full) * H_full
     HMatrices.hmul!(C, adjoint(H), H, α, β, PartialACA(; atol = 1.0e-6))
     @test Matrix(C; global_index = false) ≈ tmp
+    # a compressor with its own buffer type
+    C = deepcopy(H)
+    tmp = β * H_full + α * H_full * H_full
+    HMatrices.hmul!(C, H, H, α, β, ACAWithRecompression(PartialACA(; atol = 1.0e-6)))
+    @test Matrix(C; global_index = false) ≈ tmp
 end
 
 @testset "gemv" begin

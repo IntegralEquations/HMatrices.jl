@@ -32,4 +32,7 @@ for threads in (false, true)
     @test norm(exact - approx, Inf) < 1.0e-10
     # test multiplication by checking if the solution is correct
     @test hlu.L * (hlu.U * approx) ≈ y
+    # a compressor with its own buffer type
+    hlu = lu(H, ACAWithRecompression(PartialACA(; atol = 1.0e-10)))
+    @test norm(exact - hlu \ y, Inf) < 1.0e-10
 end
