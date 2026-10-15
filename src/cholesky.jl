@@ -90,14 +90,15 @@ function _cholesky!(M::HermitianHMatrix, compressor, bufs = nothing)
     return M
 end
 
-function LinearAlgebra.ldiv!(A::HChol, y::AbstractVector; global_index = true)
+# solve with the factors `L*U` of an LU or Cholesky factorization
+function LinearAlgebra.ldiv!(A::Union{HLU, HChol}, y::AbstractVector; global_index = true)
     p = A.factors # underlying data
     ctree = coltree(p)
     rtree = rowtree(p)
     # permute input
     global_index && permute!(y, loc2glob(rtree))
     L, U = A.L, A.U
-    # solve cholesky*x = y through:
+    # solve LUx = y through:
     # (a) L(z) = y
     # (b) Ux   = z
     ldiv!(L, y)
