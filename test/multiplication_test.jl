@@ -126,4 +126,6 @@ end
         approx = mul!(copy(y), H, x, α, β; threads = false, global_index = true)
         @test exact ≈ approx
     end
+
+    @test_throws DimensionMismatch mul!(zeros(T, m, 2), H, rand(T, n, 3))
 end

@@ -452,7 +452,7 @@ function LinearAlgebra.mul!(
         b::Number = 0;
         kwargs...,
     )
-    size(Y, 2) == size(X, 2) || Throw(DimensionMismatch("size(Y,2) != size(X,2)"))
+    size(Y, 2) == size(X, 2) || throw(DimensionMismatch("size(Y,2) != size(X,2)"))
     for k in 1:size(Y, 2)
         mul!(view(Y, :, k), A, view(X, :, k), a, b; kwargs...)
     end
