@@ -49,6 +49,22 @@ P = HMatrices.RkMatrix(rand(m, 10), rand(n, 10))
     @test Matrix(C; global_index = false) ≈ tmp
 end
 
+@testset "hmul! with adjoints" begin
+    # kernel without the large regularized diagonal, which would hide errors in
+    # the other entries of the products
+    Xs = X[1:800]
+    Xsclt = ClusterTree(Xs, CardinalitySplitter(; nmax = 30))
+    f = (x, y) -> x == y ? 0.0im : exp(2im * norm(x - y)) / (4π * norm(x - y))
+    Hs = assemble_hmatrix(KernelMatrix(f, Xs, Xs), Xsclt, Xsclt; comp = PartialACA(; atol = 1.0e-10), threads = false)
+    Ms = Matrix(Hs; global_index = false)
+    for opA in (identity, adjoint), opB in (identity, adjoint)
+        C = deepcopy(Hs)
+        HMatrices.hmul!(C, opA(Hs), opB(Hs), -1, 1, PartialACA(; atol = 1.0e-10))
+        exact = Ms - opA(Ms) * opB(Ms)
+        @test norm(Matrix(C; global_index = false) - exact) < 1.0e-8 * norm(exact)
+    end
+end
+
 @testset "gemv" begin
     T = eltype(H)
     m, n = size(H)

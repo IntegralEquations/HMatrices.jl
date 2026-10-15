@@ -220,68 +220,58 @@ Multiplication when the target is a dense matrix. The numbering system in the fo
 3 --> HMatrix (hierarchical)
 =#
 
+# C ← C + a*A*B, where `A` or `B` is a leaf (which is always the case when `C`
+# is a dense leaf)
 function _mul_dense!(C::Base.Matrix, A, B, a)
-    Adata = isleaf(A) ? data(A) : A
-    Bdata = isleaf(B) ? data(B) : B
-    return if Adata isa HMatrix || Adata isa AdjointHMatrix
-        if Bdata isa Matrix
-            _mul131!(C, Adata, Bdata, a)
-        elseif Bdata isa RkMatrix
-            _mul132!(C, Adata, Bdata, a)
-        end
-    elseif Adata isa AdjOrMat
-        if Bdata isa Matrix
-            _mul111!(C, Adata, Bdata, a)
-        elseif Bdata isa RkMatrix
-            _mul112!(C, Adata, Bdata, a)
-        elseif Bdata isa HMatrix
-            _mul113!(C, Adata, Bdata, a)
-        end
-    elseif Adata isa RkMatrix || Adata isa AdjointHMatrix
-        if Bdata isa Matrix
-            _mul121!(C, Adata, Bdata, a)
-        elseif Bdata isa RkMatrix
-            _mul122!(C, Adata, Bdata, a)
-        elseif Bdata isa HMatrix
-            _mul123!(C, Adata, Bdata, a)
-        end
+    if isleaf(B)
+        _mul_hd!(C, A, data(B), a)
+    elseif isleaf(A)
+        _mul_dh!(C, data(A), B, a)
     else
-        error(
-            "invalid types: typeof(A) = $(typeof(Adata)) and typeof(B) = $(typeof(Bdata))",
-        )
+        error("one of the factors must be a leaf")
     end
+    return C
+end
+
+# the factors `(U, V)` of a low-rank matrix `R = U*V'`
+_rkfactors(R::RkMatrix) = (R.A, R.B)
+_rkfactors(adjR::AdjRk) = (parent(adjR).B, parent(adjR).A)
+
+# C ← C + a*H*d, with `d` the data of a leaf
+_mul_hd!(C, H, d::AdjOrMat, a) = _mul131!(C, H, d, a)
+function _mul_hd!(C, H, d::AdjRkOrRk, a)
+    U, V = _rkfactors(d)
+    tmp = _mul131!(zeros(eltype(C), size(H, 1), size(U, 2)), H, U, 1)
+    return mul!(C, tmp, adjoint(V), a, true)
+end
+
+# C ← C + a*d*H, with `d` the data of a leaf
+_mul_dh!(C, d::AdjOrMat, H, a) = _mul113!(C, d, H, a)
+function _mul_dh!(C, d::AdjRkOrRk, H, a)
+    U, V = _rkfactors(d)
+    tmp = _mul113!(zeros(eltype(C), size(V, 2), size(H, 2)), adjoint(V), H, 1)
+    return mul!(C, U, tmp, a, true)
 end
 
 function _mul111!(C, A, B, a)
     return mul!(C, A, B, a, true)
 end
 
-function _mul112!(
-        C::Union{Matrix, SubArray, Adjoint},
-        M::Union{Matrix, SubArray, Adjoint},
-        R::RkMatrix,
-        a::Number,
-    )
-    buffer = M * R.A
-    _mul111!(C, buffer, R.Bt, a)
-    return C
-end
-
 function _mul113!(
         C::Union{Matrix, SubArray, Adjoint},
         M::Union{Matrix, SubArray, Adjoint},
-        H::HMatrix,
+        H::HTypes,
         a::Number,
     )
-    T = eltype(C)
     if hasdata(H)
         mat = data(H)
-        if mat isa Matrix
+        if mat isa AdjOrMat
             _mul111!(C, M, mat, a)
-        elseif mat isa RkMatrix
-            _mul112!(C, M, mat, a)
+        elseif mat isa AdjRkOrRk
+            U, V = _rkfactors(mat)
+            _mul111!(C, M * U, adjoint(V), a)
         else
-            error()
+            error("unexpected data of type $(typeof(mat))")
         end
     end
     for child in children(H)
@@ -315,23 +305,6 @@ function _mul121!(
     return _mul111!(C, R.B, buffer, a)
 end
 
-function _mul122!(C::Union{Matrix, SubArray, Adjoint}, R::RkMatrix, S::RkMatrix, a::Number)
-    if rank(R) < rank(S)
-        _mul111!(C, R.A, (R.Bt * S.A) * S.Bt, a)
-    else
-        _mul111!(C, R.A * (R.Bt * S.A), S.Bt, a)
-    end
-    return C
-end
-
-function _mul123!(C::Union{Matrix, SubArray, Adjoint}, R::RkMatrix, H::HMatrix, a::Number)
-    T = promote_type(eltype(R), eltype(H))
-    tmp = zeros(T, size(R.Bt, 1), size(H, 2))
-    _mul113!(tmp, R.Bt, H, 1)
-    _mul111!(C, R.A, tmp, a)
-    return C
-end
-
 function _mul131!(
         C::Union{Matrix, SubArray, Adjoint},
         H::HTypes,
@@ -356,14 +329,6 @@ function _mul131!(
         Mview = view(M, jrange, :)
         _mul131!(Cview, child, Mview, a)
     end
-    return C
-end
-
-function _mul132!(C::Union{Matrix, SubArray, Adjoint}, H::HMatrix, R::RkMatrix, a::Number)
-    T = promote_type(eltype(H), eltype(R))
-    buffer = zeros(T, size(H, 1), size(R.A, 2))
-    _mul131!(buffer, H, R.A, 1)
-    _mul111!(C, buffer, R.Bt, a)
     return C
 end
 
