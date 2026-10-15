@@ -435,7 +435,7 @@ rowrange(A) - offset[1]` and `J = rowrange(B) - offset[2]`.
 The `offset` argument is used on the caller side to signal if the original
 hierarchical matrix had a `pivot` other than `(1,1)`.
 """
-function _hgemv_recursive!(C::AbstractVector, A::HTypes, B::AbstractVector, offset)
+function _hgemv_recursive!(C::AbstractVector, A::Union{HTypes, HTriangular}, B::AbstractVector, offset)
     if isleaf(A)
         irange = rowrange(A) .- offset[1]
         jrange = colrange(A) .- offset[2]

@@ -32,6 +32,10 @@ for threads in (false, true)
     @test norm(exact - approx, Inf) < 1.0e-10
     # test multiplication by checking if the solution is correct
     @test hlu.L * (hlu.U * approx) ≈ y
+    for t in (true, false)
+        z = mul!(zero(y), hlu.U, approx, 1, 0; threads = t)
+        @test mul!(zero(y), hlu.L, z, 1, 0; threads = t) ≈ y
+    end
     # a compressor with its own buffer type
     hlu = lu(H, ACAWithRecompression(PartialACA(; atol = 1.0e-10)))
     @test norm(exact - hlu \ y, Inf) < 1.0e-10
