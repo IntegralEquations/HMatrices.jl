@@ -93,6 +93,9 @@ end
         S = sprand(T, m, n, 0.01)
         Hnew = axpy!(true, S, deepcopy(H))
         @test norm(Hnew * U - (H_full + Matrix(S)) * U) < 1.0e-5 * norm(Hnew * U)
+        # the scaling also applies to the entries added to admissible blocks
+        Hnew = axpy!(2, S, deepcopy(H))
+        @test norm(Matrix(Hnew) - (H_full + 2 * Matrix(S))) < 1.0e-12 * norm(H_full)
     end
     @testset "Vector problem (elasticity)" begin
         K = elastostatic_matrix(X, Y, 1, 1)
@@ -103,5 +106,8 @@ end
         S = sprand(T, m, n, 0.1)
         Hnew = axpy!(true, S, deepcopy(H))
         @test norm(Hnew * U - (H_full + Matrix(S)) * U) < 1.0e-5 * norm(Hnew * U)
+        # the scaling also applies to the entries added to admissible blocks
+        Hnew = axpy!(2, S, deepcopy(H))
+        @test norm(Matrix(Hnew) - (H_full + 2 * Matrix(S))) < 1.0e-12 * norm(H_full)
     end
 end
