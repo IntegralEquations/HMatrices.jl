@@ -96,13 +96,13 @@ function LinearAlgebra.ldiv!(A::HChol, y::AbstractVector; global_index = true)
     ctree = coltree(p)
     rtree = rowtree(p)
     # permute input
-    global_index && permute!(y, loc2glob(ctree))
+    global_index && permute!(y, loc2glob(rtree))
     L, U = A.L, A.U
     # solve cholesky*x = y through:
     # (a) L(z) = y
     # (b) Ux   = z
     ldiv!(L, y)
     ldiv!(U, y)
-    global_index && invpermute!(y, loc2glob(rtree))
+    global_index && invpermute!(y, loc2glob(ctree))
     return y
 end

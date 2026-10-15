@@ -36,3 +36,20 @@ for threads in (false, true)
     hlu = lu(H, ACAWithRecompression(PartialACA(; atol = 1.0e-10)))
     @test norm(exact - hlu \ y, Inf) < 1.0e-10
 end
+
+@testset "different row and column trees" begin
+    # same points in a different order: the row and column permutations differ.
+    # The self term of the kernel is comparable to its neighbours, since the LU
+    # factorization does not pivot.
+    n = 1500
+    X = points_on_sphere(n)
+    Y = X[randperm(n)]
+    f = let w = 4π / n
+        (x, y) -> x == y ? sqrt(w / π) / 2 : w / (4π * norm(x - y))
+    end
+    K = KernelMatrix(f, X, Y)
+    H = assemble_hmatrix(K, ClusterTree(X, splitter), ClusterTree(Y, splitter); adm, comp, threads = false)
+    y = rand(n)
+    exact = Matrix(K) \ y
+    @test norm(lu(H; atol = 1.0e-10) \ y - exact) < 1.0e-6 * norm(exact)
+end
