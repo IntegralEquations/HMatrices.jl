@@ -110,6 +110,12 @@ function _build_block_structure_distribute_cols!(
     end
 end
 
+rowtree(H::DHMatrix) = H.rowtree
+coltree(H::DHMatrix) = H.coltree
+data(H::DHMatrix) = H.data
+children(H::DHMatrix) = H.children
+parentnode(H::DHMatrix) = H.parentnode
+
 Base.size(H::DHMatrix) = length(rowrange(H)), length(colrange(H))
 
 function Base.show(io::IO, ::MIME"text/plain", hmat::DHMatrix)
@@ -126,7 +132,7 @@ function Base.show(io::IO, ::MIME"text/plain", hmat::DHMatrix)
         r = leaf.data.future
         pid = r.where
         irange, jrange = @fetchfrom pid rowrange(fetch(r)), colrange(fetch(r))
-        println("\t\t leaf $i on process $pid spanning $irange × $jrange")
+        println(io, "\t\t leaf $i on process $pid spanning $irange × $jrange")
     end
     return
 end
@@ -196,11 +202,11 @@ function LinearAlgebra.mul!(
         x = a * x # new copy of x
     end
     rmul!(y, b)
-    leaves = filter_tree(x -> Trees.isleaf(x), A)
-    nb = length(leaves)
+    leaves_ = leaves(A)
+    nb = length(leaves_)
     acc = Vector{Future}(undef, nb)
     @sync for i in 1:nb
-        r = leaves[i].data.future
+        r = leaves_[i].data.future
         pid = r.where
         jrange = @fetchfrom pid colrange(fetch(r))
         T, n = eltype(y), length(y)
@@ -230,7 +236,8 @@ function isclean(H::DHMatrix)
                 @warn "leaf node without data found"
                 return false
             end
-            if !isclean(data(node))
+            r = data(node).future
+            if !remotecall_fetch(isclean ∘ fetch, r.where, r)
                 @warn "dirty `HMatrix` leaf found"
                 return false
             end
