@@ -32,6 +32,8 @@ end
         splitter = HMatrices.PrincipalComponentSplitter(; nmax = 1)
         clt = HMatrices.ClusterTree(points, splitter)
         @test sortperm(points) == clt.loc2glob
+        # `summary` returns a description instead of printing it
+        @test startswith(summary(clt), "Cluster tree with 6 elements")
     end
 
     @testset "2d" begin
