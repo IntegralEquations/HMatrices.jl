@@ -12,10 +12,10 @@ Random.seed!(1)
 
 m = 5000
 T = Float64
-X = points_on_sphere(m)
-Y = X
-
-K = laplace_matrix(X, X)
+# well-conditioned and positive definite, without a dominant diagonal which
+# would hide errors
+K = single_layer_sphere(m)
+X = Y = K.X
 
 splitter = CardinalitySplitter(; nmax = 50)
 Xclt = ClusterTree(X, splitter)
@@ -29,10 +29,10 @@ for threads in (false, true)
     M = Matrix(K)
     exact = M \ y
     approx = hchol \ y
-    @test norm(exact - approx, Inf) < 1.0e-10
+    @test norm(exact - approx) < 1.0e-7 * norm(exact)
     # test multiplication by checking if the solution is correct
     @test hchol.L * (hchol.U * approx) ≈ y
     # a compressor with its own buffer type
     hchol = cholesky(H, ACAWithRecompression(PartialACA(; atol = 1.0e-10)))
-    @test norm(exact - hchol \ y, Inf) < 1.0e-10
+    @test norm(exact - hchol \ y) < 1.0e-7 * norm(exact)
 end

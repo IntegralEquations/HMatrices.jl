@@ -12,10 +12,9 @@ Random.seed!(1)
 
 m = 5000
 T = Float64
-X = points_on_sphere(m)
-Y = X
-
-K = laplace_matrix(X, X)
+# well-conditioned, without a dominant diagonal which would hide errors
+K = single_layer_sphere(m)
+X = Y = K.X
 
 splitter = CardinalitySplitter(; nmax = 50)
 Xclt = ClusterTree(X, splitter)
@@ -29,7 +28,7 @@ for threads in (false, true)
     M = Matrix(K)
     exact = M \ y
     approx = hlu \ y
-    @test norm(exact - approx, Inf) < 1.0e-10
+    @test norm(exact - approx) < 1.0e-7 * norm(exact)
     # test multiplication by checking if the solution is correct
     @test hlu.L * (hlu.U * approx) ≈ y
     for t in (true, false)
@@ -38,20 +37,15 @@ for threads in (false, true)
     end
     # a compressor with its own buffer type
     hlu = lu(H, ACAWithRecompression(PartialACA(; atol = 1.0e-10)))
-    @test norm(exact - hlu \ y, Inf) < 1.0e-10
+    @test norm(exact - hlu \ y) < 1.0e-7 * norm(exact)
 end
 
 @testset "different row and column trees" begin
-    # same points in a different order: the row and column permutations differ.
-    # The self term of the kernel is comparable to its neighbours, since the LU
-    # factorization does not pivot.
+    # same points in a different order: the row and column permutations differ
     n = 1500
-    X = points_on_sphere(n)
+    X = single_layer_sphere(n).X
     Y = X[randperm(n)]
-    f = let w = 4π / n
-        (x, y) -> x == y ? sqrt(w / π) / 2 : w / (4π * norm(x - y))
-    end
-    K = KernelMatrix(f, X, Y)
+    K = KernelMatrix(single_layer_sphere(n).f, X, Y)
     H = assemble_hmatrix(K, ClusterTree(X, splitter), ClusterTree(Y, splitter); adm, comp, threads = false)
     y = rand(n)
     exact = Matrix(K) \ y

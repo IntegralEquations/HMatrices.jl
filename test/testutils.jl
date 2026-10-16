@@ -202,3 +202,44 @@ function points_on_cylinder(n, radius, shift = SVector(0, 0, 0))
     end
     return result
 end
+
+"""
+    fibonacci_sphere(n)
+
+Quasi-uniform distribution of `n` points on the unit sphere.
+"""
+function fibonacci_sphere(n)
+    ϕ = (1 + sqrt(5)) / 2
+    return map(1:n) do i
+        z = 1 - (2i - 1) / n
+        r = sqrt(1 - z^2)
+        θ = 2π * i / ϕ
+        return SVector(r * cos(θ), r * sin(θ), z)
+    end
+end
+
+"""
+    single_layer_sphere(n; k = 0)
+
+Nyström-like discretization of the Laplace (`k = 0`) or Helmholtz single-layer
+operator on the unit sphere, using `n` quasi-uniform points with equal weights `w
+= 4π/n`. The diagonal is the integral of the (static part of the) kernel over a
+disk of area `w` centered at the point, which gives a matrix representative of a
+first-kind boundary integral equation (unlike regularizing the kernel with a
+small `EPS`, which makes the matrix strongly diagonally dominant).
+"""
+function single_layer_sphere(n; k = 0)
+    X = fibonacci_sphere(n)
+    w = 4π / n
+    a = sqrt(w / π) # radius of the disk of area w
+    f = if iszero(k)
+        (x, y) -> x == y ? a / 2 : w / (4π * norm(x - y))
+    else
+        (x, y) -> begin
+            x == y && return complex(a / 2, k * w / (4π))
+            d = norm(x - y)
+            return w * exp(im * k * d) / (4π * d)
+        end
+    end
+    return KernelMatrix(f, X, X)
+end
