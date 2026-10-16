@@ -1,7 +1,10 @@
 """
     abstract type AbstractCompressor
 
-Types used to compress matrices.
+Types used to compress matrices. A compressor `comp` is called as `comp(K,
+irange, jrange[, buf])` and returns an [`RkMatrix`](@ref) approximating
+`K[irange, jrange]`, where `buf` is a workspace created by
+[`allocate_buffer`](@ref)`(comp, T)` (`nothing` by default).
 """
 abstract type AbstractCompressor end
 
@@ -35,7 +38,7 @@ the underlying linear operator is of low rank.
 The default `rtol` is `sqrt(eps(R))`, where `R` is the real type underlying the
 entries of the compressed matrix.
 """
-Base.@kwdef struct PartialACA
+Base.@kwdef struct PartialACA <: AbstractCompressor
     atol::Float64 = 0
     rank::Int = typemax(Int)
     rtol::Union{Nothing, Float64} = atol > 0 || rank < typemax(Int) ? 0 : nothing
@@ -300,7 +303,7 @@ the optimal approximation in Frobenius norm; however, it also tends to be very
 expensive and thus should be used mostly for "small" matrices. The default `rtol`
 is the same as for [`PartialACA`](@ref).
 """
-Base.@kwdef struct TSVD
+Base.@kwdef struct TSVD <: AbstractCompressor
     atol::Float64 = 0
     rank::Int = typemax(Int)
     rtol::Union{Nothing, Float64} = atol > 0 || rank < typemax(Int) ? 0 : nothing
@@ -365,7 +368,7 @@ recompression via [`TSVD`](@ref). The ACA step produces a low-rank approximation
 quickly using partial pivoting; the subsequent SVD step can reduce the rank
 further, at the cost of a small additional computation.
 """
-struct ACAWithRecompression
+struct ACAWithRecompression <: AbstractCompressor
     aca::PartialACA
 end
 
@@ -400,6 +403,14 @@ function (comp::ACAWithRecompression)(K, irange::AbstractRange, jrange::Abstract
 end
 
 (comp::ACAWithRecompression)(K::AbstractMatrix) = comp(K, axes(K, 1), axes(K, 2))
+
+"""
+    allocate_buffer(comp, T)
+
+A workspace for the compressor `comp` on matrices with entries of type `T`, which
+can be passed to (and reused by) its calls; `nothing` if `comp` needs none.
+"""
+function allocate_buffer end
 
 allocate_buffer(::PartialACA, T) = ACABuffer(T)
 allocate_buffer(::ACAWithRecompression, T) = ACAWithRecompressionBuffer(T)
