@@ -43,9 +43,9 @@ end
 @testset "different row and column trees" begin
     # same points in a different order: the row and column permutations differ
     n = 1500
-    X = single_layer_sphere(n).X
-    Y = X[randperm(n)]
-    K = KernelMatrix(single_layer_sphere(n).f, X, Y)
+    S = single_layer_sphere(n)
+    X, Y = S.X, S.X[randperm(n)]
+    K = KernelMatrix(S.f, X, Y)
     H = assemble_hmatrix(K, ClusterTree(X, splitter), ClusterTree(Y, splitter); adm, comp, threads = false)
     y = rand(n)
     exact = Matrix(K) \ y
