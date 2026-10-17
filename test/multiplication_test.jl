@@ -65,6 +65,23 @@ end
     end
 end
 
+@testset "hmul! with zero rows" begin
+    # compactly supported kernel: rows of the products sampled by the compressor
+    # are zero up to rounding errors, and must not be used as pivots
+    Xc = X[1:1000]
+    Xcclt = ClusterTree(Xc, CardinalitySplitter(; nmax = 30))
+    f = (x, y) -> (d = norm(x - y); x == y ? 10.0 : d < 0.3 ? exp(-d) / (4π * d) : 0.0)
+    for comp in (PartialACA(; atol = 1.0e-8), ACAWithRecompression(PartialACA(; atol = 1.0e-8)))
+        Hc = assemble_hmatrix(KernelMatrix(f, Xc, Xc), Xcclt, Xcclt; comp, threads = false)
+        Mc = Matrix(Hc; global_index = false)
+        C = deepcopy(Hc)
+        HMatrices.hmul!(C, Hc, Hc, -1, 1, comp)
+        exact = Mc - Mc * Mc
+        # the sharp cutoff of the kernel limits the accuracy of the partial ACA
+        @test norm(Matrix(C; global_index = false) - exact) < 1.0e-2 * norm(exact)
+    end
+end
+
 @testset "gemv" begin
     T = eltype(H)
     m, n = size(H)

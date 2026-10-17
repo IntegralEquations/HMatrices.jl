@@ -148,7 +148,16 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
         end
         j = _aca_partial_pivot(b, J)
         δ = b[j]
-        if min_svd_vals(δ) == 0
+        σ = min_svd_vals(δ)
+        if σ > 0 # compute next col by col <-- K[irange,j+jshift] - R[:,j]
+            getblock!(a, K, irange, j + jshift)
+            for k in 1:r
+                axpy!(-adjoint(B[k][j]), A[k], a)
+            end
+        end
+        # a pivot at the rounding level of its column means that row `i` of the
+        # residual is zero (up to rounding errors, e.g. when `K` is a product)
+        if σ == 0 || σ <= sqrt(eps(real(eltype(T)))) * maximum(norm, a)
             @debug "zero pivot found during partial aca"
             i = findfirst(x -> x == true, I)
             if isnothing(i)
@@ -170,14 +179,6 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
                 b[k] = b[k] * iδ
             end
             J[j] = false
-            # compute next col by col <-- K[irange,j+jshift] - R[:,j]
-            getblock!(a, K, irange, j + jshift)
-            for k in 1:r
-                axpy!(-adjoint(B[k][j]), A[k], a)
-                # for i in eachindex(col)
-                #     col[i] = col[i] - A[k][i]*adjoint(B[k][j])
-                # end
-            end
             # increase rank and push cross
             r += 1
             A.k += 1
