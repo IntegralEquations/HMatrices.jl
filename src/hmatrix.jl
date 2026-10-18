@@ -192,7 +192,6 @@ end
         adm=StrongAdmissibilityStd(),
         comp=PartialACA(),
         threads=true,
-        distributed=false,
         global_index=true)
 
 Main routine for assembling a hierarchical matrix. The argument `K` represents
@@ -218,28 +217,24 @@ function assemble_hmatrix(
         comp = PartialACA(),
         global_index = use_global_index(),
         threads = use_threads(),
-        distributed = false,
     ) where {T}
-    return if distributed
-        _assemble_hmat_distributed(K, rowtree, coltree; adm, comp, global_index, threads)
+    # create first the structure. No parallelism used as this should be light.
+    hmat_ = HMatrix{T}(rowtree, coltree, adm)
+    # wrap hmat in a Hermitian if needed
+    hmat = if K isa Hermitian
+        Hermitian(hmat_)
     else
-        # create first the structure. No parallelism used as this should be light.
-        hmat_ = HMatrix{T}(rowtree, coltree, adm)
-        # wrap hmat in a Hermitian if needed
-        hmat = if K isa Hermitian
-            Hermitian(hmat_)
-        else
-            hmat_
-        end
-        # if needed permute kernel entries into indexing induced by trees
-        global_index && (K = PermutedMatrix(K, loc2glob(rowtree), loc2glob(coltree)))
-        # now assemble the data in the blocks
-        if threads
-            _assemble_threads!(hmat, K, comp)
-        else
-            _assemble_cpu!(hmat, K, comp, allocate_buffer(comp, T))
-        end
+        hmat_
     end
+    # if needed permute kernel entries into indexing induced by trees
+    global_index && (K = PermutedMatrix(K, loc2glob(rowtree), loc2glob(coltree)))
+    # now assemble the data in the blocks
+    if threads
+        _assemble_threads!(hmat, K, comp)
+    else
+        _assemble_cpu!(hmat, K, comp, allocate_buffer(comp, T))
+    end
+    return hmat
 end
 
 function assemble_hmatrix(K::AbstractMatrix, args...; kwargs...)

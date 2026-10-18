@@ -123,7 +123,7 @@ nothing # hide
 With these ingredients at hand, we can assemble an approximation for `K` using
 
 ```@example assemble-basic
-H = assemble_hmatrix(K,Xclt,Yclt;adm,comp,threads=false,distributed=false)
+H = assemble_hmatrix(K,Xclt,Yclt;adm,comp,threads=false)
 ```
 
 !!! important
@@ -286,7 +286,7 @@ We can now simply instantiate a double-layer kernel, and compress it as before
 # create the abstract matrix
 ny = Y
 K = LaplaceDoubleLayer(X,Y,ny)
-H = assemble_hmatrix(K,Xclt,Yclt;adm,comp,threads=false,distributed=false)
+H = assemble_hmatrix(K,Xclt,Yclt;adm,comp,threads=false)
 ```
 
 With `H` assembled, everything else works exactly as before!

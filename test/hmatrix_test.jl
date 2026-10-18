@@ -19,7 +19,7 @@ include(joinpath(HMatrices.PROJECT_ROOT, "test", "testutils.jl"))
         K = laplace_matrix(X, Y)
         H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads)
         @test norm(Matrix(K) - Matrix(H; global_index = true)) < rtol * norm(Matrix(K))
-        H = assemble_hmatrix(K; threads, distributed = false)
+        H = assemble_hmatrix(K; threads)
         @test norm(Matrix(K) - Matrix(H; global_index = true)) < rtol * norm(Matrix(K))
         adjH = adjoint(H)
         H_full = Matrix(H; global_index = true)
@@ -51,7 +51,7 @@ end
     comp = PartialACA(; rtol = rtol)
     @testset "Scalar problem (laplace)" begin
         K = laplace_matrix(X, Y)
-        H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false, distributed = false)
+        H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false)
         H_full = Matrix(H)
         T = eltype(H)
         m, n = size(H)
@@ -61,7 +61,7 @@ end
     end
     @testset "Vector problem (elasticity)" begin
         K = elastostatic_matrix(X, Y, 1, 1)
-        H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false, distributed = false)
+        H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false)
         H_full = Matrix(H)
         T = eltype(H)
         m, n = size(H)
@@ -85,7 +85,7 @@ end
     comp = PartialACA(; rtol = rtol)
     @testset "Scalar problem (laplace)" begin
         K = laplace_matrix(X, Y)
-        H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false, distributed = false)
+        H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false)
         H_full = Matrix(H)
         T = eltype(H)
         m, n = size(H)
@@ -98,7 +98,7 @@ end
     end
     @testset "Vector problem (elasticity)" begin
         K = elastostatic_matrix(X, Y, 1, 1)
-        H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false, distributed = false)
+        H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false)
         H_full = Matrix(H)
         T = eltype(H)
         m, n = size(H)

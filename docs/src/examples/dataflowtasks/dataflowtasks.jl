@@ -48,7 +48,7 @@ K = HelmholtzMatrixVec(X, X, k)
 threads = false
 
 GC.gc()
-@time H = assemble_hmatrix(K, Xclt, Xclt; adm, comp, threads = true, distributed = false)
+@time H = assemble_hmatrix(K, Xclt, Xclt; adm, comp, threads = true)
 Hc = deepcopy(H)
 GC.gc()
 @time F = lu!(Hc; atol = 1.0e-4, threads)

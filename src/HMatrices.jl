@@ -7,7 +7,6 @@ using LinearAlgebra
 using Statistics: median, mean
 using Printf
 using RecipesBase
-using Distributed
 using Base.Threads
 using SparseArrays
 
@@ -62,7 +61,6 @@ include("kernelmatrix.jl")
 include("rkmatrix.jl")
 include("compressor.jl")
 include("hmatrix.jl")
-include("dhmatrix.jl")
 include("multiplication.jl")
 include("triangular.jl")
 include("lu.jl")

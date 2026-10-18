@@ -17,7 +17,6 @@ makedocs(;
     pages = [
         "Getting started" => "index.md",
         "Kernel matrices" => "kernelmatrix.md",
-        "Distributed HMatrix" => "dhmatrix.md",
         "References" => "references.md",
     ],
     warnonly = on_CI ? false : Documenter.except(:linkcheck_remotes),

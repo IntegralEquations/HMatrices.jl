@@ -22,7 +22,7 @@ adm = StrongAdmissibilityStd(; eta = 3)
 atol = 1.0e-5
 comp = PartialACA(; atol)
 K = laplace_matrix(X, Y)
-H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false, distributed = false)
+H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false)
 
 H_full = Matrix(H; global_index = false)
 
