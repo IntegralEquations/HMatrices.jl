@@ -6,9 +6,15 @@ function Base.getproperty(chol::HChol, s::Symbol)
         return adjoint(UpperTriangular(H))
     elseif s == :U
         return UpperTriangular(H)
+    elseif s == :p
+        return rowperm(H)
     else
         return getfield(chol, s)
     end
+end
+
+function Base.propertynames(::HChol, private::Bool = false)
+    return (:L, :U, :p, (private ? fieldnames(Cholesky) : ())...)
 end
 
 function Base.show(io::IO, ::MIME"text/plain", chol::HChol)
@@ -21,6 +27,12 @@ end
 
 Hierarchical Cholesky factorization of `M`, using `comp` to generate the compressed
 blocks during the multiplication routines.
+
+`F \\ b` solves in the ordering of the points used to assemble `M`. The factors `F.L`
+and `F.U` are stored in the ordering of the cluster tree, with
+`F.L * F.U ≈ Matrix(M)[F.p, F.p]`; products and solves with them act in that ordering.
+
+The factorization is currently serial: `threads` is accepted but not used.
 """
 function LinearAlgebra.cholesky!(M::HermitianHMatrix, compressor; threads = true)
     # perform the cholesky decomposition of M in place

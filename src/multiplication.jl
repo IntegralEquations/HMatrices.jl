@@ -339,21 +339,38 @@ Perform `y <-- H*x*a + y*b` in place.
 """
 function LinearAlgebra.mul!(
         y::AbstractVector,
-        A::Union{HTypes, HTriangular},
+        A::HTypes,
         x::AbstractVector,
         a::Number = 1,
         b::Number = 0;
         threads = true,
     )
-    # since the HMatrix represents A = inv(Pr)*H*Pc, where Pr and Pc are row and column
-    # permutations, we need first to rewrite C <-- b*C + a*(inv(Pr)*H*Pc)*B as
-    # C <-- inv(Pr)*(b*Pr*C + a*H*(Pc*B)). Following this rewrite, the
-    # multiplication is performed by first defining B <-- Pc*B, and C <--
-    # Pr*C, doing the multiplication with the permuted entries, and then
-    # permuting the result  back C <-- inv(Pr)*C at the end.
-    x = x[colperm(A)]
-    y = permute!(y, rowperm(A))
-    rmul!(x, a) # multiply in place since this is a new copy, so does not mutate exterior x
+    # `A` is stored in the ordering of its trees, so `x` and `y` are permuted into it
+    # (`x[colperm(A)]` is a copy that `_mul_tree!` may overwrite), and `y` back
+    permute!(y, rowperm(A))
+    _mul_tree!(y, A, x[colperm(A)], a, b, threads)
+    return invpermute!(y, rowperm(A))
+end
+
+# the triangular factors of a factorization act in the ordering of the trees
+function LinearAlgebra.mul!(
+        y::AbstractVector,
+        A::HTriangular,
+        x::AbstractVector,
+        a::Number = 1,
+        b::Number = 0;
+        threads = true,
+    )
+    return _mul_tree!(y, A, copy(x), a, b, threads)
+end
+
+"""
+    _mul_tree!(y, A, x, a, b, threads)
+
+Perform `y <-- A*x*a + y*b` in the ordering of the trees of `A`, overwriting `x`.
+"""
+function _mul_tree!(y, A, x, a, b, threads)
+    rmul!(x, a)
     iszero(b) ? fill!(y, zero(eltype(y))) : rmul!(y, b)
     # offset in case A is not indexed starting at (1,1); e.g. A is not the root
     # of an HMatrix
@@ -362,8 +379,6 @@ function LinearAlgebra.mul!(
     else
         _hgemv_recursive!(y, A, x, offset(A)) # serial implementation
     end
-    # permute output
-    invpermute!(y, rowperm(A))
     return y
 end
 

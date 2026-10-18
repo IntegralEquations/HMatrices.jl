@@ -30,12 +30,14 @@ for threads in (false, true)
     approx = hlu \ y
     @test norm(exact - approx) < 1.0e-7 * norm(exact)
     # test multiplication by checking if the solution is correct
-    @test hlu.L * (hlu.U * approx) ≈ y
+    # the factors act in the ordering of the trees
+    @test hlu.L * (hlu.U * approx[hlu.q]) ≈ y[hlu.p]
+    @test propertynames(hlu) == (:L, :U, :p, :q)
     @test startswith(sprint(show, hlu.L), "Lower triangular part of HMatrix")
     @test startswith(sprint(show, hlu.U), "Upper triangular part of HMatrix")
     for t in (true, false)
-        z = mul!(zero(y), hlu.U, approx, 1, 0; threads = t)
-        @test mul!(zero(y), hlu.L, z, 1, 0; threads = t) ≈ y
+        z = mul!(zero(y), hlu.U, approx[hlu.q], 1, 0; threads = t)
+        @test mul!(zero(y), hlu.L, z, 1, 0; threads = t) ≈ y[hlu.p]
     end
     # a compressor with its own buffer type
     hlu = lu(H, ACAWithRecompression(PartialACA(; atol = 1.0e-10)))
@@ -51,5 +53,11 @@ end
     H = assemble_hmatrix(K, ClusterTree(X, splitter), ClusterTree(Y, splitter); adm, comp, threads = false)
     y = rand(n)
     exact = Matrix(K) \ y
-    @test norm(lu(H; atol = 1.0e-10) \ y - exact) < 1.0e-6 * norm(exact)
+    F = lu(H; atol = 1.0e-10)
+    @test norm(F \ y - exact) < 1.0e-6 * norm(exact)
+    # the factors are in the ordering of the trees, which differ for rows and columns
+    @test F.p != F.q
+    z = rand(n)
+    M = Matrix(K)
+    @test norm(F.L * (F.U * z) - M[F.p, F.q] * z) < 1.0e-6 * norm(M[F.p, F.q] * z)
 end
