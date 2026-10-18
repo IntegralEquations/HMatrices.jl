@@ -45,10 +45,10 @@ function filter_tree!(f, nodes, tree, isterminal = true)
     if f(tree)
         push!(nodes, tree)
         # terminate the search along this path if terminal=true
-        isterminal || map(x -> filter_tree!(f, nodes, x, isterminal), children(tree))
+        isterminal || foreach(x -> filter_tree!(f, nodes, x, isterminal), children(tree))
     else
         # continue on children
-        map(x -> filter_tree!(f, nodes, x, isterminal), children(tree))
+        foreach(x -> filter_tree!(f, nodes, x, isterminal), children(tree))
     end
     return nodes
 end
