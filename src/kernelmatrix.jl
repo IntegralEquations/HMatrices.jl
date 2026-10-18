@@ -60,10 +60,11 @@ function assemble_hmatrix(
         K::AbstractKernelMatrix;
         atol = 0,
         rank = typemax(Int),
-        rtol = atol > 0 || rank < typemax(Int) ? 0 : nothing,
+        rtol = nothing,
         kwargs...,
     )
-    comp = PartialACA(; rtol, atol, rank)
+    # an explicit `rtol = nothing` would override the default of `PartialACA`
+    comp = isnothing(rtol) ? PartialACA(; atol, rank) : PartialACA(; atol, rank, rtol)
     adm = StrongAdmissibilityStd()
     X = map(center, rowelements(K))
     Y = map(center, colelements(K))
