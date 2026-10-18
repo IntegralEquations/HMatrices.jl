@@ -63,8 +63,7 @@ function assemble_hmatrix(
         rtol = nothing,
         kwargs...,
     )
-    # an explicit `rtol = nothing` would override the default of `PartialACA`
-    comp = isnothing(rtol) ? PartialACA(; atol, rank) : PartialACA(; atol, rank, rtol)
+    comp = PartialACA(; atol, rank, rtol)
     adm = StrongAdmissibilityStd()
     X = map(center, rowelements(K))
     Y = map(center, colelements(K))

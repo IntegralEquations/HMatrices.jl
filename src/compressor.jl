@@ -36,12 +36,13 @@ due to the pivoting strategy the algorithm may fail in special cases, even when
 the underlying linear operator is of low rank.
 
 The default `rtol` is `sqrt(eps(R))`, where `R` is the real type underlying the
-entries of the compressed matrix.
+entries of the compressed matrix, or only the accuracy attainable with `R` if `atol` or
+`rank` is given.
 """
 Base.@kwdef struct PartialACA <: AbstractCompressor
     atol::Float64 = 0
     rank::Int = typemax(Int)
-    rtol::Union{Nothing, Float64} = atol > 0 || rank < typemax(Int) ? 0 : nothing
+    rtol::Union{Nothing, Float64} = nothing
 end
 
 function (paca::PartialACA)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs = nothing)
@@ -112,7 +113,7 @@ errors involved in estimating the error and |M|.
 function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = nothing)
     Kadj = adjoint(K)
     T = eltype(K)
-    rtol = _rtol(rtol, T)
+    rtol = _rtol(rtol, atol, rmax, T)
     m, n = length(irange), length(jrange)
     # maps local indices to indices of `K`
     ishift, jshift = first(irange) - 1, first(jrange) - 1
@@ -257,18 +258,21 @@ function _aca_partial_pivot(v, J)
 end
 
 """
-    _rtol(rtol, T)
+    _rtol(rtol, atol, rank, T)
 
-The relative tolerance used to compress a matrix with entries of type `T`: `rtol`,
-or `sqrt(eps(R))` if `rtol` is `nothing`, where `R` is the real type underlying `T`.
-Throw an `ArgumentError` if `rtol` is below the accuracy attainable with `R`.
+The relative tolerance used to compress a matrix with entries of type `T`, where `R` is
+the real type underlying `T`. If `rtol` is `nothing`, it is `sqrt(eps(R))`, or the
+accuracy attainable with `R` (`10eps(R)`) if `atol` or `rank` is given. Throw an
+`ArgumentError` if `rtol` is below that accuracy.
 
 An `rtol` of zero is raised to that accuracy, so that an `atol` too small for a block
 does not compress it to full rank.
 """
-function _rtol(rtol, T)
+function _rtol(rtol, atol, rank, T)
     R = real(eltype(T))
-    isnothing(rtol) && return sqrt(eps(R))
+    if isnothing(rtol)
+        return atol > 0 || rank < typemax(Int) ? 10 * eps(R) : sqrt(eps(R))
+    end
     # the error of the compressors stagnates at a few `eps(R)`; below that the
     # stopping criterion is never met and the blocks are compressed to full rank
     0 < rtol < 10 * eps(R) && throw(
@@ -309,7 +313,7 @@ is the same as for [`PartialACA`](@ref).
 Base.@kwdef struct TSVD <: AbstractCompressor
     atol::Float64 = 0
     rank::Int = typemax(Int)
-    rtol::Union{Nothing, Float64} = atol > 0 || rank < typemax(Int) ? 0 : nothing
+    rtol::Union{Nothing, Float64} = nothing
 end
 
 function (tsvd::TSVD)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs = nothing)
@@ -328,7 +332,7 @@ end
 # number of singular values `S` (sorted decreasingly) above the tolerance, at most
 # `rmax` (zero if they are all below the tolerance)
 function _truncation_rank(S, atol, rtol, rmax)
-    rtol = _rtol(rtol, eltype(S))
+    rtol = _rtol(rtol, atol, rmax, eltype(S))
     isempty(S) && return 0
     tol = max(atol, rtol * S[1])
     return min(count(>(tol), S), rmax)
