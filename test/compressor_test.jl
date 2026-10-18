@@ -100,6 +100,7 @@ Random.seed!(1)
         @test allocate_buffer(PartialACA(), Float64) isa HMatrices.ACABuffer{Float64}
         @test allocate_buffer(ACAWithRecompression(PartialACA()), Float64) isa ACAWithRecompressionBuffer{Float64}
         @test allocate_buffer(TSVD(), Float64) === nothing
+        @test all(c -> c isa HMatrices.AbstractCompressor, (PartialACA(), TSVD(), comp_buf))
     end
     @testset "truncated svd" begin
         atol = 1.0e-5

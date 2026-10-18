@@ -1,7 +1,10 @@
 """
     abstract type AbstractCompressor
 
-Types used to compress matrices.
+Types used to compress matrices. A compressor `comp` is called as `comp(K,
+irange, jrange[, buf])` and returns an [`RkMatrix`](@ref) approximating
+`K[irange, jrange]`, where `buf` is a workspace created by
+[`allocate_buffer`](@ref)`(comp, T)` (`nothing` by default).
 """
 abstract type AbstractCompressor end
 
@@ -35,7 +38,7 @@ the underlying linear operator is of low rank.
 The default `rtol` is `sqrt(eps(R))`, where `R` is the real type underlying the
 entries of the compressed matrix.
 """
-Base.@kwdef struct PartialACA
+Base.@kwdef struct PartialACA <: AbstractCompressor
     atol::Float64 = 0
     rank::Int = typemax(Int)
     rtol::Union{Nothing, Float64} = atol > 0 || rank < typemax(Int) ? 0 : nothing
@@ -102,7 +105,7 @@ end
 
 Internal function implementing the adaptive cross-approximation algorithm with
 partial pivoting. The returned `R::RkMatrix` provides an approximation to
-`K[irange,jrange]` which has either rank `is expected to satisfy `|M - R| <
+`M = K[irange,jrange]` of rank at most `rmax`, which is expected to satisfy `|M - R| <
 max(atol,rtol*|M|)`, but this inequality may fail to hold due to the various
 errors involved in estimating the error and |M|.
 """
@@ -110,17 +113,9 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
     Kadj = adjoint(K)
     T = eltype(K)
     rtol = _rtol(rtol, T)
-    # if irange and jrange are Colon, extract the size from `K` directly. This
-    # allows for some code reuse with specializations on getindex(i,::Colon) and
-    # getindex(::Colon,j) for when `K` is a `RkMatrix`
-    if irange isa Colon && jrange isa Colon
-        m, n = size(K)
-        ishift, jshift = 0, 0
-    else
-        m, n = length(irange), length(jrange)
-        ishift, jshift = first(irange) - 1, first(jrange) - 1
-        # maps global indices to local indices
-    end
+    m, n = length(irange), length(jrange)
+    # maps local indices to indices of `K`
+    ishift, jshift = first(irange) - 1, first(jrange) - 1
     buffer = isnothing(buffer_) ? ACABuffer(T, m, n) : buffer_
     A, B, I, J = buffer.A, buffer.B, buffer.I, buffer.J # extract the individual buffers for convenience
     @assert A.k == 0 && B.k == 0 "buffers must be empty"
@@ -146,9 +141,6 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
         getblock!(b, Kadj, jrange, i + ishift)
         for k in 1:r
             axpy!(-adjoint(A[k][i]), B[k], b)
-            # for j in eachindex(row)
-            #     row[j] = row[j] - B[k][j]*adjoint(A[k][i])
-            # end
         end
         j = _aca_partial_pivot(b, J)
         δ = b[j]
@@ -222,25 +214,11 @@ compute the Frobenius norm of `Rₖ₊₁ = A*adjoint(B)` efficiently.
     return sqrt(cur^2 + out)
 end
 
-"""
-    _aca_partial_pivot(v,I)
-
-Find in the valid set `I` the index of the element `x ∈ v` maximizing its
-smallest singular value. This is equivalent to minimizing the spectral norm of
-the inverse of `x`.
-
-When `x` is a scalar, this is simply the element with largest absolute value.
-
-This general implementation should work for both scalar as well as tensor-valued
-kernels; see
-(https://www.sciencedirect.com/science/article/pii/S0021999117306721)[https://www.sciencedirect.com/science/article/pii/S0021999117306721]
-for more details.
-"""
 min_svd_vals(x::Number) = abs(x)
 function min_svd_vals(A::SMatrix)
     n, m = size(A)
     if (n == 2) || (n == 3)
-        λ = eigmin(SHermitianCompact(A * adjoint(A)))
+        λ = minimum(eigvals(Hermitian(A * adjoint(A))))
         # try to avoid some floating point issues
         return max(λ, zero(λ)) |> sqrt
     else
@@ -249,6 +227,21 @@ function min_svd_vals(A::SMatrix)
 end
 min_svd_vals(A::Any) = svdvals(A::Any)[end] # fallback
 
+"""
+    _aca_partial_pivot(v,I)
+
+Find in the valid set `I` the index of the element `x ∈ v` maximizing its
+smallest singular value. This is equivalent to minimizing the spectral norm of
+the inverse of `x`.
+
+When `x` is a scalar, this is simply the element with largest absolute value.
+Return `-1` if `I` has no valid index.
+
+This general implementation should work for both scalar as well as tensor-valued
+kernels; see
+[https://www.sciencedirect.com/science/article/pii/S0021999117306721](https://www.sciencedirect.com/science/article/pii/S0021999117306721)
+for more details.
+"""
 function _aca_partial_pivot(v, J)
     idx = -1
     val = -Inf
@@ -285,7 +278,7 @@ end
 
 function _aca_partial_initial_pivot(rowtree)
     # the method below is suggested in Bebendorf, but it does not seem to
-    # improve the  error. The idea is that the initial pivot is the closesest
+    # improve the error. The idea is that the initial pivot is the closest
     # point to the center of the cluster
     xc = center(container(rowtree))
     d = Inf
@@ -310,7 +303,7 @@ the optimal approximation in Frobenius norm; however, it also tends to be very
 expensive and thus should be used mostly for "small" matrices. The default `rtol`
 is the same as for [`PartialACA`](@ref).
 """
-Base.@kwdef struct TSVD
+Base.@kwdef struct TSVD <: AbstractCompressor
     atol::Float64 = 0
     rank::Int = typemax(Int)
     rtol::Union{Nothing, Float64} = atol > 0 || rank < typemax(Int) ? 0 : nothing
@@ -345,25 +338,7 @@ Recompress the matrix `R` using a truncated svd of `R`. The implementation uses
 the `qr-svd` strategy to efficiently compute `svd(R)` when `rank(R) ≪
 min(size(R))`.
 """
-function compress!(R::RkMatrix, tsvd::TSVD)
-    m, n = size(R)
-    QA, RA = qr!(R.A)
-    QB, RB = qr!(R.B)
-    F = svd!(RA * adjoint(RB)) # svd of an r×r problem
-    U = QA * F.U
-    Vt = F.Vt * adjoint(QB)
-    V = adjoint(Vt)
-    r = _truncation_rank(F.S, tsvd.atol, tsvd.rtol, tsvd.rank)
-    if m < n
-        A = @views U[:, 1:r] * Diagonal(F.S[1:r])
-        B = V[:, 1:r]
-    else
-        A = U[:, 1:r]
-        B = @views (V[:, 1:r]) * Diagonal(F.S[1:r])
-    end
-    R.A, R.B = A, B
-    return R
-end
+compress!(R::RkMatrix, tsvd::TSVD) = _recompress!(R, tsvd.atol, tsvd.rtol, tsvd.rank)
 
 """
     compress!(M::Matrix,tsvd::TSVD)
@@ -393,7 +368,7 @@ recompression via [`TSVD`](@ref). The ACA step produces a low-rank approximation
 quickly using partial pivoting; the subsequent SVD step can reduce the rank
 further, at the cost of a small additional computation.
 """
-struct ACAWithRecompression
+struct ACAWithRecompression <: AbstractCompressor
     aca::PartialACA
 end
 
@@ -428,6 +403,14 @@ function (comp::ACAWithRecompression)(K, irange::AbstractRange, jrange::Abstract
 end
 
 (comp::ACAWithRecompression)(K::AbstractMatrix) = comp(K, axes(K, 1), axes(K, 2))
+
+"""
+    allocate_buffer(comp, T)
+
+A workspace for the compressor `comp` on matrices with entries of type `T`, which
+can be passed to (and reused by) its calls; `nothing` if `comp` needs none.
+"""
+function allocate_buffer end
 
 allocate_buffer(::PartialACA, T) = ACABuffer(T)
 allocate_buffer(::ACAWithRecompression, T) = ACAWithRecompressionBuffer(T)

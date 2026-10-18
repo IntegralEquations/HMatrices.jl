@@ -1,17 +1,3 @@
-using Distributed
-
-function typeof_future(r::Future)
-    if isready(r)
-        pid = r.where
-        f = @spawnat pid typeof(fetch(r))
-        T = fetch(f)
-        return T
-    else
-        error("future is not ready")
-        return nothing
-    end
-end
-
 """
     struct RemoteHMatrix{S,T}
 
@@ -41,7 +27,6 @@ calling `fetch` on them should be avoided whenever possible.
 mutable struct DHMatrix{R, T} <: AbstractMatrix{T}
     rowtree::R
     coltree::R
-    # admissible:: Bool --> false
     data::Union{RemoteHMatrix{R, T}, Nothing}
     children::Matrix{DHMatrix{R, T}}
     parentnode::DHMatrix{R, T}
@@ -119,7 +104,6 @@ parentnode(H::DHMatrix) = H.parentnode
 Base.size(H::DHMatrix) = length(rowrange(H)), length(colrange(H))
 
 function Base.show(io::IO, ::MIME"text/plain", hmat::DHMatrix)
-    # isclean(hmat) || return print(io,"Dirty DHMatrix")
     println(
         io,
         "Distributed HMatrix of $(eltype(hmat)) with range $(rowrange(hmat)) × $(colrange(hmat))",

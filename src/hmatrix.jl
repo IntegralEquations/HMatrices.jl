@@ -1,7 +1,7 @@
 """
     mutable struct HMatrix{R,T} <: AbstractMatrix{T}
 
-A hierarchial matrix constructed from a `rowtree` and `coltree` of type `R` and
+A hierarchical matrix constructed from a `rowtree` and `coltree` of type `R` and
 holding elements of type `T`.
 """
 mutable struct HMatrix{R, T} <: AbstractMatrix{T}
@@ -43,7 +43,6 @@ rowtree(H::AdjointHMatrix) = H |> parent |> coltree
 coltree(H::AdjointHMatrix) = H |> parent |> rowtree
 children(H::AdjointHMatrix) = H |> parent |> children |> adjoint
 parentnode(H::AdjointHMatrix) = H |> parent |> parentnode |> adjoint
-setdata!(H::AdjointHMatrix, d) = setdata!(parentnode(H), d)
 
 # light wrapper for Hermitian
 const HermitianHMatrix{R, T} = Hermitian{T, HMatrix{R, T}}
@@ -54,7 +53,6 @@ rowtree(H::HermitianHMatrix) = H |> parent |> rowtree
 coltree(H::HermitianHMatrix) = H |> parent |> coltree
 children(H::HermitianHMatrix) = H |> parent |> children |> Hermitian
 parentnode(H::HermitianHMatrix) = H |> parent |> parentnode |> Hermitian
-setdata!(H::HermitianHMatrix, d) = setdata!(parentnode(H), d)
 
 const HTypes = Union{HMatrix, AdjointHMatrix, HermitianHMatrix}
 
@@ -96,8 +94,7 @@ end
 
 function _getcol!(col, H::HTypes, j, piv)
     if hasdata(H)
-        shift = pivot(H) .- 1
-        jl = j - shift[2]
+        jl = j - offset(H)[2]
         irange = rowrange(H) .- (piv[1] - 1)
         getcol!(view(col, irange), data(H), jl)
     end
@@ -122,13 +119,17 @@ function compression_ratio(H::HTypes)
     return nr / ns
 end
 
-function Base.show(io::IO, hmat::HMatrix)
-    isclean(hmat) || return print(io, "Dirty HMatrix")
-    print(io, "HMatrix of $(eltype(hmat)) with range $(rowrange(hmat)) × $(colrange(hmat))")
-    _show(io, hmat, false)
+function Base.show(io::IO, H::HTypes)
+    hmat = parent(H)
+    # the data of a `Hermitian` is stored in one triangle only, so its leaves may be empty
+    herm = H isa Hermitian
+    herm || isclean(hmat) || return print(io, "Dirty HMatrix")
+    label = herm ? "Hermitian HMatrix" : H isa Adjoint ? "Adjoint HMatrix" : "HMatrix"
+    print(io, "$label of $(eltype(hmat)) with range $(rowrange(H)) × $(colrange(H))")
+    _show(io, hmat, herm)
     return io
 end
-Base.show(io::IO, ::MIME"text/plain", hmat::HMatrix) = show(io, hmat)
+Base.show(io::IO, ::MIME"text/plain", H::HTypes) = show(io, H)
 
 function _show(io, hmat, allow_empty = false)
     nodes_ = nodes(hmat)
@@ -186,9 +187,6 @@ function Base.Matrix{T}(hmat::HTypes; global_index) where {T}
     end
 end
 
-# deprecate assemble_hmat
-@deprecate assemble_hmat assemble_hmatrix
-
 """
     assemble_hmatrix([T,], K, rowtree, coltree;
         adm=StrongAdmissibilityStd(),
@@ -208,7 +206,7 @@ It is assumed that `K` supports `getindex(K,i,j)`, and that `comp` can be called
 as `comp(K,irange::UnitRange,jrange::UnitRange)` to produce a compressed version
 of `K[irange,jrange]` in the form of an [`RkMatrix`](@ref).
 
-The type paramter `T` is used to specify the type of the entries of the matrix,
+The type parameter `T` is used to specify the type of the entries of the matrix,
 by default is inferred from `K` using `eltype(K)`.
 """
 function assemble_hmatrix(
@@ -225,7 +223,7 @@ function assemble_hmatrix(
     return if distributed
         _assemble_hmat_distributed(K, rowtree, coltree; adm, comp, global_index, threads)
     else
-        # create first the structure. No parellelism used as this should be light.
+        # create first the structure. No parallelism used as this should be light.
         hmat_ = HMatrix{T}(rowtree, coltree, adm)
         # wrap hmat in a Hermitian if needed
         hmat = if K isa Hermitian
@@ -254,7 +252,7 @@ end
 Construct an empty `HMatrix` with `rowtree` and `coltree` using the
 admissibility condition `adm`. This function builds the skeleton for the
 hierarchical matrix, but **does not compute `data`** field in the blocks. See
-[`assemble_hmatrix`](@ref) for assembling a hierarhical matrix.
+[`assemble_hmatrix`](@ref) for assembling a hierarchical matrix.
 """
 function HMatrix{T}(rowtree::R, coltree::R, adm) where {R, T}
     #build root
@@ -297,8 +295,8 @@ end
 
 Assemble data on the leaves of `hmat`. The admissible leaves are compressed
 using the compressor `comp`. This function assumes the structure of `hmat` has
-already been intialized, and therefore should not be called directly. See
-[`HMatrix`](@ref) information on constructors.
+already been initialized, and therefore should not be called directly. See
+[`HMatrix`](@ref) for information on constructors.
 """
 function _assemble_cpu!(hmat, K, comp, bufs)
     if isleaf(hmat) # base case
@@ -313,7 +311,7 @@ function _assemble_cpu!(hmat, K, comp, bufs)
 end
 
 function _process_leaf!(leaf, K, comp, bufs)
-    # for hermitian, the upper trianglar stores the data
+    # for hermitian, the upper triangular stores the data
     (leaf isa Adjoint || leaf isa Transpose) && (return leaf)
     H = if leaf isa Hermitian
         parent(leaf) # the underlying HMatrix
@@ -368,29 +366,6 @@ function _assemble_dense_block!(hmat, K)
     hmat.data = out
     return hmat
 end
-
-function Base.show(io::IO, adjH::Adjoint{<:Any, <:HMatrix})
-    hmat = parent(adjH)
-    isclean(hmat) || return print(io, "Dirty HMatrix")
-    print(
-        io,
-        "Adjoint HMatrix of $(eltype(hmat)) with range $(rowrange(adjH)) × $(colrange(adjH))",
-    )
-    _show(io, hmat, false)
-    return io
-end
-Base.show(io::IO, ::MIME"text/plain", adjH::Adjoint{<:Any, <:HMatrix}) = show(io, adjH)
-
-function Base.show(io::IO, hermH::Hermitian{<:Any, <:HMatrix})
-    hmat = parent(hermH)
-    print(
-        io,
-        "Hermitian HMatrix of $(eltype(hmat)) with range $(rowrange(hmat)) × $(colrange(hmat))",
-    )
-    _show(io, hmat, true)
-    return io
-end
-Base.show(io::IO, ::MIME"text/plain", hermH::Hermitian{<:Any, <:HMatrix}) = show(io, hermH)
 
 """
     struct StrongAdmissibilityStd
@@ -499,7 +474,6 @@ end
             pt2 = pt1 .+ size(block) .- 1
             y1, y2 = pt1[1], pt2[1]
             x1, x2 = pt1[2], pt2[2]
-            # annotations := ((x1+x2)/2,(y1+y2)/2, rank(block.data))
             [x1, x2, x2, x1, x1], [y1, y1, y2, y2, y1]
         end
     end

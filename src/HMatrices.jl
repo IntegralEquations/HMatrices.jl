@@ -70,9 +70,7 @@ include("cholesky.jl")
 
 export ClusterTree,
     CardinalitySplitter,
-    DyadicSplitter,
     GeometricSplitter,
-    GeometricMinimalSplitter,
     HyperRectangle,
     # abstract types
     AbstractKernelMatrix,

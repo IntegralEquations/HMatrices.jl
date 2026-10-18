@@ -32,6 +32,8 @@ for threads in (false, true)
     @test norm(exact - approx) < 1.0e-7 * norm(exact)
     # test multiplication by checking if the solution is correct
     @test hchol.L * (hchol.U * approx) ≈ y
+    @test startswith(sprint(show, hchol.L), "Lower triangular part of Hermitian HMatrix")
+    @test startswith(sprint(show, hchol.U), "Upper triangular part of Hermitian HMatrix")
     # a compressor with its own buffer type
     hchol = cholesky(H, ACAWithRecompression(PartialACA(; atol = 1.0e-10)))
     @test norm(exact - hchol \ y) < 1.0e-7 * norm(exact)

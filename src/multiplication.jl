@@ -3,7 +3,7 @@
 
 Similar to `mul!` : compute `C <-- A*B*a + C*b`, where `A,B,C` are hierarchical
 matrices and `compressor` is a function/functor used in the intermediate stages
-of the multiplication to avoid growring the rank of admissible blocks after
+of the multiplication to avoid growing the rank of admissible blocks after
 addition is performed.
 """
 function hmul!(
@@ -66,7 +66,7 @@ end
 
 function _hmul!(C::HMatrix, compressor, dict, a, R, bufs, Cflag)
     execute_node!(C, compressor, dict, a, R, bufs)
-    shift = pivot(C) .- 1
+    shift = offset(C)
     C_children = children(C)
     ni, nj = size(C_children)
     for i in 1:ni
@@ -96,7 +96,6 @@ function execute_node!(C::HMatrix, compressor, dict, a, R, bufs)
         for (A, B) in pairs
             _mul_dense!(d, A, B, a)
         end
-        # isnothing(R) || axpy!(true, R, d)
         isnothing(R) || mul!(d, R.A, adjoint(R.B), true, true)
     else
         L = MulLinearOp{S}(data(C), R, pairs, a)
@@ -109,7 +108,7 @@ function execute_node!(C::HMatrix, compressor, dict, a, R, bufs)
 end
 
 """
-    struct MulLinearOp{R,T} <: AbstractMatrix{T}
+    struct MulLinearOp{T,V,S} <: AbstractMatrix{T}
 
 Abstract matrix representing the following linear operator:
 ```
@@ -233,10 +232,6 @@ function _mul_dense!(C::Base.Matrix, A, B, a)
     return C
 end
 
-# the factors `(U, V)` of a low-rank matrix `R = U*V'`
-_rkfactors(R::RkMatrix) = (R.A, R.B)
-_rkfactors(adjR::AdjRk) = (parent(adjR).B, parent(adjR).A)
-
 # C ← C + a*H*d, with `d` the data of a leaf
 _mul_hd!(C, H, d::AdjOrMat, a) = _mul131!(C, H, d, a)
 function _mul_hd!(C, H, d::AdjRkOrRk, a)
@@ -253,10 +248,6 @@ function _mul_dh!(C, d::AdjRkOrRk, H, a)
     return mul!(C, U, tmp, a, true)
 end
 
-function _mul111!(C, A, B, a)
-    return mul!(C, A, B, a, true)
-end
-
 function _mul113!(
         C::Union{Matrix, SubArray, Adjoint},
         M::Union{Matrix, SubArray, Adjoint},
@@ -266,16 +257,16 @@ function _mul113!(
     if hasdata(H)
         mat = data(H)
         if mat isa AdjOrMat
-            _mul111!(C, M, mat, a)
+            mul!(C, M, mat, a, true)
         elseif mat isa AdjRkOrRk
             U, V = _rkfactors(mat)
-            _mul111!(C, M * U, adjoint(V), a)
+            mul!(C, M * U, adjoint(V), a, true)
         else
             error("unexpected data of type $(typeof(mat))")
         end
     end
+    shift = offset(H)
     for child in children(H)
-        shift = pivot(H) .- 1
         irange = rowrange(child) .- shift[1]
         jrange = colrange(child) .- shift[2]
         Cview = @views C[:, jrange]
@@ -287,22 +278,12 @@ end
 
 function _mul121!(
         C::Union{Matrix, SubArray, Adjoint},
-        R::RkMatrix,
+        R::AdjRkOrRk,
         M::Union{Matrix, SubArray, Adjoint},
         a::Number,
     )
-    buffer = R.Bt * M
-    return _mul111!(C, R.A, buffer, a)
-end
-function _mul121!(
-        C::Union{Matrix, SubArray, Adjoint},
-        adjR::AdjRk,
-        M::Union{Matrix, SubArray, Adjoint},
-        a::Number,
-    )
-    R = parent(adjR)
-    buffer = R.At * M
-    return _mul111!(C, R.B, buffer, a)
+    U, V = _rkfactors(R)
+    return mul!(C, U, adjoint(V) * M, a, true)
 end
 
 function _mul131!(
@@ -314,15 +295,15 @@ function _mul131!(
     if isleaf(H)
         mat = data(H)
         if mat isa AdjOrMat
-            _mul111!(C, mat, M, a)
+            mul!(C, mat, M, a, true)
         elseif mat isa AdjRkOrRk
             _mul121!(C, mat, M, a)
         else
             error("$(typeof(mat))")
         end
     end
+    shift = offset(H)
     for child in children(H)
-        shift = pivot(H) .- 1
         irange = rowrange(child) .- shift[1]
         jrange = colrange(child) .- shift[2]
         Cview = view(C, irange, :)
@@ -341,28 +322,13 @@ end
 # 1.2.1
 function LinearAlgebra.mul!(
         y::AbstractVector,
-        R::RkMatrix,
+        R::AdjRkOrRk,
         x::AbstractVector,
         a::Number,
         b::Number,
     )
-    tmp = R.Bt * x
-    # tmp = mul!(R.buffer, adjoint(R.B), x)
-    return mul!(y, R.A, tmp, a, b)
-end
-
-# 1.2.1
-function LinearAlgebra.mul!(
-        y::AbstractVector,
-        adjR::Adjoint{<:Any, <:RkMatrix},
-        x::AbstractVector,
-        a::Number,
-        b::Number,
-    )
-    R = parent(adjR)
-    tmp = R.At * x
-    # tmp = mul!(R.buffer, adjoint(R.A), x)
-    return mul!(y, R.B, tmp, a, b)
+    U, V = _rkfactors(R)
+    return mul!(y, U, adjoint(V) * x, a, b)
 end
 
 # 1.3.1
@@ -396,12 +362,11 @@ function LinearAlgebra.mul!(
     end
     iszero(b) ? fill!(y, zero(eltype(y))) : rmul!(y, b)
     # offset in case A is not indexed starting at (1,1); e.g. A is not the root
-    # of and HMatrix
-    offset = pivot(A) .- 1
+    # of an HMatrix
     if threads
-        _hgemv_threads!(y, x, leaves(A), offset)  # threaded implementation
+        _hgemv_threads!(y, x, leaves(A), offset(A))  # threaded implementation
     else
-        _hgemv_recursive!(y, A, x, offset) # serial implementation
+        _hgemv_recursive!(y, A, x, offset(A)) # serial implementation
     end
     # permute output
     global_index && invpermute!(y, rowperm(A))
@@ -409,7 +374,7 @@ function LinearAlgebra.mul!(
 end
 
 # FIXME: for matrix multiplication, we slice into columns and call the gemv
-# routine. This is a somewhat inneficient way of doing things, but it is simple
+# routine. This is a somewhat inefficient way of doing things, but it is simple
 # enough.
 function LinearAlgebra.mul!(
         Y::AbstractMatrix,

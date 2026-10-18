@@ -1,5 +1,3 @@
-const NOPIVOT = VERSION >= v"1.7" ? NoPivot : Val{false}
-
 const HLU = LU{<:Any, <:HMatrix}
 
 function Base.getproperty(LU::HLU, s::Symbol)
@@ -21,31 +19,23 @@ end
 """
     lu!(M::HMatrix,comp)
 
-Hierarhical LU facotrization of `M`, using `comp` to generate the compressed
+Hierarchical LU factorization of `M`, using `comp` to generate the compressed
 blocks during the multiplication routines.
 """
 function LinearAlgebra.lu!(M::HMatrix, compressor; threads = use_threads())
     # perform the lu decomposition of M in place
-    _lu!(M, compressor, threads, _buffer_channel(compressor, eltype(M)))
+    _lu!(M, compressor, _buffer_channel(compressor, eltype(M)))
     # wrap the result in the LU structure
     return LU(M, Int[], 0)
 end
 
 """
-    lu!(M::HMatrix;atol=0,rank=typemax(Int),rtol=atol>0 ||
-    rank<typemax(Int) ? 0 : nothing)
+    lu!(M::HMatrix; atol, rank, rtol, threads = use_threads())
 
-Hierarhical LU facotrization of `M`, using the `PartialACA(;atol,rtol;rank)` compressor.
+Hierarchical LU factorization of `M`, using the `PartialACA(; atol, rank, rtol)` compressor.
 """
-function LinearAlgebra.lu!(
-        M::HMatrix;
-        atol = 0,
-        rank = typemax(Int),
-        rtol = atol > 0 || rank < typemax(Int) ? 0 : nothing,
-        kwargs...,
-    )
-    compressor = PartialACA(atol, rank, rtol)
-    return lu!(M, compressor; kwargs...)
+function LinearAlgebra.lu!(M::HMatrix; threads = use_threads(), kwargs...)
+    return lu!(M, PartialACA(; kwargs...); threads)
 end
 
 """
@@ -55,17 +45,17 @@ Hierarchical LU factorization. See [`lu!`](@ref) for the available options.
 """
 LinearAlgebra.lu(M::HMatrix, args...; kwargs...) = lu!(deepcopy(M), args...; kwargs...)
 
-function _lu!(M::HMatrix, compressor, threads, bufs = nothing)
+function _lu!(M::HMatrix, compressor, bufs = nothing)
     if isleaf(M)
         d = data(M)
         @assert d isa Matrix
-        lu!(d, NOPIVOT())
+        lu!(d, NoPivot())
     else
         @assert !hasdata(M)
         chdM = children(M)
         m, n = size(chdM)
         for i in 1:m
-            _lu!(chdM[i, i], compressor, threads, bufs)
+            _lu!(chdM[i, i], compressor, bufs)
             for j in (i + 1):n
                 ldiv!(UnitLowerTriangular(chdM[i, i]), chdM[i, j], compressor, bufs)
                 rdiv!(chdM[j, i], UpperTriangular(chdM[i, i]), compressor, bufs)
@@ -78,20 +68,4 @@ function _lu!(M::HMatrix, compressor, threads, bufs = nothing)
         end
     end
     return M
-end
-
-function LinearAlgebra.ldiv!(A::HLU, y::AbstractVector; global_index = true)
-    p = A.factors # underlying data
-    ctree = coltree(p)
-    rtree = rowtree(p)
-    # permute input
-    global_index && permute!(y, loc2glob(rtree))
-    L, U = A.L, A.U
-    # solve LUx = y through:
-    # (a) L(z) = y
-    # (b) Ux   = z
-    ldiv!(L, y)
-    ldiv!(U, y)
-    global_index && invpermute!(y, loc2glob(ctree))
-    return y
 end

@@ -3,7 +3,7 @@
 
 An `AbstractSplitter` is used to split a [`ClusterTree`](@ref). The interface
 requires the following methods:
-- `should_split(clt,splitter)` : return a `Bool` determining if the
+- `should_split(clt,depth,splitter)` : return a `Bool` determining if the
   `ClusterTree` should be further divided
 - `split!(clt,splitter)` : perform the splitting of the `ClusterTree` handling
   the necessary data sorting.
@@ -23,7 +23,7 @@ function should_split end
     split!(clt::ClusterTree,splitter::AbstractSplitter)
 
 Divide `clt` using the strategy implemented by `splitter`. This function is
-reponsible of assigning the `children` and `parent` fields, as well as of
+responsible for assigning the `children` and `parentnode` fields, as well as of
 permuting the data of `clt`.
 """
 function split! end
@@ -32,14 +32,10 @@ function split! end
     struct GeometricSplitter <: AbstractSplitter
 
 Used to split a `ClusterTree` in half along the largest axis. The children boxes
-are shrank to tighly fit the data.
+are shrunk to tightly fit the data.
 """
 Base.@kwdef struct GeometricSplitter <: AbstractSplitter
     nmax::Int = 50
-end
-
-function should_split(node::ClusterTree, depth, splitter::GeometricSplitter)
-    return length(node) > splitter.nmax
 end
 
 function split!(cluster::ClusterTree, ::GeometricSplitter)
@@ -57,10 +53,6 @@ end
 """
 Base.@kwdef struct PrincipalComponentSplitter <: AbstractSplitter
     nmax::Int = 50
-end
-
-function should_split(node::ClusterTree, depth, splitter::PrincipalComponentSplitter)
-    return length(node) > splitter.nmax
 end
 
 function split!(cluster::ClusterTree, ::PrincipalComponentSplitter)
@@ -84,13 +76,8 @@ function center_of_mass(clt::ClusterTree)
     pts = clt._elements
     loc_idxs = clt.index_range
     l2g = loc2glob(clt)
-    # w    = clt.weights
     n = length(loc_idxs)
-    # M    = isempty(w) ? n : sum(i->w[i],glob_idxs)
-    # xc   = isempty(w) ? sum(i->pts[i]/M,glob_idxs) : sum(i->w[i]*pts[i]/M,glob_idxs)
-    M = n
-    xc = sum(i -> center(pts[l2g[i]]) / M, loc_idxs)
-    return xc
+    return sum(i -> center(pts[l2g[i]]) / n, loc_idxs)
 end
 
 """
@@ -104,10 +91,6 @@ amongst all children.
 """
 Base.@kwdef struct CardinalitySplitter <: AbstractSplitter
     nmax::Int = 50
-end
-
-function should_split(node::ClusterTree, depth, splitter::CardinalitySplitter)
-    return length(node) > splitter.nmax
 end
 
 function split!(cluster::ClusterTree, ::CardinalitySplitter)
@@ -129,6 +112,14 @@ function split!(cluster::ClusterTree, ::CardinalitySplitter)
     left_node, right_node = binary_split!(cluster, predicate)
     cluster.children = [left_node, right_node]
     return cluster
+end
+
+function should_split(
+        node::ClusterTree,
+        depth,
+        splitter::Union{GeometricSplitter, PrincipalComponentSplitter, CardinalitySplitter},
+    )
+    return length(node) > splitter.nmax
 end
 
 """
