@@ -53,7 +53,7 @@ function _cholesky!(M::HermitianHMatrix, compressor, bufs = nothing)
     if isleaf(M)
         d = data(M)
         @debug "dense cholesky! on $M"
-        cholesky!(d, NOPIVOT())
+        cholesky!(d, NoPivot())
     else
         @assert !hasdata(M)
         chdM = children(M)

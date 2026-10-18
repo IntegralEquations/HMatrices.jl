@@ -1,5 +1,3 @@
-const NOPIVOT = VERSION >= v"1.7" ? NoPivot : Val{false}
-
 const HLU = LU{<:Any, <:HMatrix}
 
 function Base.getproperty(LU::HLU, s::Symbol)
@@ -51,7 +49,7 @@ function _lu!(M::HMatrix, compressor, bufs = nothing)
     if isleaf(M)
         d = data(M)
         @assert d isa Matrix
-        lu!(d, NOPIVOT())
+        lu!(d, NoPivot())
     else
         @assert !hasdata(M)
         chdM = children(M)
