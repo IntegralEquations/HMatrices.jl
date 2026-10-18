@@ -3,9 +3,6 @@
 
 Representation of a rank `r` matrix `M` in outer product format `M =
 A*adjoint(B)` where `A` has size `m × r` and `B` has size `n × r`.
-
-The internal representation stores `A` and `B`, but `R.Bt` or `R.At` can be used
-to get the respective adjoints.
 """
 mutable struct RkMatrix{T} <: AbstractMatrix{T}
     A::Matrix{T}
@@ -19,11 +16,6 @@ mutable struct RkMatrix{T} <: AbstractMatrix{T}
         end
         return new{T}(A, B)
     end
-end
-
-function Base.setproperty!(R::RkMatrix, s::Symbol, mat::Base.Matrix)
-    setfield!(R, s, mat)
-    return R
 end
 
 function Base.show(io::IO, ::MIME"text/plain", R::RkMatrix)
@@ -48,37 +40,31 @@ function Base.getindex(::RkMatrix, args...)
     return error(msg)
 end
 
-"""
-    getcol!(col,M::AbstractMatrix,j)
-
-Fill the entries of `col` with column `j` of `M`.
-"""
-function getcol!(col, R::RkMatrix, j::Int, ::Val{T} = Val(false)) where {T}
-    # NOTE: using a `Val` argument to dispatch on the type of `T` is important
-    # for performance
-    return if T
-        mul!(col, R.A, view(adjoint(R.B), :, j), true, true)
-    else
-        mul!(col, R.A, view(adjoint(R.B), :, j))
-    end
-end
-
 const AdjRk = Adjoint{<:Any, <:RkMatrix}
 const AdjRkOrRk = Union{AdjRk, RkMatrix}
 
-function getcol!(
-        col,
-        Ra::Adjoint{<:Any, <:RkMatrix},
-        j::Int,
-        ::Val{T} = Val(false),
-    ) where {T}
+"""
+    _rkfactors(R)
+
+The factors `(U, V)` of a low-rank matrix `R = U*adjoint(V)`.
+"""
+_rkfactors(R::RkMatrix) = (R.A, R.B)
+_rkfactors(adjR::AdjRk) = (parent(adjR).B, parent(adjR).A)
+
+"""
+    getcol!(col, R, j[, Val(add)])
+
+Fill `col` with column `j` of the low-rank matrix `R`, or add it to `col` if `add` is
+`true`.
+"""
+function getcol!(col, R::AdjRkOrRk, j::Int, ::Val{T} = Val(false)) where {T}
     # NOTE: using a `Val` argument to dispatch on the type of `T` is important
     # for performance
-    R = parent(Ra)
+    U, V = _rkfactors(R)
     return if T
-        mul!(col, R.B, view(adjoint(R.A), :, j), true, true)
+        mul!(col, U, view(adjoint(V), :, j), true, true)
     else
-        mul!(col, R.B, view(adjoint(R.A), :, j))
+        mul!(col, U, view(adjoint(V), :, j))
     end
 end
 
@@ -91,27 +77,14 @@ end
 
 LinearAlgebra.rank(M::RkMatrix) = size(M.A, 2)
 
-function Base.getproperty(R::RkMatrix, s::Symbol)
-    if s == :Bt
-        return adjoint(R.B)
-    elseif s == :At
-        return adjoint(R.A)
-    else
-        return getfield(R, s)
-    end
-end
-
-function Base.Matrix(R::RkMatrix{<:Number})
-    return R.A * R.Bt
-end
-function Base.Matrix(adjR::Adjoint{<:Any, <:RkMatrix})
-    R = parent(adjR)
-    return R.B * R.At
+function Base.Matrix(R::AdjRkOrRk)
+    U, V = _rkfactors(R)
+    return U * adjoint(V)
 end
 function Base.Matrix(R::RkMatrix{<:SMatrix})
     # collect must be used when we have a matrix of `SMatrix` because of this issue:
     # https://github.com/JuliaArrays/StaticArrays.jl/issues/966#issuecomment-943679214
-    return R.A * collect(R.Bt)
+    return R.A * collect(adjoint(R.B))
 end
 
 # FIXME: to support scalar and tensorial problems, we currently allow for T
@@ -129,7 +102,7 @@ function LinearAlgebra.mul!(
     ) where {T <: SMatrix}
     m, n = size(Rk)
     r = rank(Rk)
-    tmp = Rk.Bt * F
+    tmp = adjoint(Rk.B) * F
     rmul!(C, b)
     for k in 1:r
         tmp[k] *= a

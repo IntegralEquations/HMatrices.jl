@@ -232,10 +232,6 @@ function _mul_dense!(C::Base.Matrix, A, B, a)
     return C
 end
 
-# the factors `(U, V)` of a low-rank matrix `R = U*V'`
-_rkfactors(R::RkMatrix) = (R.A, R.B)
-_rkfactors(adjR::AdjRk) = (parent(adjR).B, parent(adjR).A)
-
 # C ← C + a*H*d, with `d` the data of a leaf
 _mul_hd!(C, H, d::AdjOrMat, a) = _mul131!(C, H, d, a)
 function _mul_hd!(C, H, d::AdjRkOrRk, a)
@@ -252,10 +248,6 @@ function _mul_dh!(C, d::AdjRkOrRk, H, a)
     return mul!(C, U, tmp, a, true)
 end
 
-function _mul111!(C, A, B, a)
-    return mul!(C, A, B, a, true)
-end
-
 function _mul113!(
         C::Union{Matrix, SubArray, Adjoint},
         M::Union{Matrix, SubArray, Adjoint},
@@ -265,10 +257,10 @@ function _mul113!(
     if hasdata(H)
         mat = data(H)
         if mat isa AdjOrMat
-            _mul111!(C, M, mat, a)
+            mul!(C, M, mat, a, true)
         elseif mat isa AdjRkOrRk
             U, V = _rkfactors(mat)
-            _mul111!(C, M * U, adjoint(V), a)
+            mul!(C, M * U, adjoint(V), a, true)
         else
             error("unexpected data of type $(typeof(mat))")
         end
@@ -286,22 +278,12 @@ end
 
 function _mul121!(
         C::Union{Matrix, SubArray, Adjoint},
-        R::RkMatrix,
+        R::AdjRkOrRk,
         M::Union{Matrix, SubArray, Adjoint},
         a::Number,
     )
-    buffer = R.Bt * M
-    return _mul111!(C, R.A, buffer, a)
-end
-function _mul121!(
-        C::Union{Matrix, SubArray, Adjoint},
-        adjR::AdjRk,
-        M::Union{Matrix, SubArray, Adjoint},
-        a::Number,
-    )
-    R = parent(adjR)
-    buffer = R.At * M
-    return _mul111!(C, R.B, buffer, a)
+    U, V = _rkfactors(R)
+    return mul!(C, U, adjoint(V) * M, a, true)
 end
 
 function _mul131!(
@@ -313,7 +295,7 @@ function _mul131!(
     if isleaf(H)
         mat = data(H)
         if mat isa AdjOrMat
-            _mul111!(C, mat, M, a)
+            mul!(C, mat, M, a, true)
         elseif mat isa AdjRkOrRk
             _mul121!(C, mat, M, a)
         else
@@ -340,26 +322,13 @@ end
 # 1.2.1
 function LinearAlgebra.mul!(
         y::AbstractVector,
-        R::RkMatrix,
+        R::AdjRkOrRk,
         x::AbstractVector,
         a::Number,
         b::Number,
     )
-    tmp = R.Bt * x
-    return mul!(y, R.A, tmp, a, b)
-end
-
-# 1.2.1
-function LinearAlgebra.mul!(
-        y::AbstractVector,
-        adjR::Adjoint{<:Any, <:RkMatrix},
-        x::AbstractVector,
-        a::Number,
-        b::Number,
-    )
-    R = parent(adjR)
-    tmp = R.At * x
-    return mul!(y, R.B, tmp, a, b)
+    U, V = _rkfactors(R)
+    return mul!(y, U, adjoint(V) * x, a, b)
 end
 
 # 1.3.1

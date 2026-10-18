@@ -160,7 +160,7 @@ end
 
 # 2.3
 function LinearAlgebra.rdiv!(R::RkMatrix, U::HUpperTriangular)
-    Bt = rdiv!(Matrix(R.Bt), U)
+    Bt = rdiv!(Matrix(adjoint(R.B)), U)
     adjoint!(R.B, Bt)
     return R
 end
