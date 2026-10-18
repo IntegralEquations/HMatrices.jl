@@ -60,7 +60,7 @@ function assemble_hmatrix(
         K::AbstractKernelMatrix;
         atol = 0,
         rank = typemax(Int),
-        rtol = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
+        rtol = atol > 0 || rank < typemax(Int) ? 0 : nothing,
         kwargs...,
     )
     comp = PartialACA(; rtol, atol, rank)

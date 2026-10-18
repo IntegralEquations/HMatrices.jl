@@ -32,7 +32,7 @@ end
 
 """
     cholesky!(M::HMatrix;atol=0,rank=typemax(Int),rtol=atol>0 ||
-    rank<typemax(Int) ? 0 : sqrt(eps(Float64)))
+    rank<typemax(Int) ? 0 : nothing)
 
 Hierarhical cholesky facotrization of `M`, using the
 `PartialACA(;atol,rtol;rank)` compressor.
@@ -41,7 +41,7 @@ function LinearAlgebra.cholesky!(
         M::HermitianHMatrix;
         atol = 0,
         rank = typemax(Int),
-        rtol = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
+        rtol = atol > 0 || rank < typemax(Int) ? 0 : nothing,
         kwargs...,
     )
     compressor = PartialACA(atol, rank, rtol)

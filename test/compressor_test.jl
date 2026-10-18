@@ -135,6 +135,22 @@ Random.seed!(1)
         R0 = RkMatrix(zeros(T, m, 0), zeros(T, n, 0))
         @test rank(HMatrices.compress!(R0, TSVD(; atol = 1.0e-6))) == 0
     end
+    @testset "single precision" begin
+        M32 = ComplexF32.(M)
+        # the default tolerance follows the precision of the entries
+        for comp in (PartialACA(), TSVD(), ACAWithRecompression(PartialACA()))
+            R = comp(M32)
+            @test eltype(R) == ComplexF32
+            @test rank(R) < 20
+            @test norm(Matrix(R) - M32) < 1.0e-3 * norm(M32)
+        end
+        # a tolerance that cannot be reached is an error, not a full-rank block
+        for comp in (PartialACA(; rtol = 1.0e-8), TSVD(; rtol = 1.0e-8), ACAWithRecompression(PartialACA(; rtol = 1.0e-8)))
+            @test_throws ArgumentError comp(M32)
+            @test rank(comp(M)) < m
+        end
+        @test_throws ArgumentError PartialACA(; rtol = 1.0e-16)(M)
+    end
 end
 
 @testset "Tensorial" begin
