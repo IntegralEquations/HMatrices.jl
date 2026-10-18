@@ -86,8 +86,8 @@ function LinearAlgebra.ldiv!(L::HLowerTriangular, X::HMatrix, compressor, bufs =
     if isleaf(X)
         d = data(X)
         ldiv!(L, d)
-    elseif isleaf(H) # X not a leaf, but L is a leaf. This should not happen.
-        error()
+    elseif isleaf(H)
+        error("the triangular factor is a leaf but the right-hand side is not")
     else
         chdH = children(H)
         chdX = children(X)
@@ -172,7 +172,7 @@ function LinearAlgebra.rdiv!(X::HMatrix, U::HUpperTriangular, compressor, bufs =
         d = data(X)
         rdiv!(d, U) # b <-- b/L
     elseif isleaf(H)
-        error()
+        error("the triangular factor is a leaf but the left-hand side is not")
     else
         @assert !hasdata(H) # only leaves are allowed to have data for the inversion
         chdX = children(X)
