@@ -218,7 +218,7 @@ min_svd_vals(x::Number) = abs(x)
 function min_svd_vals(A::SMatrix)
     n, m = size(A)
     if (n == 2) || (n == 3)
-        λ = eigmin(SHermitianCompact(A * adjoint(A)))
+        λ = minimum(eigvals(Hermitian(A * adjoint(A))))
         # try to avoid some floating point issues
         return max(λ, zero(λ)) |> sqrt
     else
