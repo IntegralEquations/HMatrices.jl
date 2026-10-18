@@ -16,6 +16,7 @@ struct PermutedMatrix{K, T} <: AbstractMatrix{T}
     end
 end
 Base.size(M::PermutedMatrix) = size(M.data)
+Base.parent(M::PermutedMatrix) = M.data
 
 function Base.getindex(M::PermutedMatrix, i, j)
     ip = M.rowperm[i]

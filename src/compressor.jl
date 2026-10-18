@@ -161,7 +161,7 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
             if isnothing(i)
                 # ran out of candidate rows. Good case: the matrix is zero. Bad
                 # case: aca failed
-                if K isa KernelMatrix
+                if _iskernelmatrix(K)
                     all(j -> iszero(K[first(irange), j]), jrange) &&
                         all(i -> iszero(K[i, first(jrange)]), irange) ||
                         @warn "aca possibly failed on $irange × $jrange" maxlog = 1
@@ -283,6 +283,10 @@ function _rtol(rtol, atol, rank, T)
     )
     return max(rtol, 10 * eps(R))
 end
+
+# whether the entries of `K` are cheap enough to check that a block is zero
+_iskernelmatrix(K) = K isa KernelMatrix
+_iskernelmatrix(K::Union{PermutedMatrix, Hermitian}) = _iskernelmatrix(parent(K))
 
 function _aca_partial_initial_pivot(rowtree)
     # the method below is suggested in Bebendorf, but it does not seem to

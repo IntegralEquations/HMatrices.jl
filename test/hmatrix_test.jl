@@ -170,6 +170,9 @@ end
     @test norm(Matrix(assemble_hmatrix(Kint, P; rtol = 1.0e-8)) - Matrix(Kint)) < 1.0e-7 * norm(Matrix(Kint))
     # a kernel whose element type is not concrete
     @test_throws ArgumentError assemble_hmatrix(KernelMatrix((i, j) -> rand() > 2 ? 1 : 1.0, 1:1500, 1:1500), X)
+    # a compactly supported kernel has exactly zero blocks, which are not ACA failures
+    Kc = KernelMatrix((x, y) -> norm(x - y) < 0.2 ? f(x, y) : 0.0, X, X)
+    @test_logs assemble_hmatrix(Kc; rtol = 1.0e-8, threads = false)
     # the same through a kernel matrix on the points
     Kp = KernelMatrix(f, X, X)
     @test assemble_hmatrix(Hermitian(Kp); rtol = 1.0e-8) isa HMatrices.HermitianHMatrix
