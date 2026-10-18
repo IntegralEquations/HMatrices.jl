@@ -1,3 +1,7 @@
+```@meta
+CurrentModule = HMatrices
+```
+
 # [Kernel matrices](@id kernelmatrix-section)
 
 While in the [introduction](@ref assemble-generic-subsection) we presented a
@@ -36,11 +40,11 @@ Compressing `K` is now as simple as:
 H = assemble_hmatrix(K;rtol=1e-6)
 ```
 
-It is worth noting that several *default* choices are made during the
-compression above. See the [Assembling an `HMatrix`](@ref
-assemble-generic-subsection) section or the documentation of
-[`assemble_hmatrix`](@ref) for information on how to obtain a more granular
-control of the assembling stage.
+The elements are clustered by their `center`, and the keyword arguments are those of
+[`assemble_hmatrix`](@ref). If the entries of the kernel need more than the elements
+(e.g. per-element data), any matrix `K` indexed by `(i, j)` can be assembled together
+with its points, as `assemble_hmatrix(K, X, Y)`; see the [Assembling an `HMatrix`](@ref
+assemble-generic-subsection) section.
 
 As before, you can multiply `H` by a vector, or do an `lu` factorization of it.
 
