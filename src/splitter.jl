@@ -3,7 +3,7 @@
 
 An `AbstractSplitter` is used to split a [`ClusterTree`](@ref). The interface
 requires the following methods:
-- `should_split(clt,splitter)` : return a `Bool` determining if the
+- `should_split(clt,depth,splitter)` : return a `Bool` determining if the
   `ClusterTree` should be further divided
 - `split!(clt,splitter)` : perform the splitting of the `ClusterTree` handling
   the necessary data sorting.
@@ -38,10 +38,6 @@ Base.@kwdef struct GeometricSplitter <: AbstractSplitter
     nmax::Int = 50
 end
 
-function should_split(node::ClusterTree, depth, splitter::GeometricSplitter)
-    return length(node) > splitter.nmax
-end
-
 function split!(cluster::ClusterTree, ::GeometricSplitter)
     rec = cluster.container
     wmax, imax = findmax(high_corner(rec) - low_corner(rec))
@@ -57,10 +53,6 @@ end
 """
 Base.@kwdef struct PrincipalComponentSplitter <: AbstractSplitter
     nmax::Int = 50
-end
-
-function should_split(node::ClusterTree, depth, splitter::PrincipalComponentSplitter)
-    return length(node) > splitter.nmax
 end
 
 function split!(cluster::ClusterTree, ::PrincipalComponentSplitter)
@@ -101,10 +93,6 @@ Base.@kwdef struct CardinalitySplitter <: AbstractSplitter
     nmax::Int = 50
 end
 
-function should_split(node::ClusterTree, depth, splitter::CardinalitySplitter)
-    return length(node) > splitter.nmax
-end
-
 function split!(cluster::ClusterTree, ::CardinalitySplitter)
     points = cluster._elements
     irange = cluster.index_range
@@ -124,6 +112,14 @@ function split!(cluster::ClusterTree, ::CardinalitySplitter)
     left_node, right_node = binary_split!(cluster, predicate)
     cluster.children = [left_node, right_node]
     return cluster
+end
+
+function should_split(
+        node::ClusterTree,
+        depth,
+        splitter::Union{GeometricSplitter, PrincipalComponentSplitter, CardinalitySplitter},
+    )
+    return length(node) > splitter.nmax
 end
 
 """
