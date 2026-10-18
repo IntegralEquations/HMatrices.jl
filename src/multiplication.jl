@@ -66,7 +66,7 @@ end
 
 function _hmul!(C::HMatrix, compressor, dict, a, R, bufs, Cflag)
     execute_node!(C, compressor, dict, a, R, bufs)
-    shift = pivot(C) .- 1
+    shift = offset(C)
     C_children = children(C)
     ni, nj = size(C_children)
     for i in 1:ni
@@ -273,8 +273,8 @@ function _mul113!(
             error("unexpected data of type $(typeof(mat))")
         end
     end
+    shift = offset(H)
     for child in children(H)
-        shift = pivot(H) .- 1
         irange = rowrange(child) .- shift[1]
         jrange = colrange(child) .- shift[2]
         Cview = @views C[:, jrange]
@@ -320,8 +320,8 @@ function _mul131!(
             error("$(typeof(mat))")
         end
     end
+    shift = offset(H)
     for child in children(H)
-        shift = pivot(H) .- 1
         irange = rowrange(child) .- shift[1]
         jrange = colrange(child) .- shift[2]
         Cview = view(C, irange, :)
@@ -393,12 +393,11 @@ function LinearAlgebra.mul!(
     end
     iszero(b) ? fill!(y, zero(eltype(y))) : rmul!(y, b)
     # offset in case A is not indexed starting at (1,1); e.g. A is not the root
-    # of and HMatrix
-    offset = pivot(A) .- 1
+    # of an HMatrix
     if threads
-        _hgemv_threads!(y, x, leaves(A), offset)  # threaded implementation
+        _hgemv_threads!(y, x, leaves(A), offset(A))  # threaded implementation
     else
-        _hgemv_recursive!(y, A, x, offset) # serial implementation
+        _hgemv_recursive!(y, A, x, offset(A)) # serial implementation
     end
     # permute output
     global_index && invpermute!(y, rowperm(A))

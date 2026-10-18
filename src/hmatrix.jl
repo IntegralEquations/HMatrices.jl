@@ -94,8 +94,7 @@ end
 
 function _getcol!(col, H::HTypes, j, piv)
     if hasdata(H)
-        shift = pivot(H) .- 1
-        jl = j - shift[2]
+        jl = j - offset(H)[2]
         irange = rowrange(H) .- (piv[1] - 1)
         getcol!(view(col, irange), data(H), jl)
     end

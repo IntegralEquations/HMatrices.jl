@@ -56,7 +56,7 @@ function LinearAlgebra.ldiv!(L::HLowerTriangular, B::AbstractVecOrMat)
         ldiv!(_wraptriangular(d, L), B) # B <-- L\B
     else
         @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
-        shift = pivot(H) .- 1
+        shift = offset(H)
         chdH = children(H)
         m, n = size(chdH)
         @assert m === n
@@ -112,7 +112,7 @@ function LinearAlgebra.ldiv!(U::HUpperTriangular, B::AbstractVecOrMat)
         ldiv!(_wraptriangular(d, U), B) # B <-- L\B
     else
         @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
-        shift = pivot(H) .- 1
+        shift = offset(H)
         chdH = children(H)
         m, n = size(chdH)
         @assert m === n
@@ -139,7 +139,7 @@ function LinearAlgebra.rdiv!(B::StridedMatrix, U::HUpperTriangular)
         rdiv!(B, _wraptriangular(d, U)) # b <-- b/L
     else
         @assert !hasdata(H) "only leaves are allowed to have data when using `rdiv`!"
-        shift = reverse(pivot(H) .- 1)
+        shift = reverse(offset(H))
         chdH = children(H)
         m, n = size(chdH)
         @assert m === n
