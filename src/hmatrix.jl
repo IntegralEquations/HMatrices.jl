@@ -191,34 +191,69 @@ function _tree_matrix(hmat, T = eltype(hmat))
 end
 
 """
-    assemble_hmatrix([T,], K, rowtree, coltree;
-        adm=StrongAdmissibilityStd(),
-        comp=PartialACA(),
-        threads=true)
+    assemble_hmatrix(K, X, Y = X; atol = 0, rtol, rank, eta = 3, nmax = 50, threads = true)
 
-Main routine for assembling a hierarchical matrix. The argument `K` represents
-the matrix to be approximated, `rowtree` and `coltree` are tree structure
-partitioning the row and column indices, respectively, `adm` can be called on a
-node of `rowtree` and a node of `coltree` to determine if the block is
-compressible, and `comp` is a function/functor which can compress admissible
-blocks.
+Approximate the matrix `K` by an [`HMatrix`](@ref), where `X` and `Y` are the points
+(`SVector`s, or elements with a [`center`](@ref)) associated with the rows and the
+columns of `K`. The points are only used to cluster the indices, and are not modified.
 
-It is assumed that `K` supports `getindex(K,i,j)`, and that `comp` can be called
-as `comp(K,irange::UnitRange,jrange::UnitRange)` to produce a compressed version
-of `K[irange,jrange]` in the form of an [`RkMatrix`](@ref).
+- `K` can be any `AbstractMatrix` (e.g. a [`KernelMatrix`](@ref)), with scalar or
+  `SMatrix` entries; [`getblock!`](@ref) can be overloaded to compute its blocks faster.
+  If `K` is a `Hermitian`, only its upper triangle is assembled and a `Hermitian`
+  `HMatrix` is returned (this requires `Y === X`).
+- `atol`, `rtol` and `rank` control the compression of the low-rank blocks (see
+  [`PartialACA`](@ref)); by default `rtol = sqrt(eps)` of the real type of the entries.
+- Two clusters are compressed if `min(diameters) < eta * distance`; `eta = Inf`
+  compresses every pair of disjoint clusters (weak admissibility).
+- `nmax` is the maximum number of points in a leaf of the cluster trees.
 
-The type parameter `T` is used to specify the type of the entries of the matrix,
-by default is inferred from `K` using `eltype(K)`.
+Every operation on the result (products, `Matrix`, factorizations) uses the ordering of
+`X` and `Y`.
 """
 function assemble_hmatrix(
-        ::Type{T},
-        K,
-        rowtree,
-        coltree;
-        adm = StrongAdmissibilityStd(3),
+        K::AbstractMatrix,
+        X::AbstractVector,
+        Y::AbstractVector = X;
+        atol = 0,
+        rtol = nothing,
+        rank = typemax(Int),
+        eta = 3,
+        nmax = 50,
+        threads = true,
+    )
+    K isa Hermitian && Y !== X &&
+        throw(ArgumentError("a `Hermitian` matrix needs the same points for its rows and columns"))
+    splitter = GeometricSplitter(; nmax)
+    # `map` copies the points, which the trees then permute
+    Xclt = ClusterTree(map(x -> float(center(x)), X), splitter; copy_elements = false)
+    Yclt = Y === X ? Xclt : ClusterTree(map(y -> float(center(y)), Y), splitter; copy_elements = false)
+    adm = StrongAdmissibilityStd(; eta)
+    comp = PartialACA(; atol, rtol, rank)
+    return assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads)
+end
+
+"""
+    assemble_hmatrix(K, rowtree::ClusterTree, coltree::ClusterTree;
+        adm = StrongAdmissibilityStd(), comp = PartialACA(), threads = true)
+
+Lower-level version of [`assemble_hmatrix`](@ref) with given cluster trees, admissibility
+condition `adm` (called on a node of `rowtree` and a node of `coltree` to decide if the
+block is compressed) and compressor `comp` (see [`AbstractCompressor`](@ref)).
+"""
+function assemble_hmatrix(
+        K::AbstractMatrix,
+        rowtree::ClusterTree,
+        coltree::ClusterTree;
+        adm = StrongAdmissibilityStd(),
         comp = PartialACA(),
         threads = true,
-    ) where {T}
+    )
+    T = eltype(K)
+    isconcretetype(T) || throw(
+        ArgumentError(
+            "the element type of the matrix, $T, is not concrete; for a `KernelMatrix`, make sure that the kernel function is type stable (e.g. that it does not capture non-constant global variables)",
+        ),
+    )
     # create first the structure. No parallelism used as this should be light.
     hmat_ = HMatrix{T}(rowtree, coltree, adm)
     # wrap hmat in a Hermitian if needed
@@ -236,10 +271,6 @@ function assemble_hmatrix(
         _assemble_cpu!(hmat, K, comp, allocate_buffer(comp, T))
     end
     return hmat
-end
-
-function assemble_hmatrix(K::AbstractMatrix, args...; kwargs...)
-    return assemble_hmatrix(eltype(K), K, args...; kwargs...)
 end
 
 """

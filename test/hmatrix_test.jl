@@ -6,6 +6,19 @@ using SparseArrays
 
 include(joinpath(HMatrices.PROJECT_ROOT, "test", "testutils.jl"))
 
+# a matrix that can only be evaluated by blocks of indices
+struct BlockOnlyMatrix{M} <: AbstractMatrix{Float64}
+    M::M
+end
+Base.size(B::BlockOnlyMatrix) = size(B.M)
+Base.getindex(::BlockOnlyMatrix, i::Int, j::Int) = error("evaluated entry by entry")
+function HMatrices.getblock!(out, B::BlockOnlyMatrix, I::AbstractVector{<:Integer}, J::AbstractVector{<:Integer})
+    for (jl, j) in enumerate(J), (il, i) in enumerate(I)
+        out[il, jl] = B.M[i, j]
+    end
+    return out
+end
+
 @testset "Assemble" begin
     m, n = 1_000, 1_000
     X = Y = rand(SVector{3, Float64}, m)
@@ -119,4 +132,45 @@ end
             @test norm(Matrix(Hnew) - H_full - a * Matrix(S)) < 1.0e-8 * norm(a * S)
         end
     end
+end
+
+@testset "Assemble from points" begin
+    # a matrix indexed by (i, j), with points used only to cluster its indices
+    S = single_layer_sphere(1500)
+    X = S.X
+    f = S.f
+    K = KernelMatrix((i, j) -> f(X[i], X[j]), 1:1500, 1:1500)
+    M = Matrix(K)
+    X0 = copy(X)
+    H = assemble_hmatrix(K, X; rtol = 1.0e-8)
+    @test X == X0 # the points are not permuted in place
+    @test norm(Matrix(H) - M) < 1.0e-7 * norm(M)
+    # weak admissibility and leaf size
+    Hw = assemble_hmatrix(K, X; rtol = 1.0e-8, eta = Inf, nmax = 20, threads = false)
+    @test norm(Matrix(Hw) - M) < 1.0e-7 * norm(M)
+    @test maximum(length, HMatrices.leaves(HMatrices.rowtree(Hw))) <= 20
+    # some compressed blocks are too close for the strong admissibility
+    strong = StrongAdmissibilityStd(; eta = 3)
+    @test any(HMatrices.leaves(Hw)) do l
+        return HMatrices.isadmissible(l) && !strong(HMatrices.rowtree(l), HMatrices.coltree(l))
+    end
+    # Hermitian matrices give a Hermitian HMatrix, ready for `cholesky`
+    Hh = assemble_hmatrix(Hermitian(K), X; rtol = 1.0e-8)
+    @test Hh isa HMatrices.HermitianHMatrix
+    y = rand(1500)
+    @test norm(cholesky(Hh; rtol = 1.0e-8) \ y - M \ y) < 1.0e-6 * norm(M \ y)
+    @test_throws ArgumentError assemble_hmatrix(Hermitian(K), X, copy(X))
+    # `getblock!` of the matrix is used for every block, with vectors of indices
+    Hb = assemble_hmatrix(BlockOnlyMatrix(M), X; rtol = 1.0e-8, threads = false)
+    @test norm(Matrix(Hb) - M) < 1.0e-7 * norm(M)
+    # integer coordinates
+    P = [SVector(i % 50, i ÷ 50) for i in 0:1499]
+    Kint = KernelMatrix((i, j) -> exp(-norm(P[i] - P[j]) / 10), 1:1500, 1:1500)
+    @test norm(Matrix(assemble_hmatrix(Kint, P; rtol = 1.0e-8)) - Matrix(Kint)) < 1.0e-7 * norm(Matrix(Kint))
+    # a kernel whose element type is not concrete
+    @test_throws ArgumentError assemble_hmatrix(KernelMatrix((i, j) -> rand() > 2 ? 1 : 1.0, 1:1500, 1:1500), X)
+    # the same through a kernel matrix on the points
+    Kp = KernelMatrix(f, X, X)
+    @test assemble_hmatrix(Hermitian(Kp); rtol = 1.0e-8) isa HMatrices.HermitianHMatrix
+    @test norm(Matrix(assemble_hmatrix(Kp; rtol = 1.0e-8)) - M) < 1.0e-7 * norm(M)
 end
