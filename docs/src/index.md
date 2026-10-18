@@ -174,31 +174,11 @@ exact  = Matrix(K)\b
 norm(approx-exact)/norm(exact)
 ```
 
-Internally, the hierarchical matrix `H` is stored as `H = inv(Pr)*_H*Pc`, where `Pr` and
-`Pc` are row and column permutation matrices induced by the clustering of the
-target and source points as `ClusterTree`s, respectively, and `_H` is the
-actual hierarchical matrix constructed. It is sometimes convenient to work
-directly with `_H` for performance reasons; for example, in the iterative solver
-above, you may want to permute rows and columns only once *offline* and perform the
-matrix multiplication with `_H`. The keyword argument `global_index=false` can
-be passed to perform the desired operations on `_H` instead, or you may overload
-the [`HMatrices.use_global_index`](@ref) method which will in turn change the default
-value of `global_index` throughout the package (but be careful to know what you
-are doing, as this may cause some *unexpected* results); similarly, you can overload
-[`HMatrices.use_threads`](@ref) to globally change whether threads are used by
-default. In the iterative example above, for instance, we may permute the
-vectors *externally* before and after (but not in each forward product) as follows:
-
-```@example assemble-basic
-cperm  = HMatrices.colperm(H) # column permutation
-rperm  = HMatrices.rowperm(H) # row permutation
-bp     = b[cperm] 
-HMatrices.use_global_index() = false # perform operations on the local indexing system
-approx = gmres!(y,H,bp;abstol=1e-6)
-invpermute!(approx,rperm)
-HMatrices.use_global_index() = true # go back to default
-norm(approx-exact)/norm(exact)
-```
+Internally, `H` is stored in the ordering induced by the clustering of the points
+(see [`ClusterTree`](@ref)), but every operation, such as `H*x`, `mul!`, `Matrix(H)`,
+or the solves with a factorization, works in the ordering of the points given by the
+user. The cost of permuting the vectors is negligible compared to that of the
+products.
 
 !!! note "Problem size"
     For "small" problem sizes, the overhead associated with the more complex

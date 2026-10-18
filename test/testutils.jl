@@ -82,16 +82,16 @@ function LaplaceMatrixVec{T}(
 end
 LaplaceMatrixVec(args...) = LaplaceMatrixVec{Float64}(args...) # default to Float64
 
-function HMatrices.getblock!(out, K::LaplaceMatrixVec, I::UnitRange, J::UnitRange)
+function HMatrices.getblock!(out, K::LaplaceMatrixVec, I::AbstractVector{Int}, J::AbstractVector{Int})
     m = length(I)
     n = length(J)
-    Xv = view(K.X, I, :)
-    Yv = view(K.Y, J, :)
+    X, Y = K.X, K.Y
     @turbo for j in 1:n
         for i in 1:m
-            d2 = (Xv[i, 1] - Yv[j, 1])^2
-            d2 += (Xv[i, 2] - Yv[j, 2])^2
-            d2 += (Xv[i, 3] - Yv[j, 3])^2
+            # gather the coordinates of the points `I[i]` and `J[j]`
+            d2 = (X[I[i], 1] - Y[J[j], 1])^2
+            d2 += (X[I[i], 2] - Y[J[j], 2])^2
+            d2 += (X[I[i], 3] - Y[J[j], 3])^2
             d = sqrt(d2) + EPS
             out[i, j] = inv(4 * π * d)
         end

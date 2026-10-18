@@ -333,7 +333,7 @@ end
 
 # 1.3.1
 """
-    mul!(y::AbstractVector,H::HMatrix,x::AbstractVector,a,b[;global_index,threads])
+    mul!(y::AbstractVector,H::HMatrix,x::AbstractVector,a,b[;threads])
 
 Perform `y <-- H*x*a + y*b` in place.
 """
@@ -343,8 +343,7 @@ function LinearAlgebra.mul!(
         x::AbstractVector,
         a::Number = 1,
         b::Number = 0;
-        global_index = use_global_index(),
-        threads = use_threads(),
+        threads = true,
     )
     # since the HMatrix represents A = inv(Pr)*H*Pc, where Pr and Pc are row and column
     # permutations, we need first to rewrite C <-- b*C + a*(inv(Pr)*H*Pc)*B as
@@ -352,14 +351,9 @@ function LinearAlgebra.mul!(
     # multiplication is performed by first defining B <-- Pc*B, and C <--
     # Pr*C, doing the multiplication with the permuted entries, and then
     # permuting the result  back C <-- inv(Pr)*C at the end.
-    if global_index
-        # permute input
-        x = x[colperm(A)]
-        y = permute!(y, rowperm(A))
-        rmul!(x, a) # multiply in place since this is a new copy, so does not mutate exterior x
-    elseif a != 1
-        x = a * x # new copy of x since we should not mutate the external x in mul!
-    end
+    x = x[colperm(A)]
+    y = permute!(y, rowperm(A))
+    rmul!(x, a) # multiply in place since this is a new copy, so does not mutate exterior x
     iszero(b) ? fill!(y, zero(eltype(y))) : rmul!(y, b)
     # offset in case A is not indexed starting at (1,1); e.g. A is not the root
     # of an HMatrix
@@ -369,7 +363,7 @@ function LinearAlgebra.mul!(
         _hgemv_recursive!(y, A, x, offset(A)) # serial implementation
     end
     # permute output
-    global_index && invpermute!(y, rowperm(A))
+    invpermute!(y, rowperm(A))
     return y
 end
 

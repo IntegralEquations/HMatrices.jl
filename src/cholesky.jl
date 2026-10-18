@@ -22,7 +22,7 @@ end
 Hierarchical Cholesky factorization of `M`, using `comp` to generate the compressed
 blocks during the multiplication routines.
 """
-function LinearAlgebra.cholesky!(M::HermitianHMatrix, compressor; threads = use_threads())
+function LinearAlgebra.cholesky!(M::HermitianHMatrix, compressor; threads = true)
     # perform the cholesky decomposition of M in place
     _cholesky!(M, compressor, _buffer_channel(compressor, eltype(M)))
     # wrap the result in the cholesky structure
@@ -30,12 +30,12 @@ function LinearAlgebra.cholesky!(M::HermitianHMatrix, compressor; threads = use_
 end
 
 """
-    cholesky!(M::HMatrix; atol, rank, rtol, threads = use_threads())
+    cholesky!(M::HMatrix; atol, rank, rtol, threads = true)
 
 Hierarchical Cholesky factorization of `M`, using the
 `PartialACA(; atol, rank, rtol)` compressor.
 """
-function LinearAlgebra.cholesky!(M::HermitianHMatrix; threads = use_threads(), kwargs...)
+function LinearAlgebra.cholesky!(M::HermitianHMatrix; threads = true, kwargs...)
     return cholesky!(M, PartialACA(; kwargs...); threads)
 end
 
@@ -83,18 +83,18 @@ function _cholesky!(M::HermitianHMatrix, compressor, bufs = nothing)
 end
 
 # solve with the factors `L*U` of an LU or Cholesky factorization
-function LinearAlgebra.ldiv!(A::Union{HLU, HChol}, y::AbstractVector; global_index = true)
+function LinearAlgebra.ldiv!(A::Union{HLU, HChol}, y::AbstractVector)
     p = A.factors # underlying data
     ctree = coltree(p)
     rtree = rowtree(p)
     # permute input
-    global_index && permute!(y, loc2glob(rtree))
+    permute!(y, loc2glob(rtree))
     L, U = A.L, A.U
     # solve LUx = y through:
     # (a) L(z) = y
     # (b) Ux   = z
     ldiv!(L, y)
     ldiv!(U, y)
-    global_index && invpermute!(y, loc2glob(ctree))
+    invpermute!(y, loc2glob(ctree))
     return y
 end

@@ -163,15 +163,23 @@ function _show(io, hmat, allow_empty = false)
 end
 
 """
-    Matrix(H::HMatrix;global_index=true)
+    Matrix(H::HMatrix)
 
-Convert `H` to a `Matrix`. If `global_index=true` (the default), the entries are
-given in the global indexing system (see [`HMatrix`](@ref) for more
-information); otherwise the *local* indexing system induced by the row and
-columns trees are used.
+Convert `H` to a dense `Matrix`, in the ordering of the points used to assemble it.
 """
-Base.Matrix(hmat::HTypes; global_index = true) = Matrix{eltype(hmat)}(hmat; global_index)
-function Base.Matrix{T}(hmat::HTypes; global_index) where {T}
+Base.Matrix(hmat::HTypes) = Matrix{eltype(hmat)}(hmat)
+function Base.Matrix{T}(hmat::HTypes) where {T}
+    M = _tree_matrix(hmat, T)
+    return M[invperm(rowperm(hmat)), invperm(colperm(hmat))]
+end
+
+"""
+    _tree_matrix(H, T = eltype(H))
+
+The dense `Matrix{T}` of `H` in the ordering of its cluster trees, i.e. the ordering in
+which `H` is stored.
+"""
+function _tree_matrix(hmat, T = eltype(hmat))
     M = zeros(T, size(hmat)...)
     piv = pivot(hmat)
     for leaf in leaves(hmat)
@@ -179,20 +187,14 @@ function Base.Matrix{T}(hmat::HTypes; global_index) where {T}
         jrange = colrange(leaf) .- piv[2] .+ 1
         M[irange, jrange] = Matrix(data(leaf))
     end
-    if global_index
-        P = PermutedMatrix(M, invperm(rowperm(hmat)), invperm(colperm(hmat)))
-        return Matrix(P)
-    else
-        return M
-    end
+    return M
 end
 
 """
     assemble_hmatrix([T,], K, rowtree, coltree;
         adm=StrongAdmissibilityStd(),
         comp=PartialACA(),
-        threads=true,
-        global_index=true)
+        threads=true)
 
 Main routine for assembling a hierarchical matrix. The argument `K` represents
 the matrix to be approximated, `rowtree` and `coltree` are tree structure
@@ -215,8 +217,7 @@ function assemble_hmatrix(
         coltree;
         adm = StrongAdmissibilityStd(3),
         comp = PartialACA(),
-        global_index = use_global_index(),
-        threads = use_threads(),
+        threads = true,
     ) where {T}
     # create first the structure. No parallelism used as this should be light.
     hmat_ = HMatrix{T}(rowtree, coltree, adm)
@@ -226,8 +227,8 @@ function assemble_hmatrix(
     else
         hmat_
     end
-    # if needed permute kernel entries into indexing induced by trees
-    global_index && (K = PermutedMatrix(K, loc2glob(rowtree), loc2glob(coltree)))
+    # the blocks are assembled in the ordering of the trees
+    K = PermutedMatrix(K, loc2glob(rowtree), loc2glob(coltree))
     # now assemble the data in the blocks
     if threads
         _assemble_threads!(hmat, K, comp)
@@ -502,12 +503,9 @@ Base.:(+)(X::HMatrix, Y::UniformScaling) = Y + X
 function LinearAlgebra.axpy!(
         a,
         X::AbstractSparseArray{<:Any, <:Any, 2},
-        Y::HMatrix;
-        global_index = true,
+        Y::HMatrix,
     )
-    rp = loc2glob(rowtree(Y))
-    cp = loc2glob(coltree(Y))
-    global_index && (X = permute(X, rp, cp))
+    X = permute(X, rowperm(Y), colperm(Y))
     size_start = Base.summarysize(Y)
     _axpy!(a, X, Y)
     size_end = Base.summarysize(Y)

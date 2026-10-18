@@ -22,7 +22,7 @@ end
 Hierarchical LU factorization of `M`, using `comp` to generate the compressed
 blocks during the multiplication routines.
 """
-function LinearAlgebra.lu!(M::HMatrix, compressor; threads = use_threads())
+function LinearAlgebra.lu!(M::HMatrix, compressor; threads = true)
     # perform the lu decomposition of M in place
     _lu!(M, compressor, _buffer_channel(compressor, eltype(M)))
     # wrap the result in the LU structure
@@ -30,11 +30,11 @@ function LinearAlgebra.lu!(M::HMatrix, compressor; threads = use_threads())
 end
 
 """
-    lu!(M::HMatrix; atol, rank, rtol, threads = use_threads())
+    lu!(M::HMatrix; atol, rank, rtol, threads = true)
 
 Hierarchical LU factorization of `M`, using the `PartialACA(; atol, rank, rtol)` compressor.
 """
-function LinearAlgebra.lu!(M::HMatrix; threads = use_threads(), kwargs...)
+function LinearAlgebra.lu!(M::HMatrix; threads = true, kwargs...)
     return lu!(M, PartialACA(; kwargs...); threads)
 end
 

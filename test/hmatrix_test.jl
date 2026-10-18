@@ -18,22 +18,32 @@ include(joinpath(HMatrices.PROJECT_ROOT, "test", "testutils.jl"))
     for threads in (true, false)
         K = laplace_matrix(X, Y)
         H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads)
-        @test norm(Matrix(K) - Matrix(H; global_index = true)) < rtol * norm(Matrix(K))
+        @test norm(Matrix(K) - Matrix(H)) < rtol * norm(Matrix(K))
         H = assemble_hmatrix(K; threads)
-        @test norm(Matrix(K) - Matrix(H; global_index = true)) < rtol * norm(Matrix(K))
+        @test norm(Matrix(K) - Matrix(H)) < rtol * norm(Matrix(K))
         adjH = adjoint(H)
-        H_full = Matrix(H; global_index = true)
+        H_full = Matrix(H)
         adjH_full = adjoint(H_full)
 
         @testset "getcol" begin
-            Hloc = Matrix(H; global_index = false)
+            Hloc = HMatrices._tree_matrix(H)
             @test Hloc[:, 666] ≈ HMatrices.getcol(H, 666)
             @test adjoint(Hloc)[:, 666] ≈ HMatrices.getcol(adjH, 666)
         end
+        # a kernel with a vectorized `getblock!`, called with permuted indices
+        Kv = LaplaceMatrixVec(X, Y)
+        I, J = rand(1:m, 7), rand(1:n, 5)
+        @test HMatrices.getblock!(zeros(7, 5), Kv, I, J) ≈ Matrix(K)[I, J] rtol = 1.0e-12
+        P = HMatrices.PermutedMatrix(Kv, HMatrices.rowperm(H), HMatrices.colperm(H))
+        Mp = Matrix(K)[HMatrices.rowperm(H), HMatrices.colperm(H)]
+        @test HMatrices.getblock!(zeros(m), P, 1:m, 3) ≈ Mp[:, 3] rtol = 1.0e-12 # an ACA column
+        @test HMatrices.getblock!(zeros(n), adjoint(P), 1:n, 4) ≈ Mp[4, :] rtol = 1.0e-12 # an ACA row
+        Hv = assemble_hmatrix(Kv, Xclt, Yclt; adm, comp, threads)
+        @test norm(Matrix(K) - Matrix(Hv)) < rtol * norm(Matrix(K))
         # Elastostatic
         K = elastostatic_matrix(X, Y, 1.1, 1.2)
         H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads)
-        @test norm(Matrix(K) - Matrix(H; global_index = true)) < rtol * norm(Matrix(K))
+        @test norm(Matrix(K) - Matrix(H)) < rtol * norm(Matrix(K))
     end
 end
 

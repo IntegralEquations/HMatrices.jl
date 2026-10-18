@@ -29,7 +29,7 @@ splitter = CardinalitySplitter(; nmax = 50)
 Xclt = ClusterTree(X, splitter)
 Yclt = ClusterTree(Y, splitter)
 H = assemble_hmatrix(K, Xclt, Yclt; threads = false)
-H_full = Matrix(H; global_index = false)
+H_full = HMatrices._tree_matrix(H)
 
 @testset "ldiv!" begin
     B = rand(m, 2)
@@ -54,7 +54,7 @@ H_full = Matrix(H; global_index = false)
     compressor = PartialACA(; atol = 1.0e-8)
     exact = ldiv!(UnitLowerTriangular(H_full), copy(H_full))
     approx = ldiv!(UnitLowerTriangular(H), deepcopy(H), compressor)
-    @test exact ≈ Matrix(approx; global_index = false)
+    @test exact ≈ HMatrices._tree_matrix(approx)
 end
 
 @testset "rdiv!" begin
@@ -75,5 +75,5 @@ end
     compressor = PartialACA(; atol = 1.0e-8)
     exact = rdiv!(deepcopy(H_full), UpperTriangular(H_full))
     approx = rdiv!(deepcopy(H), UpperTriangular(H), compressor)
-    @test exact ≈ Matrix(approx; global_index = false)
+    @test exact ≈ HMatrices._tree_matrix(approx)
 end

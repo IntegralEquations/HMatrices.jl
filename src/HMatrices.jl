@@ -20,7 +20,8 @@ size `length(irange) × length(jrange)`.
 
 A default implementation exists which relies on `getindex(K,i,j)`, but this
 method can be overloaded for better performance if e.g. a vectorized way of
-computing a block is available.
+computing a block is available. The indices are in the ordering of `K`, and
+`irange`/`jrange` can be any vectors of integers, not only ranges.
 """
 function getblock!(out, K, irange_, jrange_)
     irange = irange_ isa Colon ? axes(K, 1) : irange_
@@ -37,21 +38,6 @@ function getblock!(out, Kadj::Adjoint, irange_, j::Int)
     getblock!(transpose(out), parent(Kadj), j:j, irange_)
     return out .= conj.(out)
 end
-
-"""
-    use_threads()::Bool
-
-Default choice of whether threads will be used throughout the package.
-"""
-use_threads() = true
-
-"""
-    use_global_index()::Bool
-
-Default choice of whether operations will use the global indexing system
-throughout the package.
-"""
-use_global_index() = true
 
 include("utils.jl")
 include("hyperrectangle.jl")
