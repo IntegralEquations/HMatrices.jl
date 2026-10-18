@@ -187,9 +187,6 @@ function Base.Matrix{T}(hmat::HTypes; global_index) where {T}
     end
 end
 
-# deprecate assemble_hmat
-@deprecate assemble_hmat assemble_hmatrix
-
 """
     assemble_hmatrix([T,], K, rowtree, coltree;
         adm=StrongAdmissibilityStd(),
