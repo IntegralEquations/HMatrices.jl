@@ -83,7 +83,6 @@ end
     adm = StrongAdmissibilityStd(; eta = 3)
     rtol = 1.0e-5
     comp = PartialACA(; rtol = rtol)
-    U = rand(SVector{3, Float64}, m)
     @testset "Scalar problem (laplace)" begin
         K = laplace_matrix(X, Y)
         H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false, distributed = false)
@@ -91,8 +90,11 @@ end
         T = eltype(H)
         m, n = size(H)
         S = sprand(T, m, n, 0.01)
-        Hnew = axpy!(true, S, deepcopy(H))
-        @test norm(Hnew * U - (H_full + Matrix(S)) * U) < 1.0e-5 * norm(Hnew * U)
+        # compare the increments: the large diagonal of `H` would hide errors
+        for a in (true, 2) # the scaling also applies to admissible blocks
+            Hnew = axpy!(a, S, deepcopy(H))
+            @test norm(Matrix(Hnew) - H_full - a * Matrix(S)) < 1.0e-8 * norm(a * S)
+        end
     end
     @testset "Vector problem (elasticity)" begin
         K = elastostatic_matrix(X, Y, 1, 1)
@@ -101,7 +103,10 @@ end
         T = eltype(H)
         m, n = size(H)
         S = sprand(T, m, n, 0.1)
-        Hnew = axpy!(true, S, deepcopy(H))
-        @test norm(Hnew * U - (H_full + Matrix(S)) * U) < 1.0e-5 * norm(Hnew * U)
+        # compare the increments: the large diagonal of `H` would hide errors
+        for a in (true, 2) # the scaling also applies to admissible blocks
+            Hnew = axpy!(a, S, deepcopy(H))
+            @test norm(Matrix(Hnew) - H_full - a * Matrix(S)) < 1.0e-8 * norm(a * S)
+        end
     end
 end

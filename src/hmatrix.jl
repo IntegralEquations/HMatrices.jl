@@ -564,12 +564,12 @@ function _axpy!(a, X::AbstractSparseArray, Y::HMatrix)
                         R = data(Y)
                         m, n = size(R)
                         # create a rank one matrix and add it to R
-                        a = zeros(T, m)
-                        b = zeros(T, n)
-                        a[i - irange.start + 1] = vals[idx]
-                        b[j - jrange.start + 1] = one(T)
-                        R.A = hcat(R.A, a)
-                        R.B = hcat(R.B, b)
+                        u = zeros(T, m)
+                        v = zeros(T, n)
+                        u[i - irange.start + 1] = a * vals[idx]
+                        v[j - jrange.start + 1] = one(T)
+                        R.A = hcat(R.A, u)
+                        R.B = hcat(R.B, v)
                     else
                         M = data(Y)::Matrix{T} #
                         M[i - irange.start + 1, j - jrange.start + 1] += a * vals[idx]

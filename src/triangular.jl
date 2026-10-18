@@ -3,6 +3,16 @@ _wraptriangular(d, ::UpperTriangular) = UpperTriangular(d)
 _wraptriangular(d, ::LowerTriangular) = LowerTriangular(d)
 _wraptriangular(d, ::UnitUpperTriangular) = UnitUpperTriangular(d)
 _wraptriangular(d, ::UnitLowerTriangular) = UnitLowerTriangular(d)
+# A triangle of a `Hermitian` leaf is a triangle of the stored data, or the adjoint of one.
+# Unwrapping it lets `ldiv!` use BLAS (trsm/trsv) instead of the generic fallback that goes
+# through `getindex` of the `Hermitian` wrapper (e.g. for `cholesky(H).L`, which is the lower
+# triangle of a `Hermitian` whose data is the upper factor).
+function _wraptriangular(d::Hermitian, ::LowerTriangular)
+    return d.uplo == 'U' ? UpperTriangular(parent(d))' : LowerTriangular(parent(d))
+end
+function _wraptriangular(d::Hermitian, ::UpperTriangular)
+    return d.uplo == 'U' ? UpperTriangular(parent(d)) : LowerTriangular(parent(d))'
+end
 
 isadmissible(H::HTriangular) = H |> parent |> isadmissible
 data(t::HTriangular) = _wraptriangular(data(parent(t)), t)

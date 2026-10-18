@@ -26,18 +26,14 @@ blocks during the multiplication routines.
 """
 function LinearAlgebra.lu!(M::HMatrix, compressor; threads = use_threads())
     # perform the lu decomposition of M in place
-    T = eltype(M)
-    nt = Threads.nthreads()
-    chn = Channel{ACABuffer{T}}(nt)
-    foreach(i -> put!(chn, ACABuffer(T)), 1:nt)
-    _lu!(M, compressor, threads, chn)
+    _lu!(M, compressor, threads, _buffer_channel(compressor, eltype(M)))
     # wrap the result in the LU structure
     return LU(M, Int[], 0)
 end
 
 """
     lu!(M::HMatrix;atol=0,rank=typemax(Int),rtol=atol>0 ||
-    rank<typemax(Int) ? 0 : sqrt(eps(Float64)))
+    rank<typemax(Int) ? 0 : nothing)
 
 Hierarhical LU facotrization of `M`, using the `PartialACA(;atol,rtol;rank)` compressor.
 """
@@ -45,7 +41,7 @@ function LinearAlgebra.lu!(
         M::HMatrix;
         atol = 0,
         rank = typemax(Int),
-        rtol = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
+        rtol = atol > 0 || rank < typemax(Int) ? 0 : nothing,
         kwargs...,
     )
     compressor = PartialACA(atol, rank, rtol)
@@ -89,13 +85,13 @@ function LinearAlgebra.ldiv!(A::HLU, y::AbstractVector; global_index = true)
     ctree = coltree(p)
     rtree = rowtree(p)
     # permute input
-    global_index && permute!(y, loc2glob(ctree))
+    global_index && permute!(y, loc2glob(rtree))
     L, U = A.L, A.U
     # solve LUx = y through:
     # (a) L(z) = y
     # (b) Ux   = z
     ldiv!(L, y)
     ldiv!(U, y)
-    global_index && invpermute!(y, loc2glob(rtree))
+    global_index && invpermute!(y, loc2glob(ctree))
     return y
 end

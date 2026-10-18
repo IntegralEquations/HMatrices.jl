@@ -36,4 +36,6 @@ end
     include("cholesky_test.jl")
 end
 
-# @safetestset "DHMatrix" begin include("dhmatrix_test.jl") end
+@safetestset "DHMatrix" begin
+    include("dhmatrix_test.jl")
+end

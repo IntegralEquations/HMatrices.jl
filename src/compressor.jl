@@ -31,11 +31,14 @@ Because it uses partial pivoting, the linear operator does not have to be
 evaluated at every `i,j`. This is usually much faster than [`TSVD`](@ref), but
 due to the pivoting strategy the algorithm may fail in special cases, even when
 the underlying linear operator is of low rank.
+
+The default `rtol` is `sqrt(eps(R))`, where `R` is the real type underlying the
+entries of the compressed matrix.
 """
 Base.@kwdef struct PartialACA
     atol::Float64 = 0
     rank::Int = typemax(Int)
-    rtol::Float64 = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64))
+    rtol::Union{Nothing, Float64} = atol > 0 || rank < typemax(Int) ? 0 : nothing
 end
 
 function (paca::PartialACA)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs = nothing)
@@ -106,6 +109,7 @@ errors involved in estimating the error and |M|.
 function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = nothing)
     Kadj = adjoint(K)
     T = eltype(K)
+    rtol = _rtol(rtol, T)
     # if irange and jrange are Colon, extract the size from `K` directly. This
     # allows for some code reuse with specializations on getindex(i,::Colon) and
     # getindex(::Colon,j) for when `K` is a `RkMatrix`
@@ -148,7 +152,16 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
         end
         j = _aca_partial_pivot(b, J)
         δ = b[j]
-        if min_svd_vals(δ) == 0
+        σ = min_svd_vals(δ)
+        if σ > 0 # compute next col by col <-- K[irange,j+jshift] - R[:,j]
+            getblock!(a, K, irange, j + jshift)
+            for k in 1:r
+                axpy!(-adjoint(B[k][j]), A[k], a)
+            end
+        end
+        # a pivot at the rounding level of its column means that row `i` of the
+        # residual is zero (up to rounding errors, e.g. when `K` is a product)
+        if σ == 0 || σ <= sqrt(eps(real(eltype(T)))) * maximum(norm, a)
             @debug "zero pivot found during partial aca"
             i = findfirst(x -> x == true, I)
             if isnothing(i)
@@ -170,14 +183,6 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
                 b[k] = b[k] * iδ
             end
             J[j] = false
-            # compute next col by col <-- K[irange,j+jshift] - R[:,j]
-            getblock!(a, K, irange, j + jshift)
-            for k in 1:r
-                axpy!(-adjoint(B[k][j]), A[k], a)
-                # for i in eachindex(col)
-                #     col[i] = col[i] - A[k][i]*adjoint(B[k][j])
-                # end
-            end
             # increase rank and push cross
             r += 1
             A.k += 1
@@ -187,6 +192,8 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
             # estimate the norm by || K || ≈ || R_k ||
             est_norm = _update_frob_norm(est_norm, A, B)
             i = _aca_partial_pivot(a, I)
+            # no candidate row left: every row was used, so the approximation is exact
+            i == -1 && break
             @debug r, er, m, n
         end
     end
@@ -256,6 +263,26 @@ function _aca_partial_pivot(v, J)
     return idx
 end
 
+"""
+    _rtol(rtol, T)
+
+The relative tolerance used to compress a matrix with entries of type `T`: `rtol`,
+or `sqrt(eps(R))` if `rtol` is `nothing`, where `R` is the real type underlying `T`.
+Throw an `ArgumentError` if `rtol` is below the accuracy attainable with `R`.
+"""
+function _rtol(rtol, T)
+    R = real(eltype(T))
+    isnothing(rtol) && return sqrt(eps(R))
+    # the error of the compressors stagnates at a few `eps(R)`; below that the
+    # stopping criterion is never met and the blocks are compressed to full rank
+    0 < rtol < 10 * eps(R) && throw(
+        ArgumentError(
+            "rtol = $rtol is below the accuracy attainable with $R (eps = $(eps(R))); use rtol ≥ $(10 * eps(R))",
+        ),
+    )
+    return rtol
+end
+
 function _aca_partial_initial_pivot(rowtree)
     # the method below is suggested in Bebendorf, but it does not seem to
     # improve the  error. The idea is that the initial pivot is the closesest
@@ -280,12 +307,13 @@ end
 
 Compression algorithm based on *a posteriori* truncation of an `SVD`. This is
 the optimal approximation in Frobenius norm; however, it also tends to be very
-expensive and thus should be used mostly for "small" matrices.
+expensive and thus should be used mostly for "small" matrices. The default `rtol`
+is the same as for [`PartialACA`](@ref).
 """
 Base.@kwdef struct TSVD
     atol::Float64 = 0
     rank::Int = typemax(Int)
-    rtol::Float64 = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64))
+    rtol::Union{Nothing, Float64} = atol > 0 || rank < typemax(Int) ? 0 : nothing
 end
 
 function (tsvd::TSVD)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs = nothing)
@@ -300,6 +328,15 @@ function (tsvd::TSVD)(K, irange::UnitRange, jrange::UnitRange)
 end
 
 (comp::TSVD)(K::Base.Matrix) = comp(K, 1:size(K, 1), 1:size(K, 2))
+
+# number of singular values `S` (sorted decreasingly) above the tolerance, at most
+# `rmax` (zero if they are all below the tolerance)
+function _truncation_rank(S, atol, rtol, rmax)
+    rtol = _rtol(rtol, eltype(S))
+    isempty(S) && return 0
+    tol = max(atol, rtol * S[1])
+    return min(count(>(tol), S), rmax)
+end
 
 """
     compress!(M::RkMatrix,tsvd::TSVD)
@@ -316,10 +353,7 @@ function compress!(R::RkMatrix, tsvd::TSVD)
     U = QA * F.U
     Vt = F.Vt * adjoint(QB)
     V = adjoint(Vt)
-    sp_norm = F.S[1] # spectral norm
-    r = findlast(x -> x > max(tsvd.atol, tsvd.rtol * sp_norm), F.S)
-    isnothing(r) && (r = min(rank(R), m, n))
-    r = min(r, tsvd.rank)
+    r = _truncation_rank(F.S, tsvd.atol, tsvd.rtol, tsvd.rank)
     if m < n
         A = @views U[:, 1:r] * Diagonal(F.S[1:r])
         B = V[:, 1:r]
@@ -340,10 +374,7 @@ data in `M` is invalidated in the process.
 function compress!(M::Base.Matrix, tsvd::TSVD)
     m, n = size(M)
     F = svd!(M)
-    sp_norm = F.S[1] # spectral norm
-    r = findlast(x -> x > max(tsvd.atol, tsvd.rtol * sp_norm), F.S)
-    isnothing(r) && (r = min(m, n))
-    r = min(r, tsvd.rank)
+    r = _truncation_rank(F.S, tsvd.atol, tsvd.rtol, tsvd.rank)
     if m < n
         A = @views F.U[:, 1:r] * Diagonal(F.S[1:r])
         B = F.V[:, 1:r]
@@ -378,10 +409,7 @@ function _recompress!(R::RkMatrix{T}, atol, rtol, rmax, bufs = nothing) where {T
         mul!(C, RA, adjoint(RB))
     end
     F = svd!(C)
-    sp_norm = F.S[1]
-    r = findlast(x -> x > max(atol, rtol * sp_norm), F.S)
-    isnothing(r) && (r = min(k, m, n))
-    r = min(r, rmax)
+    r = _truncation_rank(F.S, atol, rtol, rmax)
     R.A = QA * (F.U[:, 1:r] * Diagonal(F.S[1:r]))
     R.B = QB * F.V[:, 1:r]
     return R

@@ -42,6 +42,12 @@ Random.seed!(1)
         R = aca(zero(M), irange, jrange)
         @test norm(Matrix(R)) ≈ 0.0
 
+        # zero rows use up the candidate rows without increasing the rank
+        Z = zeros(T, 4, 5)
+        Z[4, :] = rand(T, 5)
+        R = PartialACA(; atol = 1.0e-10)(Z)
+        @test Matrix(R) ≈ Z
+
         # test fast update of frobenius norm
         m, n = 10000, 1000
         r = 10
@@ -115,6 +121,35 @@ Random.seed!(1)
         @test rank(R2) == 2r
         HMatrices.compress!(R2, tsvd)
         @test rank(R2) == r
+    end
+    @testset "blocks below the tolerance" begin
+        # every singular value is below the tolerance: truncate to rank zero
+        small = 1.0e-12 * M
+        R = RkMatrix(1.0e-12 * rand(T, m, 3), rand(T, n, 3))
+        for comp in (TSVD(; atol = 1.0e-6), ACAWithRecompression(PartialACA(; atol = 1.0e-6)))
+            @test rank(comp(small)) == 0
+            @test rank(comp(zero(M))) == 0
+        end
+        @test rank(HMatrices.compress!(copy(R), TSVD(; atol = 1.0e-6))) == 0
+        # rank-zero inputs are left as they are
+        R0 = RkMatrix(zeros(T, m, 0), zeros(T, n, 0))
+        @test rank(HMatrices.compress!(R0, TSVD(; atol = 1.0e-6))) == 0
+    end
+    @testset "single precision" begin
+        M32 = ComplexF32.(M)
+        # the default tolerance follows the precision of the entries
+        for comp in (PartialACA(), TSVD(), ACAWithRecompression(PartialACA()))
+            R = comp(M32)
+            @test eltype(R) == ComplexF32
+            @test rank(R) < 20
+            @test norm(Matrix(R) - M32) < 1.0e-3 * norm(M32)
+        end
+        # a tolerance that cannot be reached is an error, not a full-rank block
+        for comp in (PartialACA(; rtol = 1.0e-8), TSVD(; rtol = 1.0e-8), ACAWithRecompression(PartialACA(; rtol = 1.0e-8)))
+            @test_throws ArgumentError comp(M32)
+            @test rank(comp(M)) < m
+        end
+        @test_throws ArgumentError PartialACA(; rtol = 1.0e-16)(M)
     end
 end
 

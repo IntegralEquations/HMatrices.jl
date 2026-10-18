@@ -25,18 +25,14 @@ blocks during the multiplication routines.
 """
 function LinearAlgebra.cholesky!(M::HermitianHMatrix, compressor; threads = use_threads())
     # perform the cholesky decomposition of M in place
-    T = eltype(M)
-    nt = Threads.nthreads()
-    chn = Channel{ACABuffer{T}}(nt)
-    foreach(i -> put!(chn, ACABuffer(T)), 1:nt)
-    _cholesky!(M, compressor, threads, chn)
+    _cholesky!(M, compressor, threads, _buffer_channel(compressor, eltype(M)))
     # wrap the result in the cholesky structure
     return M |> UpperTriangular |> Cholesky
 end
 
 """
     cholesky!(M::HMatrix;atol=0,rank=typemax(Int),rtol=atol>0 ||
-    rank<typemax(Int) ? 0 : sqrt(eps(Float64)))
+    rank<typemax(Int) ? 0 : nothing)
 
 Hierarhical cholesky facotrization of `M`, using the
 `PartialACA(;atol,rtol;rank)` compressor.
@@ -45,7 +41,7 @@ function LinearAlgebra.cholesky!(
         M::HermitianHMatrix;
         atol = 0,
         rank = typemax(Int),
-        rtol = atol > 0 || rank < typemax(Int) ? 0 : sqrt(eps(Float64)),
+        rtol = atol > 0 || rank < typemax(Int) ? 0 : nothing,
         kwargs...,
     )
     compressor = PartialACA(atol, rank, rtol)
@@ -100,13 +96,13 @@ function LinearAlgebra.ldiv!(A::HChol, y::AbstractVector; global_index = true)
     ctree = coltree(p)
     rtree = rowtree(p)
     # permute input
-    global_index && permute!(y, loc2glob(ctree))
+    global_index && permute!(y, loc2glob(rtree))
     L, U = A.L, A.U
     # solve cholesky*x = y through:
     # (a) L(z) = y
     # (b) Ux   = z
     ldiv!(L, y)
     ldiv!(U, y)
-    global_index && invpermute!(y, loc2glob(rtree))
+    global_index && invpermute!(y, loc2glob(ctree))
     return y
 end
