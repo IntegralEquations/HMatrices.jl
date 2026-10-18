@@ -1,5 +1,6 @@
 using Test
 using HMatrices
+using HMatrices: HyperRectangle
 using StaticArrays
 
 @testset "HyperRectangle tests" begin

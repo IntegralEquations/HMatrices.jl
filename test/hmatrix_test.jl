@@ -1,6 +1,7 @@
 using Test
 using StaticArrays
 using HMatrices
+using HMatrices: ClusterTree, CardinalitySplitter, StrongAdmissibilityStd, PartialACA
 using LinearAlgebra
 using SparseArrays
 

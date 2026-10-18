@@ -16,6 +16,7 @@ used to generate an [`RkMatrix`](@ref) from a matrix-like object `M` as follows:
 
 ```jldoctest
 using LinearAlgebra
+using HMatrices: PartialACA
 rtol = 1e-6
 comp = PartialACA(;rtol)
 A = rand(10,2)

@@ -69,7 +69,19 @@ hasdata(H) = !isnothing(data(parent(H)))
 isroot(H) = parentnode(H) === H
 rowrange(H) = index_range(rowtree(H))
 colrange(H) = index_range(coltree(H))
+"""
+    rowperm(H)
+
+The permutation of the rows of `H` into the ordering in which `H` is stored: the stored
+row `i` is the row `rowperm(H)[i]` of the matrix approximated by `H`.
+"""
 rowperm(H) = loc2glob(rowtree(H))
+
+"""
+    colperm(H)
+
+Like [`rowperm`](@ref), for the columns of `H`.
+"""
 colperm(H) = loc2glob(coltree(H))
 pivot(H) = (rowrange(H).start, colrange(H).start)
 offset(H) = pivot(H) .- 1

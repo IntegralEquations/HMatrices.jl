@@ -52,24 +52,28 @@ include("triangular.jl")
 include("lu.jl")
 include("cholesky.jl")
 
-export ClusterTree,
-    CardinalitySplitter,
+export assemble_hmatrix, HMatrix, KernelMatrix, AbstractKernelMatrix, compression_ratio
+
+# lower-level interface: cluster trees, admissibility conditions and compressors
+public ClusterTree,
+    AbstractSplitter,
     GeometricSplitter,
+    CardinalitySplitter,
+    PrincipalComponentSplitter,
     HyperRectangle,
-    # abstract types
-    AbstractKernelMatrix,
-    # types
-    HMatrix,
-    KernelMatrix,
     StrongAdmissibilityStd,
     WeakAdmissibilityStd,
+    AbstractCompressor,
     PartialACA,
     TSVD,
     ACAWithRecompression,
-    ACAWithRecompressionBuffer,
-    # functions
     allocate_buffer,
-    compression_ratio,
-    assemble_hmatrix
+    getblock!,
+    hmul!,
+    rowperm,
+    colperm,
+    center,
+    rowelements,
+    colelements
 
 end

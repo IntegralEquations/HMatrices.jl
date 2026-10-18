@@ -1,6 +1,7 @@
 using Test
 using StaticArrays
 using HMatrices
+using HMatrices: ClusterTree
 
 # recursively check that all point in a cluster tree are in the bounding box
 function test_cluster_tree(clt)

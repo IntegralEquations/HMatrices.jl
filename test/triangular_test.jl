@@ -1,5 +1,6 @@
 using Test
 using HMatrices
+using HMatrices: ClusterTree, CardinalitySplitter, PartialACA
 using LinearAlgebra
 using Random
 using StaticArrays

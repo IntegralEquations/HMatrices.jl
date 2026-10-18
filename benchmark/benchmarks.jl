@@ -2,6 +2,7 @@
 # Pkg.activate(@__DIR__)
 
 using HMatrices
+using HMatrices: PartialACA, TSVD
 using BenchmarkTools
 using Random
 using LinearAlgebra
