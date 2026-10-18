@@ -151,6 +151,12 @@ Random.seed!(1)
             @test rank(comp(M)) < m
         end
         @test_throws ArgumentError PartialACA(; rtol = 1.0e-16)(M)
+        # an atol below the precision stops at the precision instead of at full rank
+        for comp in (PartialACA(; atol = 1.0e-12), TSVD(; atol = 1.0e-12), ACAWithRecompression(PartialACA(; atol = 1.0e-12)))
+            R = comp(M32)
+            @test rank(R) < 20
+            @test norm(Matrix(R) - M32) < 1.0e-5 * norm(M32)
+        end
     end
 end
 

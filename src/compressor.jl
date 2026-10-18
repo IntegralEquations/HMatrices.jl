@@ -262,6 +262,9 @@ end
 The relative tolerance used to compress a matrix with entries of type `T`: `rtol`,
 or `sqrt(eps(R))` if `rtol` is `nothing`, where `R` is the real type underlying `T`.
 Throw an `ArgumentError` if `rtol` is below the accuracy attainable with `R`.
+
+An `rtol` of zero is raised to that accuracy, so that an `atol` too small for a block
+does not compress it to full rank.
 """
 function _rtol(rtol, T)
     R = real(eltype(T))
@@ -273,7 +276,7 @@ function _rtol(rtol, T)
             "rtol = $rtol is below the accuracy attainable with $R (eps = $(eps(R))); use rtol ≥ $(10 * eps(R))",
         ),
     )
-    return rtol
+    return max(rtol, 10 * eps(R))
 end
 
 function _aca_partial_initial_pivot(rowtree)
