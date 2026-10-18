@@ -119,13 +119,17 @@ function compression_ratio(H::HTypes)
     return nr / ns
 end
 
-function Base.show(io::IO, hmat::HMatrix)
-    isclean(hmat) || return print(io, "Dirty HMatrix")
-    print(io, "HMatrix of $(eltype(hmat)) with range $(rowrange(hmat)) × $(colrange(hmat))")
-    _show(io, hmat, false)
+function Base.show(io::IO, H::HTypes)
+    hmat = parent(H)
+    # the data of a `Hermitian` is stored in one triangle only, so its leaves may be empty
+    herm = H isa Hermitian
+    herm || isclean(hmat) || return print(io, "Dirty HMatrix")
+    label = herm ? "Hermitian HMatrix" : H isa Adjoint ? "Adjoint HMatrix" : "HMatrix"
+    print(io, "$label of $(eltype(hmat)) with range $(rowrange(H)) × $(colrange(H))")
+    _show(io, hmat, herm)
     return io
 end
-Base.show(io::IO, ::MIME"text/plain", hmat::HMatrix) = show(io, hmat)
+Base.show(io::IO, ::MIME"text/plain", H::HTypes) = show(io, H)
 
 function _show(io, hmat, allow_empty = false)
     nodes_ = nodes(hmat)
@@ -365,29 +369,6 @@ function _assemble_dense_block!(hmat, K)
     hmat.data = out
     return hmat
 end
-
-function Base.show(io::IO, adjH::Adjoint{<:Any, <:HMatrix})
-    hmat = parent(adjH)
-    isclean(hmat) || return print(io, "Dirty HMatrix")
-    print(
-        io,
-        "Adjoint HMatrix of $(eltype(hmat)) with range $(rowrange(adjH)) × $(colrange(adjH))",
-    )
-    _show(io, hmat, false)
-    return io
-end
-Base.show(io::IO, ::MIME"text/plain", adjH::Adjoint{<:Any, <:HMatrix}) = show(io, adjH)
-
-function Base.show(io::IO, hermH::Hermitian{<:Any, <:HMatrix})
-    hmat = parent(hermH)
-    print(
-        io,
-        "Hermitian HMatrix of $(eltype(hmat)) with range $(rowrange(hmat)) × $(colrange(hmat))",
-    )
-    _show(io, hmat, true)
-    return io
-end
-Base.show(io::IO, ::MIME"text/plain", hermH::Hermitian{<:Any, <:HMatrix}) = show(io, hermH)
 
 """
     struct StrongAdmissibilityStd

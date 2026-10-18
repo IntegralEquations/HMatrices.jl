@@ -39,15 +39,11 @@ isleaf(H::HTriangular) = isempty(children(H))
 
 hasdata(t::HTriangular) = hasdata(parent(t))
 
-function Base.show(io::IO, ::MIME"text/plain", U::HUpperTriangular)
-    H = parent(U)
-    return println(io, "Upper triangular part of $H")
+function Base.show(io::IO, tri::HTriangular)
+    part = tri isa HUpperTriangular ? "Upper" : "Lower"
+    return println(io, "$part triangular part of $(parent(tri))")
 end
-
-function Base.show(io::IO, ::MIME"text/plain", L::HLowerTriangular)
-    H = parent(L)
-    return println(io, "Lower triangular part of $H")
-end
+Base.show(io::IO, ::MIME"text/plain", tri::HTriangular) = show(io, tri)
 
 function LinearAlgebra.ldiv!(L::HLowerTriangular, B::AbstractVecOrMat)
     H = parent(L)

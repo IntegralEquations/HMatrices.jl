@@ -31,6 +31,8 @@ for threads in (false, true)
     @test norm(exact - approx) < 1.0e-7 * norm(exact)
     # test multiplication by checking if the solution is correct
     @test hlu.L * (hlu.U * approx) ≈ y
+    @test startswith(sprint(show, hlu.L), "Lower triangular part of HMatrix")
+    @test startswith(sprint(show, hlu.U), "Upper triangular part of HMatrix")
     for t in (true, false)
         z = mul!(zero(y), hlu.U, approx, 1, 0; threads = t)
         @test mul!(zero(y), hlu.L, z, 1, 0; threads = t) ≈ y
