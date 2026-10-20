@@ -38,8 +38,8 @@ Random.seed!(1)
         R = aca(M, irange, jrange)
         @test rank(R) == r
 
-        # test zero matrix
-        R = aca(zero(M), irange, jrange)
+        # test zero matrix: no warning, since every row is exactly zero
+        R = @test_logs aca(zero(M), irange, jrange)
         @test norm(Matrix(R)) ≈ 0.0
 
         # zero rows use up the candidate rows without increasing the rank
@@ -151,11 +151,15 @@ Random.seed!(1)
             @test rank(comp(M)) < m
         end
         @test_throws ArgumentError PartialACA(; rtol = 1.0e-16)(M)
-        # an atol below the precision stops at the precision instead of at full rank
-        for comp in (PartialACA(; atol = 1.0e-12), TSVD(; atol = 1.0e-12), ACAWithRecompression(PartialACA(; atol = 1.0e-12)))
-            R = comp(M32)
+        # an atol below the precision stops at the precision instead of at full rank,
+        # also with an explicit `rtol = 0` or `rtol = nothing`
+        makers = (kw -> PartialACA(; kw...), kw -> TSVD(; kw...), kw -> ACAWithRecompression(PartialACA(; kw...)))
+        for rtol in (0, nothing), comp in makers
+            R = comp((; atol = 1.0e-12, rtol))(M32)
             @test rank(R) < 20
             @test norm(Matrix(R) - M32) < 1.0e-5 * norm(M32)
+            # with a rank only, the rest of the block is below the precision
+            @test rank(comp((; rank = 50, rtol))(M32)) < 20
         end
     end
 end
