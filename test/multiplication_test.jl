@@ -34,19 +34,21 @@ P = HMatrices.RkMatrix(rand(m, 10), rand(n, 10))
 β = rand() - 0.5
 
 @testset "hmul!" begin
+    # the rows and columns of `H` come from different points, so the products are
+    # those of the stored blocks (as in the factorizations)
     C = deepcopy(H)
     tmp = β * H_full + α * H_full * H_full
-    HMatrices.hmul!(C, H, H, α, β, PartialACA(; atol = 1.0e-6))
+    HMatrices._hmul_tree!(C, H, H, α, β, PartialACA(; atol = 1.0e-6))
     @test HMatrices._tree_matrix(C) ≈ tmp
     # adjoint
     C = deepcopy(H)
     tmp = β * H_full + α * adjoint(H_full) * H_full
-    HMatrices.hmul!(C, adjoint(H), H, α, β, PartialACA(; atol = 1.0e-6))
+    HMatrices._hmul_tree!(C, adjoint(H), H, α, β, PartialACA(; atol = 1.0e-6))
     @test HMatrices._tree_matrix(C) ≈ tmp
     # a compressor with its own buffer type
     C = deepcopy(H)
     tmp = β * H_full + α * H_full * H_full
-    HMatrices.hmul!(C, H, H, α, β, ACAWithRecompression(PartialACA(; atol = 1.0e-6)))
+    HMatrices._hmul_tree!(C, H, H, α, β, ACAWithRecompression(PartialACA(; atol = 1.0e-6)))
     @test HMatrices._tree_matrix(C) ≈ tmp
 end
 

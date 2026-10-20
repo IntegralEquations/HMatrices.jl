@@ -67,13 +67,24 @@ const HTriangular = Union{HLowerTriangular, HUpperTriangular}
 # parentnode. Ducktype and hope for the best.
 hasdata(H) = !isnothing(data(parent(H)))
 isroot(H) = parentnode(H) === H
+
+# operations in the user ordering need the permutations of the whole matrix
+function _checkroot(H)
+    isroot(parent(H)) ||
+        throw(ArgumentError("this operation is only defined on a whole `HMatrix`, not on one of its blocks"))
+    return H
+end
 rowrange(H) = index_range(rowtree(H))
 colrange(H) = index_range(coltree(H))
 """
     rowperm(H)
 
-The permutation of the rows of `H` into the ordering in which `H` is stored: the stored
-row `i` is the row `rowperm(H)[i]` of the matrix approximated by `H`.
+The permutation of the rows of the whole matrix into the ordering in which it is stored:
+for the root `H` of an `HMatrix`, the stored row `i` is the row `rowperm(H)[i]` of the
+matrix approximated by `H`. For a block of `H`, it is the permutation of the whole matrix
+(the rows of the block are `rowperm(H)[rowrange(H)]`).
+
+The returned vector belongs to the cluster tree and must not be modified.
 """
 rowperm(H) = loc2glob(rowtree(H))
 
@@ -181,6 +192,7 @@ Convert `H` to a dense `Matrix`, in the ordering of the points used to assemble 
 """
 Base.Matrix(hmat::HTypes) = Matrix{eltype(hmat)}(hmat)
 function Base.Matrix{T}(hmat::HTypes) where {T}
+    _checkroot(hmat)
     M = _tree_matrix(hmat, T)
     return M[invperm(rowperm(hmat)), invperm(colperm(hmat))]
 end
@@ -214,7 +226,8 @@ columns of `K`. The points are only used to cluster the indices, and are not mod
   If `K` is a `Hermitian`, only its upper triangle is assembled and a `Hermitian`
   `HMatrix` is returned (this requires `Y === X`).
 - `atol`, `rtol` and `rank` control the compression of the low-rank blocks (see
-  [`PartialACA`](@ref)); by default `rtol = sqrt(eps)` of the real type of the entries.
+  [`PartialACA`](@ref)); by default `rtol = sqrt(eps)` of the real type of the entries,
+  or only the accuracy attainable with that type if `atol` or `rank` is given.
 - Two clusters are compressed if `min(diameters) < eta * distance`; `eta = Inf`
   compresses every pair of disjoint clusters (weak admissibility).
 - `nmax` is the maximum number of points in a leaf of the cluster trees.
@@ -233,6 +246,8 @@ function assemble_hmatrix(
         nmax = 50,
         threads = true,
     )
+    size(K) == (length(X), length(Y)) ||
+        throw(DimensionMismatch("the matrix is of size $(size(K)), but there are $(length(X)) row points and $(length(Y)) column points"))
     K isa Hermitian && Y !== X &&
         throw(ArgumentError("a `Hermitian` matrix needs the same points for its rows and columns"))
     splitter = GeometricSplitter(; nmax)
@@ -260,6 +275,8 @@ function assemble_hmatrix(
         comp = PartialACA(),
         threads = true,
     )
+    size(K) == (length(rowtree), length(coltree)) ||
+        throw(DimensionMismatch("the matrix is of size $(size(K)), but the trees have $(length(rowtree)) and $(length(coltree)) elements"))
     T = eltype(K)
     isconcretetype(T) || throw(
         ArgumentError(
@@ -520,6 +537,15 @@ end
 
 # add a uniform scaling to an HMatrix return an HMatrix
 function LinearAlgebra.axpy!(a, X::UniformScaling, Y::HMatrix)
+    LinearAlgebra.checksquare(Y)
+    # the identity is diagonal in the stored ordering only if rows and columns are
+    # permuted in the same way
+    rowperm(Y) == colperm(Y) || return axpy!(a, sparse(X, size(Y)...), Y)
+    return _axpy_diagonal!(a, X, Y)
+end
+
+# add `a*X` to the diagonal of the stored blocks of `Y`
+function _axpy_diagonal!(a, X::UniformScaling, Y::HMatrix)
     @assert isclean(Y)
     if hasdata(Y)
         d = data(Y)
@@ -531,7 +557,7 @@ function LinearAlgebra.axpy!(a, X::UniformScaling, Y::HMatrix)
     else
         n = min(blocksize(Y)...)
         for i in 1:n
-            axpy!(a, X, children(Y)[i, i])
+            _axpy_diagonal!(a, X, children(Y)[i, i])
         end
     end
     return Y

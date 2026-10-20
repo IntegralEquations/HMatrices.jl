@@ -30,7 +30,7 @@ blocks during the multiplication routines.
 
 `F \\ b` solves in the ordering of the points used to assemble `M`. The factors `F.L`
 and `F.U` are stored in the ordering of the cluster trees, with
-`F.L * F.U ≈ Matrix(M)[F.p, F.q]`; products and solves with them act in that ordering.
+`F.L * (F.U * x) ≈ Matrix(M)[F.p, F.q] * x`; products and solves with them act in that ordering.
 
 The factorization is currently serial: `threads` is accepted but not used.
 """
@@ -74,7 +74,7 @@ function _lu!(M::HMatrix, compressor, bufs = nothing)
             end
             for j in (i + 1):m
                 for k in (i + 1):n
-                    hmul!(chdM[j, k], chdM[j, i], chdM[i, k], -1, 1, compressor, bufs)
+                    _hmul_tree!(chdM[j, k], chdM[j, i], chdM[i, k], -1, 1, compressor, bufs)
                 end
             end
         end

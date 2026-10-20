@@ -32,6 +32,8 @@ for threads in (false, true)
     approx = hchol \ y
     B = rand(m, 3)
     @test norm(hchol \ B - M \ B) < 1.0e-7 * norm(M \ B)
+    b = rand(ComplexF64, m)
+    @test norm(hchol \ b - M \ b) < 1.0e-7 * norm(M \ b)
     @test norm(exact - approx) < 1.0e-7 * norm(exact)
     # test multiplication by checking if the solution is correct
     # the factors act in the ordering of the tree

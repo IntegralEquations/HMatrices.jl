@@ -193,8 +193,9 @@ norm(approx-exact)/norm(exact)
 ```
 
 Like `H`, `F \ b` works in the ordering of the points. The factors `F.L` and `F.U`
-are stored in the ordering of the clusters, and `F.L * F.U ≈ Matrix(H)[F.p, F.q]`, as for the
-pivoted factorizations of `LinearAlgebra`.
+are stored in the ordering of the clusters, and
+`F.L * (F.U * x) ≈ Matrix(H)[F.p, F.q] * x`, as for the pivoted factorizations of
+`LinearAlgebra`.
 
 Note that the error in solving the linear system may be significantly larger
 than the error in computing `H*x` due to the condition of the underlying

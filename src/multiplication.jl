@@ -1,12 +1,28 @@
 """
-    hmul!(C::HMatrix,A::HMatrix,B::HMatrix,a,b,compressor)
+    hmul!(C::HMatrix, A::HMatrix, B::HMatrix, a, b, compressor)
 
 Similar to `mul!` : compute `C <-- A*B*a + C*b`, where `A,B,C` are hierarchical
 matrices and `compressor` is a function/functor used in the intermediate stages
 of the multiplication to avoid growing the rank of admissible blocks after
 addition is performed.
+
+The rows of `A` and `C`, the columns of `A` and the rows of `B`, and the columns of
+`B` and `C` must be clustered in the same way (e.g. built from the same points);
+otherwise an `ArgumentError` is thrown.
 """
-function hmul!(
+function hmul!(C::Union{HMatrix, HermitianHMatrix}, A::HTypes, B::HTypes, a, b, compressor)
+    rowperm(C) == rowperm(A) && colperm(A) == rowperm(B) && colperm(B) == colperm(C) ||
+        throw(ArgumentError("the factors of `hmul!` must be clustered consistently with each other and with the result"))
+    return _hmul_tree!(C, A, B, a, b, compressor)
+end
+
+"""
+    _hmul_tree!(C, A, B, a, b, compressor, bufs = nothing, Cflag = 'N')
+
+Compute `C <-- A*B*a + C*b` in the ordering in which the H-matrices are stored, i.e.
+as products of the stored blocks, whatever the points they come from.
+"""
+function _hmul_tree!(
         C::T,
         A::HTypes,
         B::HTypes,
@@ -24,7 +40,9 @@ function hmul!(
     return C
 end
 
-hmul!(C::HermitianHMatrix, args...) = hmul!(parent(C), args..., C.uplo)
+function _hmul_tree!(C::HermitianHMatrix, A, B, a, b, compressor, bufs = nothing)
+    return _hmul_tree!(parent(C), A, B, a, b, compressor, bufs, C.uplo)
+end
 
 # a channel holding one buffer of `compressor` per thread
 function _buffer_channel(compressor, T)
@@ -345,10 +363,11 @@ function LinearAlgebra.mul!(
         b::Number = 0;
         threads = true,
     )
-    # `A` is stored in the ordering of its trees, so `x` and `y` are permuted into it
-    # (`x[colperm(A)]` is a copy that `_mul_tree!` may overwrite), and `y` back
+    _checkroot(A)
+    # `A` is stored in the ordering of its trees, so `x` and `y` are permuted into it,
+    # and `y` back
     permute!(y, rowperm(A))
-    _mul_tree!(y, A, x[colperm(A)], a, b, threads)
+    _mul_tree!(y, A, a .* view(x, colperm(A)), b, threads)
     return invpermute!(y, rowperm(A))
 end
 
@@ -361,19 +380,22 @@ function LinearAlgebra.mul!(
         b::Number = 0;
         threads = true,
     )
-    return _mul_tree!(y, A, copy(x), a, b, threads)
+    return _mul_tree!(y, A, a .* x, b, threads)
+end
+
+function Base.:*(A::HTriangular, X::AbstractMatrix)
+    Y = similar(X, promote_type(eltype(A), eltype(X)), size(A, 1), size(X, 2))
+    return mul!(Y, A, X)
 end
 
 """
-    _mul_tree!(y, A, x, a, b, threads)
+    _mul_tree!(y, A, x, b, threads)
 
-Perform `y <-- A*x*a + y*b` in the ordering of the trees of `A`, overwriting `x`.
+Perform `y <-- A*x + y*b` in the ordering of the trees of `A`.
 """
-function _mul_tree!(y, A, x, a, b, threads)
-    rmul!(x, a)
+function _mul_tree!(y, A, x, b, threads)
     iszero(b) ? fill!(y, zero(eltype(y))) : rmul!(y, b)
-    # offset in case A is not indexed starting at (1,1); e.g. A is not the root
-    # of an HMatrix
+    # the indices of the leaves are relative to the first row and column of `A`
     if threads
         _hgemv_threads!(y, x, leaves(A), offset(A))  # threaded implementation
     else
@@ -387,7 +409,7 @@ end
 # enough.
 function LinearAlgebra.mul!(
         Y::AbstractMatrix,
-        A::HTypes,
+        A::Union{HTypes, HTriangular},
         X::AbstractMatrix,
         a::Number = 1,
         b::Number = 0;

@@ -61,7 +61,12 @@ end
     z = rand(n)
     M = Matrix(K)
     @test norm(F.L * (F.U * z) - M[F.p, F.q] * z) < 1.0e-6 * norm(M[F.p, F.q] * z)
-    # several right-hand sides
+    # several right-hand sides, and a complex one
     B = rand(n, 3)
     @test norm(F \ B - M \ B) < 1.0e-6 * norm(M \ B)
+    b = rand(ComplexF64, n)
+    @test norm(F \ b - M \ b) < 1.0e-6 * norm(M \ b)
+    # products of the factors with several vectors
+    Z = rand(n, 2)
+    @test norm(F.L * (F.U * Z) - M[F.p, F.q] * Z) < 1.0e-6 * norm(M[F.p, F.q] * Z)
 end

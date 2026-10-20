@@ -1,5 +1,9 @@
 using SafeTestsets
 
+@safetestset "API" begin
+    include("api_test.jl")
+end
+
 @safetestset "HyperRectangle" begin
     include("hyperrectangle_test.jl")
 end
