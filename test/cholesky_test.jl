@@ -30,6 +30,8 @@ for threads in (false, true)
     M = Matrix(K)
     exact = M \ y
     approx = hchol \ y
+    B = rand(m, 3)
+    @test norm(hchol \ B - M \ B) < 1.0e-7 * norm(M \ B)
     @test norm(exact - approx) < 1.0e-7 * norm(exact)
     # test multiplication by checking if the solution is correct
     # the factors act in the ordering of the tree

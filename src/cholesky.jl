@@ -94,19 +94,17 @@ function _cholesky!(M::HermitianHMatrix, compressor, bufs = nothing)
     return M
 end
 
-# solve with the factors `L*U` of an LU or Cholesky factorization
-function LinearAlgebra.ldiv!(A::Union{HLU, HChol}, y::AbstractVector)
-    p = A.factors # underlying data
-    ctree = coltree(p)
-    rtree = rowtree(p)
-    # permute input
-    permute!(y, loc2glob(rtree))
-    L, U = A.L, A.U
-    # solve LUx = y through:
-    # (a) L(z) = y
-    # (b) Ux   = z
-    ldiv!(L, y)
-    ldiv!(U, y)
-    invpermute!(y, loc2glob(ctree))
-    return y
+# solve with the factors `L*U` of an LU or Cholesky factorization, which are in the
+# ordering of the trees: `L*U*x[q] = y[p]`
+function LinearAlgebra.ldiv!(A::Union{HLU, HChol}, y::AbstractVecOrMat)
+    H = A.factors # underlying data
+    _permute_rows!(y, rowperm(H))
+    ldiv!(A.L, y)
+    ldiv!(A.U, y)
+    return _invpermute_rows!(y, colperm(H))
 end
+
+_permute_rows!(y::AbstractVector, p) = permute!(y, p)
+_permute_rows!(Y::AbstractMatrix, p) = (Y .= Y[p, :])
+_invpermute_rows!(y::AbstractVector, p) = invpermute!(y, p)
+_invpermute_rows!(Y::AbstractMatrix, p) = (Y[p, :] = copy(Y); Y)

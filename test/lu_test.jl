@@ -61,4 +61,7 @@ end
     z = rand(n)
     M = Matrix(K)
     @test norm(F.L * (F.U * z) - M[F.p, F.q] * z) < 1.0e-6 * norm(M[F.p, F.q] * z)
+    # several right-hand sides
+    B = rand(n, 3)
+    @test norm(F \ B - M \ B) < 1.0e-6 * norm(M \ B)
 end
