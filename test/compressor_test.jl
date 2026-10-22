@@ -96,6 +96,8 @@ Random.seed!(1)
         comp = ACAWithRecompression(PartialACA(; rtol))
         R = comp(M, irange, jrange)
         @test norm(Matrix(R) - M) < rtol * norm(M)
+        # the tolerances can be given directly
+        @test ACAWithRecompression(; rtol) == comp
         # rank cap is respected
         r = 10
         comp = ACAWithRecompression(PartialACA(; rank = r))
@@ -224,5 +226,15 @@ end
         # the smallest singular value of rectangular entries
         @test HMatrices.min_svd_vals(SMatrix{3, 2}(1.0, 0, 0, 0, 2, 0)) ≈ 1
         @test HMatrices.min_svd_vals(SMatrix{2, 3}(1.0, 0, 0, 2, 0, 0)) ≈ 1
+        # recompression of matrix entries, through the equivalent scalar matrix
+        fro(X) = sqrt(sum(x -> norm(x)^2, X))
+        for rtol in (1.0e-4, 1.0e-8)
+            Ra = PartialACA(; rtol)(M)
+            Rw = ACAWithRecompression(; rtol)(M)
+            Rt = TSVD(; rtol)(M)
+            @test rank(Rw) < rank(Ra) && rank(Rt) == rank(Rw)
+            @test fro(Matrix(Rw) - M) < 5 * rtol * fro(M)
+            @test fro(Matrix(Rt) - M) < 5 * rtol * fro(M)
+        end
     end
 end

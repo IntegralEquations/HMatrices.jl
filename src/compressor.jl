@@ -350,10 +350,12 @@ end
 """
     struct TSVD
 
-Compression algorithm based on *a posteriori* truncation of an `SVD`. This is
-the optimal approximation in Frobenius norm; however, it also tends to be very
-expensive and thus should be used mostly for "small" matrices. The default `rtol`
-is the same as for [`PartialACA`](@ref).
+Compression algorithm based on *a posteriori* truncation of an `SVD`: the singular
+values `σₖ ≤ max(atol, rtol*σ₁)` are dropped, and at most `rank` are kept. This is the
+best approximation of its rank, and its error in the spectral norm is below the
+tolerance; note that [`PartialACA`](@ref) estimates its error in the Frobenius norm
+instead. It evaluates every entry of the block, so it should be used mostly for "small"
+matrices. The default `rtol` is the same as for [`PartialACA`](@ref).
 """
 Base.@kwdef struct TSVD <: AbstractCompressor
     atol::Float64 = 0
@@ -410,14 +412,20 @@ end
 """
     struct ACAWithRecompression
 
+    ACAWithRecompression(; atol, rank, rtol)
+
 A two-stage compressor that applies [`PartialACA`](@ref) followed by
-recompression via [`TSVD`](@ref). The ACA step produces a low-rank approximation
-quickly using partial pivoting; the subsequent SVD step can reduce the rank
-further, at the cost of a small additional computation.
+recompression via [`TSVD`](@ref), both with the tolerances `atol`, `rank` and `rtol`.
+The ACA step produces a low-rank approximation quickly using partial pivoting; the
+subsequent SVD step can reduce the rank further, at the cost of a small additional
+computation. The errors of the two steps add up, so the error can be up to twice the
+tolerance.
 """
 struct ACAWithRecompression <: AbstractCompressor
     aca::PartialACA
 end
+
+ACAWithRecompression(; kwargs...) = ACAWithRecompression(PartialACA(; kwargs...))
 
 function _recompress!(R::RkMatrix{T}, atol, rtol, rmax, bufs = nothing) where {T}
     m, n = size(R)
@@ -435,6 +443,51 @@ function _recompress!(R::RkMatrix{T}, atol, rtol, rmax, bufs = nothing) where {T
     R.A = QA * (F.U[:, 1:r] * Diagonal(F.S[1:r]))
     R.B = QB * F.V[:, 1:r]
     return R
+end
+
+# matrix entries: truncate the equivalent scalar matrix, whose rank is rounded up to a
+# multiple of the size of the entries
+function _recompress!(R::RkMatrix{S}, atol, rtol, rmax, bufs = nothing) where {S <: SMatrix}
+    q = size(S, 2)
+    Rs = RkMatrix(_scalar_matrix(R.A), _scalar_matrix(R.B))
+    _recompress!(Rs, atol, rtol, rmax > typemax(Int) ÷ q ? typemax(Int) : q * rmax)
+    R.A = _block_matrix(S, Rs.A)
+    R.B = _block_matrix(S, Rs.B)
+    return R
+end
+
+function compress!(M::Base.Matrix{S}, tsvd::TSVD) where {S <: SMatrix}
+    q = size(S, 2)
+    rmax = tsvd.rank > typemax(Int) ÷ q ? typemax(Int) : q * tsvd.rank
+    Rs = compress!(_scalar_matrix(M), TSVD(tsvd.atol, rmax, tsvd.rtol))
+    return RkMatrix(_block_matrix(S, Rs.A), _block_matrix(S, Rs.B))
+end
+
+"""
+    _scalar_matrix(A::Matrix{<:SMatrix})
+
+The scalar matrix whose blocks are the entries of `A`.
+"""
+function _scalar_matrix(A::Base.Matrix{S}) where {S <: SMatrix}
+    p, q = size(S)
+    out = Base.Matrix{eltype(S)}(undef, size(A, 1) * p, size(A, 2) * q)
+    for j in axes(A, 2), i in axes(A, 1)
+        out[((i - 1) * p + 1):(i * p), ((j - 1) * q + 1):(j * q)] = A[i, j]
+    end
+    return out
+end
+
+"""
+    _block_matrix(S, M)
+
+The matrix with entries of type `S` made of the blocks of `M`, whose columns are padded
+with zeros to a multiple of the size of `S`.
+"""
+function _block_matrix(::Type{S}, M) where {S <: SMatrix}
+    p, q = size(S)
+    m, k = size(M, 1) ÷ p, cld(size(M, 2), q)
+    Mp = [M zeros(eltype(M), size(M, 1), k * q - size(M, 2))]
+    return [S(view(Mp, ((i - 1) * p + 1):(i * p), ((j - 1) * q + 1):(j * q))) for i in 1:m, j in 1:k]
 end
 
 function (comp::ACAWithRecompression)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs = nothing)
