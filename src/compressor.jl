@@ -37,6 +37,15 @@ evaluated at every `i,j`. This is usually much faster than [`TSVD`](@ref), but
 due to the pivoting strategy the algorithm may fail in special cases, even when
 the underlying linear operator is of low rank.
 
+ACA estimates its error from the last cross only, which can stop it too early, or miss
+part of a block whose rows visited by ACA vanish on it (e.g. a double layer between two
+parallel sheets). Before stopping, it checks the residual at `max(samples*k, 20)`
+entries, where `k` is the current rank: half at pseudo-random positions, half in the
+rows and columns of the smallest norms in the factors, which the approximation leaves
+out; it continues from the largest residual if they show an error above the tolerance.
+`samples = 0` disables this check, which is also skipped when an entry costs a whole
+column (in the products of the factorizations).
+
 The default `rtol` is `sqrt(eps(R))`, where `R` is the real type underlying the
 entries of the compressed matrix, or only the accuracy attainable with `R` if `atol` or
 `rank` is given. An `rtol` smaller than that accuracy (`10eps(R)`) is raised to it, or
@@ -47,7 +56,11 @@ Base.@kwdef struct PartialACA <: AbstractCompressor
     atol::Float64 = 0
     rank::Int = typemax(Int)
     rtol::Union{Nothing, Float64} = nothing
-    PartialACA(atol, rank, rtol) = new(_check_tolerances(atol, rank, rtol)...)
+    samples::Int = 4
+    function PartialACA(atol, rank, rtol, samples)
+        samples >= 0 || throw(ArgumentError("samples = $samples must be nonnegative"))
+        return new(_check_tolerances(atol, rank, rtol)..., samples)
+    end
 end
 
 function (paca::PartialACA)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs = nothing)
@@ -62,13 +75,14 @@ function (paca::PartialACA)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs 
         paca.atol,
         paca.rank,
         paca.rtol,
+        paca.samples,
         istart - irange.start + 1,
         bufs,
     )
 end
 
 function (paca::PartialACA)(K, irange::AbstractRange, jrange::AbstractRange, bufs = nothing)
-    return _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol, 1, bufs)
+    return _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol, paca.samples, 1, bufs)
 end
 
 (paca::PartialACA)(K::AbstractMatrix) = paca(K, axes(K, 1), axes(K, 2))
@@ -78,15 +92,15 @@ struct ACABuffer{T}
     B::VectorOfVectors{T}
     I::BitVector
     J::BitVector
+    ra::Vector{Float64} # squared norms of the rows of `A`, `Inf` for the used rows
+    rb::Vector{Float64} # squared norms of the rows of `B`, `Inf` for the used columns
+    pa::Vector{Int}
+    pb::Vector{Int}
 end
 
-function ACABuffer(T, m = 0, n = 0)
-    return ACABuffer{T}(
-        VectorOfVectors(T, m),
-        VectorOfVectors(T, n),
-        BitVector(undef, m),
-        BitVector(undef, n),
-    )
+# every field is resized by each call of `_aca_partial`
+function ACABuffer(T)
+    return ACABuffer{T}(VectorOfVectors(T), VectorOfVectors(T), BitVector(), BitVector(), Float64[], Float64[], Int[], Int[])
 end
 
 struct ACAWithRecompressionBuffer{T}
@@ -107,7 +121,7 @@ function _get_scratch!(buf::ACAWithRecompressionBuffer{T}, k) where {T}
 end
 
 """
-    _aca_partial(K,irange,jrange,atol,rmax,rtol,istart=1)
+    _aca_partial(K, irange, jrange, atol, rmax, rtol, samples, istart, buffer = nothing)
 
 Internal function implementing the adaptive cross-approximation algorithm with
 partial pivoting. The returned `R::RkMatrix` provides an approximation to
@@ -115,14 +129,14 @@ partial pivoting. The returned `R::RkMatrix` provides an approximation to
 max(atol,rtol*|M|)`, but this inequality may fail to hold due to the various
 errors involved in estimating the error and |M|.
 """
-function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = nothing)
+function _aca_partial(K, irange, jrange, atol, rmax, rtol, samples, istart, buffer_ = nothing)
     Kadj = adjoint(K)
     T = eltype(K)
     rtol = _rtol(rtol, atol, rmax, T)
     m, n = length(irange), length(jrange)
     # maps local indices to indices of `K`
     ishift, jshift = first(irange) - 1, first(jrange) - 1
-    buffer = isnothing(buffer_) ? ACABuffer(T, m, n) : buffer_
+    buffer = isnothing(buffer_) ? ACABuffer(T) : buffer_
     A, B, I, J = buffer.A, buffer.B, buffer.I, buffer.J # extract the individual buffers for convenience
     # reset rather than assume empty buffers: a previous call may have thrown
     reset!(A)
@@ -133,68 +147,84 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
     resize!(J, n)
     fill!(I, true)
     fill!(J, true)
+    ra, rb = fill!(resize!(buffer.ra, m), 0), fill!(resize!(buffer.rb, n), 0)
     i = istart # initial pivot
     er = Inf
     est_norm = 0 # approximate norm of K[irange,jrange]
     r = 0 # current rank
     zero_rows = true # whether every rejected row of the residual was exactly zero
-    while er > max(atol, rtol * est_norm) && r < rmax
-        # remove index i from allowed row
-        I[i] = false
-        # pre-allocate row and column
-        a = newcol!(A)
-        A.k -= 1
-        b = newcol!(B)
-        B.k -= 1
-        # compute next row by row <-- K[i+ishift,jrange] - R[i,:]
-        getblock!(b, Kadj, jrange, i + ishift)
-        for k in 1:r
-            axpy!(-adjoint(A[k][i]), B[k], b)
-        end
-        j = _aca_partial_pivot(b, J)
-        δ = b[j]
-        σ = min_svd_vals(δ)
-        if σ > 0 # compute next col by col <-- K[irange,j+jshift] - R[:,j]
-            getblock!(a, K, irange, j + jshift)
+    exhausted = false # whether every row was used or rejected
+    while true
+        while er > max(atol, rtol * est_norm) && r < rmax
+            # remove index i from allowed row
+            I[i] = false
+            ra[i] = Inf
+            # pre-allocate row and column
+            a = newcol!(A)
+            A.k -= 1
+            b = newcol!(B)
+            B.k -= 1
+            # compute next row by row <-- K[i+ishift,jrange] - R[i,:]
+            getblock!(b, Kadj, jrange, i + ishift)
             for k in 1:r
-                axpy!(-adjoint(B[k][j]), A[k], a)
+                axpy!(-adjoint(A[k][i]), B[k], b)
+            end
+            j = _aca_partial_pivot(b, J)
+            δ = b[j]
+            σ = min_svd_vals(δ)
+            if σ > 0 # compute next col by col <-- K[irange,j+jshift] - R[:,j]
+                getblock!(a, K, irange, j + jshift)
+                for k in 1:r
+                    axpy!(-adjoint(B[k][j]), A[k], a)
+                end
+            end
+            # a pivot at the rounding level of its column means that row `i` of the
+            # residual is zero (up to rounding errors, e.g. when `K` is a product)
+            if σ == 0 || σ <= sqrt(eps(real(eltype(T)))) * maximum(norm, a)
+                @debug "zero pivot found during partial aca"
+                zero_rows &= iszero(σ)
+                # the residual column, when computed, points to the rows that remain
+                i = σ > 0 ? _aca_partial_pivot(a, I) : something(findfirst(I), -1)
+                if i == -1
+                    # ran out of candidate rows: every row has been evaluated, so the
+                    # approximation is exact if the rejected rows were exactly zero on the
+                    # remaining columns (e.g. a zero block); otherwise some were only small,
+                    # and ACA may have failed
+                    zero_rows || @warn "aca possibly failed on $irange × $jrange" maxlog = 1
+                    exhausted = true
+                    break
+                end
+            else # δ != 0
+                iδ = T <: AbstractArray ? pinv(δ; rtol = 1.0e-8) : inv(δ)
+                # b <-- b/δ
+                for k in eachindex(b)
+                    b[k] = b[k] * iδ
+                end
+                J[j] = false
+                rb[j] = Inf
+                # increase rank and push cross
+                r += 1
+                A.k += 1
+                B.k += 1
+                # estimate the error by || R_{k} - R_{k-1} || = ||a bᴴ||
+                er = sqrt(_frob2(a, b))
+                # estimate the norm by || K || ≈ || R_k ||
+                est_norm = _update_frob_norm(est_norm, A, B)
+                _add_abs2!(ra, a)
+                _add_abs2!(rb, b)
+                i = _aca_partial_pivot(a, I)
+                # no candidate row left: every row was used, so the approximation is exact
+                i == -1 && (exhausted = true; break)
+                @debug r, er, m, n
             end
         end
-        # a pivot at the rounding level of its column means that row `i` of the
-        # residual is zero (up to rounding errors, e.g. when `K` is a product)
-        if σ == 0 || σ <= sqrt(eps(real(eltype(T)))) * maximum(norm, a)
-            @debug "zero pivot found during partial aca"
-            zero_rows &= iszero(σ)
-            # the residual column, when computed, points to the rows that remain
-            i = σ > 0 ? _aca_partial_pivot(a, I) : something(findfirst(I), -1)
-            if i == -1
-                # ran out of candidate rows: every row has been evaluated, so the
-                # approximation is exact if the rejected rows were exactly zero on the
-                # remaining columns (e.g. a zero block); otherwise some were only small,
-                # and ACA may have failed
-                zero_rows || @warn "aca possibly failed on $irange × $jrange" maxlog = 1
-                break
-            end
-        else # δ != 0
-            iδ = T <: AbstractArray ? pinv(δ; rtol = 1.0e-8) : inv(δ)
-            # b <-- b/δ
-            for k in eachindex(b)
-                b[k] = b[k] * iδ
-            end
-            J[j] = false
-            # increase rank and push cross
-            r += 1
-            A.k += 1
-            B.k += 1
-            # estimate the error by || R_{k} - R_{k-1} || = ||a bᴴ||
-            er = sqrt(_frob2(a, b))
-            # estimate the norm by || K || ≈ || R_k ||
-            est_norm = _update_frob_norm(est_norm, A, B)
-            i = _aca_partial_pivot(a, I)
-            # no candidate row left: every row was used, so the approximation is exact
-            i == -1 && break
-            @debug r, er, m, n
-        end
+        # the error estimate only uses the last cross: check the residual at a few
+        # entries before stopping
+        (exhausted || r >= rmax || samples == 0 || !_can_sample(K)) && break
+        ns = max(samples * r, 20)
+        i = _aca_residual_sample(K, A, B, I, J, buffer, irange, jrange, ns, max(atol, rtol * est_norm), r)
+        i == -1 && break
+        er = oftype(er, Inf)
     end
     # copy from buffer to matrix and create Rk matrix
     R_ = RkMatrix(Matrix(A), Matrix(B))
@@ -202,6 +232,64 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
     reset!(A)
     reset!(B)
     return R_
+end
+
+# whether single entries of `K` are cheap, as needed by `_aca_residual_sample`
+_can_sample(K) = true
+
+"""
+    _aca_residual_sample(K, A, B, I, J, buffer, irange, jrange, ns, tol, r)
+
+Check the residual `K[irange, jrange] - A*Bᴴ` at `ns` entries, and return the unused row
+of the largest residual found if it shows an error above `tol`, and `-1` otherwise.
+
+Half of the entries are at pseudo-random positions, from which the Frobenius norm of the
+residual is estimated. The other half pair the unused rows of `A` and of `B` of the
+smallest norms (kept in `buffer.ra` and `buffer.rb`), which the approximation leaves
+out: an entry there more than 10 times above the average allowed by `tol` means that ACA
+missed part of the block.
+"""
+function _aca_residual_sample(K, A, B, I, J, buffer, irange, jrange, ns, tol, r)
+    m, n = length(irange), length(jrange)
+    out = Base.Matrix{eltype(K)}(undef, 1, 1)
+    function residual(i, j)
+        getblock!(out, K, irange[i]:irange[i], jrange[j]:jrange[j])
+        v = out[1]
+        for k in 1:length(A)
+            v -= A[k][i] * adjoint(B[k][j])
+        end
+        return norm(v)
+    end
+    nu = ns ÷ 2
+    seed = hash((first(irange), first(jrange), r))
+    s2 = 0.0
+    imax, vmax = -1, -1.0
+    for t in 1:nu
+        h = hash(t, seed)
+        i = Int(h % UInt(m)) + 1
+        j = Int((h >> 32) % UInt(n)) + 1
+        nv = residual(i, j)
+        s2 += nv^2
+        if nv > vmax && I[i]
+            imax, vmax = i, nv
+        end
+    end
+    # a large residual on used rows only (`imax == -1`) is left to the targeted entries
+    imax != -1 && sqrt(m * n * s2 / nu) > tol && return imax
+    nt = min(ns - nu, count(I), count(J))
+    rows = partialsortperm!(resize!(buffer.pa, m), buffer.ra, 1:nt)
+    cols = partialsortperm!(resize!(buffer.pb, n), buffer.rb, 1:nt)
+    for t in 1:nt
+        sqrt(m * n) * residual(rows[t], cols[t]) > 10 * tol && return rows[t]
+    end
+    return -1
+end
+
+function _add_abs2!(out, a)
+    for i in eachindex(out, a)
+        out[i] += sum(abs2, a[i])
+    end
+    return out
 end
 
 """
@@ -258,7 +346,7 @@ function min_svd_vals(A::SMatrix)
         return svdvals(A)[end]
     end
 end
-min_svd_vals(A::Any) = svdvals(A::Any)[end] # fallback
+min_svd_vals(A) = svdvals(A)[end] # fallback
 
 """
     _aca_partial_pivot(v,I)
@@ -383,7 +471,7 @@ function _truncation_rank(S, atol, rtol, rmax)
 end
 
 """
-    compress!(M::RkMatrix,tsvd::TSVD)
+    compress!(R::RkMatrix, tsvd::TSVD)
 
 Recompress the matrix `R` using a truncated svd of `R`. The implementation uses
 the `qr-svd` strategy to efficiently compute `svd(R)` when `rank(R) ≪

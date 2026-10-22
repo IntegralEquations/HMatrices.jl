@@ -63,6 +63,7 @@ Random.seed!(1)
             @test_throws ArgumentError PartialACA(; kw...)
             @test_throws ArgumentError TSVD(; kw...)
         end
+        @test_throws ArgumentError PartialACA(; samples = -1)
 
         # a buffer left in use by an exception can be reused
         buf = allocate_buffer(aca, T)

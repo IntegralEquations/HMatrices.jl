@@ -197,6 +197,9 @@ function getblock!(out, L::MulLinearOp, irange, j::Int)
     return getcol!(out, L, j)
 end
 
+# an entry costs a column
+_can_sample(::MulLinearOp) = false
+
 # a block of whole columns, e.g. for a `TSVD` of the product
 function getblock!(out, L::MulLinearOp, irange, jrange::AbstractVector)
     for (jloc, j) in enumerate(jrange)

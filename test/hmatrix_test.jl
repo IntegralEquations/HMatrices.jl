@@ -206,6 +206,34 @@ end
     @test norm(Matrix(assemble_hmatrix(Kp; rtol = 1.0e-8)) - M) < 1.0e-7 * norm(M)
 end
 
+@testset "ACA checks its residual before stopping" begin
+    # the largest relative error of the compressed blocks of `K` on the points `X`
+    function worst(K, X, comp)
+        H = assemble_hmatrix(K, HMatrices.ClusterTree(X), HMatrices.ClusterTree(X); comp, threads = false)
+        M = Matrix(K)[HMatrices.loc2glob(HMatrices.rowtree(H)), HMatrices.loc2glob(HMatrices.coltree(H))]
+        blocks = filter(HMatrices.isadmissible, HMatrices.leaves(H))
+        return maximum(blocks) do l
+            Ml = M[HMatrices.rowrange(l), HMatrices.colrange(l)]
+            return norm(Matrix(HMatrices.data(l)) - Ml) / norm(Ml)
+        end
+    end
+    rtol = 1.0e-6
+    # without the check, ACA stops too early on some blocks
+    S = single_layer_sphere(1500)
+    @test worst(S, S.X, HMatrices.PartialACA(; rtol, samples = 0)) > 3 * rtol
+    @test worst(S, S.X, HMatrices.PartialACA(; rtol)) < 3 * rtol
+    # double layer between two parallel sheets: the kernel vanishes between points of a
+    # sheet, so a block is [0 M₁₂; M₂₁ 0] and the rows visited by ACA miss one half
+    p = 45
+    t = ((1:p) .- 0.5) ./ p
+    X = vec([SVector(u, v, z) for u in t, v in t, z in (0.0, 0.2)])
+    dlp = (i, j) -> i == j ? 0.0 : (X[i][3] - X[j][3]) / (4π * p^2 * norm(X[i] - X[j])^3)
+    D = KernelMatrix(dlp, 1:length(X), 1:length(X))
+    rtol = 1.0e-4
+    @test worst(D, X, HMatrices.PartialACA(; rtol, samples = 0)) > 0.5
+    @test worst(D, X, HMatrices.PartialACA(; rtol)) < 3 * rtol
+end
+
 @testset "Rectangular, from points" begin
     # different points for the rows and the columns, in the user ordering
     S = single_layer_sphere(1200)
