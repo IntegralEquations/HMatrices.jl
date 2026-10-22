@@ -7,7 +7,6 @@ using LinearAlgebra
 using Statistics: median, mean
 using Printf
 using RecipesBase
-using Distributed
 using Base.Threads
 using SparseArrays
 
@@ -21,7 +20,8 @@ size `length(irange) × length(jrange)`.
 
 A default implementation exists which relies on `getindex(K,i,j)`, but this
 method can be overloaded for better performance if e.g. a vectorized way of
-computing a block is available.
+computing a block is available. The indices are in the ordering of `K`, and
+`irange`/`jrange` can be any vectors of integers, not only ranges.
 """
 function getblock!(out, K, irange_, jrange_)
     irange = irange_ isa Colon ? axes(K, 1) : irange_
@@ -39,21 +39,6 @@ function getblock!(out, Kadj::Adjoint, irange_, j::Int)
     return out .= conj.(out)
 end
 
-"""
-    use_threads()::Bool
-
-Default choice of whether threads will be used throughout the package.
-"""
-use_threads() = true
-
-"""
-    use_global_index()::Bool
-
-Default choice of whether operations will use the global indexing system
-throughout the package.
-"""
-use_global_index() = true
-
 include("utils.jl")
 include("hyperrectangle.jl")
 include("clustertree.jl")
@@ -62,30 +47,32 @@ include("kernelmatrix.jl")
 include("rkmatrix.jl")
 include("compressor.jl")
 include("hmatrix.jl")
-include("dhmatrix.jl")
 include("multiplication.jl")
 include("triangular.jl")
 include("lu.jl")
 include("cholesky.jl")
 
-export ClusterTree,
-    CardinalitySplitter,
+export assemble_hmatrix, HMatrix, KernelMatrix, AbstractKernelMatrix, compression_ratio
+
+# lower-level interface: cluster trees, admissibility conditions and compressors
+public ClusterTree,
+    AbstractSplitter,
     GeometricSplitter,
+    CardinalitySplitter,
+    PrincipalComponentSplitter,
     HyperRectangle,
-    # abstract types
-    AbstractKernelMatrix,
-    # types
-    HMatrix,
-    KernelMatrix,
     StrongAdmissibilityStd,
     WeakAdmissibilityStd,
+    AbstractCompressor,
     PartialACA,
     TSVD,
     ACAWithRecompression,
-    ACAWithRecompressionBuffer,
-    # functions
     allocate_buffer,
-    compression_ratio,
-    assemble_hmatrix
+    getblock!,
+    rowperm,
+    colperm,
+    center,
+    rowelements,
+    colelements
 
 end

@@ -1,5 +1,9 @@
 using SafeTestsets
 
+@safetestset "API" begin
+    include("api_test.jl")
+end
+
 @safetestset "HyperRectangle" begin
     include("hyperrectangle_test.jl")
 end
@@ -34,8 +38,4 @@ end
 
 @safetestset "Cholesky" begin
     include("cholesky_test.jl")
-end
-
-@safetestset "DHMatrix" begin
-    include("dhmatrix_test.jl")
 end

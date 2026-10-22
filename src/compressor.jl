@@ -2,9 +2,10 @@
     abstract type AbstractCompressor
 
 Types used to compress matrices. A compressor `comp` is called as `comp(K,
-irange, jrange[, buf])` and returns an [`RkMatrix`](@ref) approximating
+irange, jrange, buf)` and returns an [`RkMatrix`](@ref) approximating
 `K[irange, jrange]`, where `buf` is a workspace created by
-[`allocate_buffer`](@ref)`(comp, T)` (`nothing` by default).
+[`allocate_buffer`](@ref)`(comp, T)` (`nothing` by default). During the assembly of an
+[`HMatrix`](@ref), it is called with the index ranges of each admissible block.
 """
 abstract type AbstractCompressor end
 
@@ -16,6 +17,7 @@ used to generate an [`RkMatrix`](@ref) from a matrix-like object `M` as follows:
 
 ```jldoctest
 using LinearAlgebra
+using HMatrices: PartialACA
 rtol = 1e-6
 comp = PartialACA(;rtol)
 A = rand(10,2)
@@ -36,12 +38,15 @@ due to the pivoting strategy the algorithm may fail in special cases, even when
 the underlying linear operator is of low rank.
 
 The default `rtol` is `sqrt(eps(R))`, where `R` is the real type underlying the
-entries of the compressed matrix.
+entries of the compressed matrix, or only the accuracy attainable with `R` if `atol` or
+`rank` is given. An `rtol` smaller than that accuracy (`10eps(R)`) is raised to it, or
+throws an `ArgumentError` if it is positive, so the rank of a block can stay below
+`rank` when the rest of the block is at the level of rounding errors.
 """
 Base.@kwdef struct PartialACA <: AbstractCompressor
     atol::Float64 = 0
     rank::Int = typemax(Int)
-    rtol::Union{Nothing, Float64} = atol > 0 || rank < typemax(Int) ? 0 : nothing
+    rtol::Union{Nothing, Float64} = nothing
 end
 
 function (paca::PartialACA)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs = nothing)
@@ -112,7 +117,7 @@ errors involved in estimating the error and |M|.
 function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = nothing)
     Kadj = adjoint(K)
     T = eltype(K)
-    rtol = _rtol(rtol, T)
+    rtol = _rtol(rtol, atol, rmax, T)
     m, n = length(irange), length(jrange)
     # maps local indices to indices of `K`
     ishift, jshift = first(irange) - 1, first(jrange) - 1
@@ -129,6 +134,7 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
     er = Inf
     est_norm = 0 # approximate norm of K[irange,jrange]
     r = 0 # current rank
+    zero_rows = true # whether every row of the residual evaluated so far is exactly zero
     while er > max(atol, rtol * est_norm) && r < rmax
         # remove index i from allowed row
         I[i] = false
@@ -142,6 +148,7 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
         for k in 1:r
             axpy!(-adjoint(A[k][i]), B[k], b)
         end
+        zero_rows &= iszero(b)
         j = _aca_partial_pivot(b, J)
         δ = b[j]
         σ = min_svd_vals(δ)
@@ -157,15 +164,10 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
             @debug "zero pivot found during partial aca"
             i = findfirst(x -> x == true, I)
             if isnothing(i)
-                # ran out of candidate rows. Good case: the matrix is zero. Bad
-                # case: aca failed
-                if K isa KernelMatrix
-                    all(j -> iszero(K[first(irange), j]), jrange) &&
-                        all(i -> iszero(K[i, first(jrange)]), irange) ||
-                        @warn "aca possibly failed on $irange × $jrange" maxlog = 1
-                else
-                    @warn "aca possibly failed on $irange × $jrange" maxlog = 1
-                end
+                # ran out of candidate rows: every row has been evaluated, so the
+                # approximation is exact if all residual rows were exactly zero (e.g. a
+                # zero block); otherwise some were only small, and ACA may have failed
+                zero_rows || @warn "aca possibly failed on $irange × $jrange" maxlog = 1
                 break
             end
         else # δ != 0
@@ -257,15 +259,21 @@ function _aca_partial_pivot(v, J)
 end
 
 """
-    _rtol(rtol, T)
+    _rtol(rtol, atol, rank, T)
 
-The relative tolerance used to compress a matrix with entries of type `T`: `rtol`,
-or `sqrt(eps(R))` if `rtol` is `nothing`, where `R` is the real type underlying `T`.
-Throw an `ArgumentError` if `rtol` is below the accuracy attainable with `R`.
+The relative tolerance used to compress a matrix with entries of type `T`, where `R` is
+the real type underlying `T`. If `rtol` is `nothing`, it is `sqrt(eps(R))`, or the
+accuracy attainable with `R` (`10eps(R)`) if `atol` or `rank` is given. Throw an
+`ArgumentError` if `rtol` is below that accuracy.
+
+An `rtol` of zero is raised to that accuracy, so that an `atol` too small for a block
+does not compress it to full rank.
 """
-function _rtol(rtol, T)
+function _rtol(rtol, atol, rank, T)
     R = real(eltype(T))
-    isnothing(rtol) && return sqrt(eps(R))
+    if isnothing(rtol)
+        return atol > 0 || rank < typemax(Int) ? 10 * eps(R) : sqrt(eps(R))
+    end
     # the error of the compressors stagnates at a few `eps(R)`; below that the
     # stopping criterion is never met and the blocks are compressed to full rank
     0 < rtol < 10 * eps(R) && throw(
@@ -273,7 +281,7 @@ function _rtol(rtol, T)
             "rtol = $rtol is below the accuracy attainable with $R (eps = $(eps(R))); use rtol ≥ $(10 * eps(R))",
         ),
     )
-    return rtol
+    return max(rtol, 10 * eps(R))
 end
 
 function _aca_partial_initial_pivot(rowtree)
@@ -306,16 +314,10 @@ is the same as for [`PartialACA`](@ref).
 Base.@kwdef struct TSVD <: AbstractCompressor
     atol::Float64 = 0
     rank::Int = typemax(Int)
-    rtol::Union{Nothing, Float64} = atol > 0 || rank < typemax(Int) ? 0 : nothing
+    rtol::Union{Nothing, Float64} = nothing
 end
 
-function (tsvd::TSVD)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs = nothing)
-    irange = index_range(rowtree)
-    jrange = index_range(coltree)
-    return tsvd(K, irange, jrange)
-end
-
-function (tsvd::TSVD)(K, irange::UnitRange, jrange::UnitRange)
+function (tsvd::TSVD)(K, irange::AbstractRange, jrange::AbstractRange, buf = nothing)
     M = K[irange, jrange]
     return compress!(M, tsvd)
 end
@@ -325,7 +327,7 @@ end
 # number of singular values `S` (sorted decreasingly) above the tolerance, at most
 # `rmax` (zero if they are all below the tolerance)
 function _truncation_rank(S, atol, rtol, rmax)
-    rtol = _rtol(rtol, eltype(S))
+    rtol = _rtol(rtol, atol, rmax, eltype(S))
     isempty(S) && return 0
     tol = max(atol, rtol * S[1])
     return min(count(>(tol), S), rmax)
@@ -392,6 +394,7 @@ end
 
 function (comp::ACAWithRecompression)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs = nothing)
     aca_buf = isnothing(bufs) ? nothing : bufs.aca
+    # the method of `PartialACA` with trees chooses the first pivot from the geometry
     R = comp.aca(K, rowtree, coltree, aca_buf)
     return _recompress!(R, comp.aca.atol, comp.aca.rtol, comp.aca.rank, bufs)
 end
@@ -403,6 +406,18 @@ function (comp::ACAWithRecompression)(K, irange::AbstractRange, jrange::Abstract
 end
 
 (comp::ACAWithRecompression)(K::AbstractMatrix) = comp(K, axes(K, 1), axes(K, 2))
+
+"""
+    _compress(comp, K, rowtree, coltree, buf)
+
+Compress the block of `K` with rows in `rowtree` and columns in `coltree`. Calls
+`comp(K, irange, jrange, buf)` with the index ranges of the trees, except for compressors
+that use the geometry of the clusters.
+"""
+function _compress(comp, K, rowtree, coltree, buf)
+    return comp(K, index_range(rowtree), index_range(coltree), buf)
+end
+_compress(comp::Union{PartialACA, ACAWithRecompression}, K, rowtree, coltree, buf) = comp(K, rowtree, coltree, buf)
 
 """
     allocate_buffer(comp, T)

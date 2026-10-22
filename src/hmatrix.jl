@@ -67,9 +67,32 @@ const HTriangular = Union{HLowerTriangular, HUpperTriangular}
 # parentnode. Ducktype and hope for the best.
 hasdata(H) = !isnothing(data(parent(H)))
 isroot(H) = parentnode(H) === H
+
+# operations in the user ordering need the permutations of the whole matrix
+function _checkroot(H)
+    isroot(parent(H)) ||
+        throw(ArgumentError("this operation is only defined on a whole `HMatrix`, not on one of its blocks"))
+    return H
+end
 rowrange(H) = index_range(rowtree(H))
 colrange(H) = index_range(coltree(H))
+"""
+    rowperm(H)
+
+The permutation of the rows of the whole matrix into the ordering in which it is stored:
+for the root `H` of an `HMatrix`, the stored row `i` is the row `rowperm(H)[i]` of the
+matrix approximated by `H`. For a block of `H`, it is the permutation of the whole matrix
+(the rows of the block are `rowperm(H)[rowrange(H)]`).
+
+The returned vector belongs to the cluster tree and must not be modified.
+"""
 rowperm(H) = loc2glob(rowtree(H))
+
+"""
+    colperm(H)
+
+Like [`rowperm`](@ref), for the columns of `H`.
+"""
 colperm(H) = loc2glob(coltree(H))
 pivot(H) = (rowrange(H).start, colrange(H).start)
 offset(H) = pivot(H) .- 1
@@ -163,15 +186,24 @@ function _show(io, hmat, allow_empty = false)
 end
 
 """
-    Matrix(H::HMatrix;global_index=true)
+    Matrix(H::HMatrix)
 
-Convert `H` to a `Matrix`. If `global_index=true` (the default), the entries are
-given in the global indexing system (see [`HMatrix`](@ref) for more
-information); otherwise the *local* indexing system induced by the row and
-columns trees are used.
+Convert `H` to a dense `Matrix`, in the ordering of the points used to assemble it.
 """
-Base.Matrix(hmat::HTypes; global_index = true) = Matrix{eltype(hmat)}(hmat; global_index)
-function Base.Matrix{T}(hmat::HTypes; global_index) where {T}
+Base.Matrix(hmat::HTypes) = Matrix{eltype(hmat)}(hmat)
+function Base.Matrix{T}(hmat::HTypes) where {T}
+    _checkroot(hmat)
+    M = _tree_matrix(hmat, T)
+    return M[invperm(rowperm(hmat)), invperm(colperm(hmat))]
+end
+
+"""
+    _tree_matrix(H, T = eltype(H))
+
+The dense `Matrix{T}` of `H` in the ordering of its cluster trees, i.e. the ordering in
+which `H` is stored.
+"""
+function _tree_matrix(hmat, T = eltype(hmat))
     M = zeros(T, size(hmat)...)
     piv = pivot(hmat)
     for leaf in leaves(hmat)
@@ -179,71 +211,95 @@ function Base.Matrix{T}(hmat::HTypes; global_index) where {T}
         jrange = colrange(leaf) .- piv[2] .+ 1
         M[irange, jrange] = Matrix(data(leaf))
     end
-    if global_index
-        P = PermutedMatrix(M, invperm(rowperm(hmat)), invperm(colperm(hmat)))
-        return Matrix(P)
-    else
-        return M
-    end
+    return M
 end
 
 """
-    assemble_hmatrix([T,], K, rowtree, coltree;
-        adm=StrongAdmissibilityStd(),
-        comp=PartialACA(),
-        threads=true,
-        distributed=false,
-        global_index=true)
+    assemble_hmatrix(K, X, Y = X; atol = 0, rtol, rank, eta = 3, nmax = 50, threads = true)
 
-Main routine for assembling a hierarchical matrix. The argument `K` represents
-the matrix to be approximated, `rowtree` and `coltree` are tree structure
-partitioning the row and column indices, respectively, `adm` can be called on a
-node of `rowtree` and a node of `coltree` to determine if the block is
-compressible, and `comp` is a function/functor which can compress admissible
-blocks.
+Approximate the matrix `K` by an [`HMatrix`](@ref), where `X` and `Y` are the points
+(`SVector`s, or elements with a [`center`](@ref)) associated with the rows and the
+columns of `K`. The points are only used to cluster the indices, and are not modified.
 
-It is assumed that `K` supports `getindex(K,i,j)`, and that `comp` can be called
-as `comp(K,irange::UnitRange,jrange::UnitRange)` to produce a compressed version
-of `K[irange,jrange]` in the form of an [`RkMatrix`](@ref).
+- `K` can be any `AbstractMatrix` (e.g. a [`KernelMatrix`](@ref)), with scalar or
+  `SMatrix` entries; [`getblock!`](@ref) can be overloaded to compute its blocks faster.
+  If `K` is a `Hermitian`, only its upper triangle is assembled and a `Hermitian`
+  `HMatrix` is returned (this requires `Y === X`).
+- `atol`, `rtol` and `rank` control the compression of the low-rank blocks (see
+  [`PartialACA`](@ref)); by default `rtol = sqrt(eps)` of the real type of the entries,
+  or only the accuracy attainable with that type if `atol` or `rank` is given.
+- Two clusters are compressed if `min(diameters) < eta * distance`; `eta = Inf`
+  compresses every pair of disjoint clusters (weak admissibility).
+- `nmax` is the maximum number of points in a leaf of the cluster trees.
 
-The type parameter `T` is used to specify the type of the entries of the matrix,
-by default is inferred from `K` using `eltype(K)`.
+Every operation on the result (products, `Matrix`, factorizations) uses the ordering of
+`X` and `Y`.
 """
 function assemble_hmatrix(
-        ::Type{T},
-        K,
-        rowtree,
-        coltree;
-        adm = StrongAdmissibilityStd(3),
-        comp = PartialACA(),
-        global_index = use_global_index(),
-        threads = use_threads(),
-        distributed = false,
-    ) where {T}
-    return if distributed
-        _assemble_hmat_distributed(K, rowtree, coltree; adm, comp, global_index, threads)
-    else
-        # create first the structure. No parallelism used as this should be light.
-        hmat_ = HMatrix{T}(rowtree, coltree, adm)
-        # wrap hmat in a Hermitian if needed
-        hmat = if K isa Hermitian
-            Hermitian(hmat_)
-        else
-            hmat_
-        end
-        # if needed permute kernel entries into indexing induced by trees
-        global_index && (K = PermutedMatrix(K, loc2glob(rowtree), loc2glob(coltree)))
-        # now assemble the data in the blocks
-        if threads
-            _assemble_threads!(hmat, K, comp)
-        else
-            _assemble_cpu!(hmat, K, comp, allocate_buffer(comp, T))
-        end
-    end
+        K::AbstractMatrix,
+        X::AbstractVector,
+        Y::AbstractVector = X;
+        atol = 0,
+        rtol = nothing,
+        rank = typemax(Int),
+        eta = 3,
+        nmax = 50,
+        threads = true,
+    )
+    size(K) == (length(X), length(Y)) ||
+        throw(DimensionMismatch("the matrix is of size $(size(K)), but there are $(length(X)) row points and $(length(Y)) column points"))
+    K isa Hermitian && Y !== X &&
+        throw(ArgumentError("a `Hermitian` matrix needs the same points for its rows and columns"))
+    splitter = GeometricSplitter(; nmax)
+    # `map` copies the points, which the trees then permute
+    Xclt = ClusterTree(map(x -> float(center(x)), X), splitter; copy_elements = false)
+    Yclt = Y === X ? Xclt : ClusterTree(map(y -> float(center(y)), Y), splitter; copy_elements = false)
+    adm = StrongAdmissibilityStd(; eta)
+    comp = PartialACA(; atol, rtol, rank)
+    return assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads)
 end
 
-function assemble_hmatrix(K::AbstractMatrix, args...; kwargs...)
-    return assemble_hmatrix(eltype(K), K, args...; kwargs...)
+"""
+    assemble_hmatrix(K, rowtree::ClusterTree, coltree::ClusterTree;
+        adm = StrongAdmissibilityStd(), comp = PartialACA(), threads = true)
+
+Lower-level version of [`assemble_hmatrix`](@ref) with given cluster trees, admissibility
+condition `adm` (called on a node of `rowtree` and a node of `coltree` to decide if the
+block is compressed) and compressor `comp` (see [`AbstractCompressor`](@ref)).
+"""
+function assemble_hmatrix(
+        K::AbstractMatrix,
+        rowtree::ClusterTree,
+        coltree::ClusterTree;
+        adm = StrongAdmissibilityStd(),
+        comp = PartialACA(),
+        threads = true,
+    )
+    size(K) == (length(rowtree), length(coltree)) ||
+        throw(DimensionMismatch("the matrix is of size $(size(K)), but the trees have $(length(rowtree)) and $(length(coltree)) elements"))
+    T = eltype(K)
+    isconcretetype(T) || throw(
+        ArgumentError(
+            "the element type of the matrix, $T, is not concrete; for a `KernelMatrix`, make sure that the kernel function is type stable (e.g. that it does not capture non-constant global variables)",
+        ),
+    )
+    # create first the structure. No parallelism used as this should be light.
+    hmat_ = HMatrix{T}(rowtree, coltree, adm)
+    # wrap hmat in a Hermitian if needed
+    hmat = if K isa Hermitian
+        Hermitian(hmat_)
+    else
+        hmat_
+    end
+    # the blocks are assembled in the ordering of the trees
+    K = PermutedMatrix(K, loc2glob(rowtree), loc2glob(coltree))
+    # now assemble the data in the blocks
+    if threads
+        _assemble_threads!(hmat, K, comp)
+    else
+        _assemble_cpu!(hmat, K, comp, allocate_buffer(comp, T))
+    end
+    return hmat
 end
 
 """
@@ -354,7 +410,7 @@ function _assemble_threads!(hmat, K, comp)
 end
 
 function _assemble_sparse_block!(hmat, K, comp, bufs)
-    return hmat.data = comp(K, hmat.rowtree, hmat.coltree, bufs)
+    return hmat.data = _compress(comp, K, hmat.rowtree, hmat.coltree, bufs)
 end
 
 function _assemble_dense_block!(hmat, K)
@@ -481,6 +537,15 @@ end
 
 # add a uniform scaling to an HMatrix return an HMatrix
 function LinearAlgebra.axpy!(a, X::UniformScaling, Y::HMatrix)
+    LinearAlgebra.checksquare(Y)
+    # the identity is diagonal in the stored ordering only if rows and columns are
+    # permuted in the same way
+    rowperm(Y) == colperm(Y) || return axpy!(a, sparse(X, size(Y)...), Y)
+    return _axpy_diagonal!(a, X, Y)
+end
+
+# add `a*X` to the diagonal of the stored blocks of `Y`
+function _axpy_diagonal!(a, X::UniformScaling, Y::HMatrix)
     @assert isclean(Y)
     if hasdata(Y)
         d = data(Y)
@@ -492,7 +557,7 @@ function LinearAlgebra.axpy!(a, X::UniformScaling, Y::HMatrix)
     else
         n = min(blocksize(Y)...)
         for i in 1:n
-            axpy!(a, X, children(Y)[i, i])
+            _axpy_diagonal!(a, X, children(Y)[i, i])
         end
     end
     return Y
@@ -507,12 +572,9 @@ Base.:(+)(X::HMatrix, Y::UniformScaling) = Y + X
 function LinearAlgebra.axpy!(
         a,
         X::AbstractSparseArray{<:Any, <:Any, 2},
-        Y::HMatrix;
-        global_index = true,
+        Y::HMatrix,
     )
-    rp = loc2glob(rowtree(Y))
-    cp = loc2glob(coltree(Y))
-    global_index && (X = permute(X, rp, cp))
+    X = permute(X, rowperm(Y), colperm(Y))
     size_start = Base.summarysize(Y)
     _axpy!(a, X, Y)
     size_end = Base.summarysize(Y)

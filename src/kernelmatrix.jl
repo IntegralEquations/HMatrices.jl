@@ -3,14 +3,12 @@
 
 Interface for abstract matrices represented through a kernel function `f`, target
 elements `X`, and source elements `Y`. The matrix entry
-`i,j` is given by `f(X[i],Y[j])`. Concrete subtypes should implement at least
+`i,j` is given by `f(X[i],Y[j])`. Concrete subtypes should implement
+`Base.size`, `Base.getindex(K, i::Int, j::Int)`, and [`rowelements`](@ref) and
+[`colelements`](@ref), whose elements have a [`center`](@ref) used to cluster them.
 
-    `Base.getindex(K::AbstractKernelMatrix,i::Int,j::Int)`
-
-If a more efficient implementation of `getindex(K,I::UnitRange,I::UnitRange)`,
-`getindex(K,I::UnitRange,j::Int)` and `getindex(adjoint(K),I::UnitRange,j::Int)`
-is available (e.g. with SIMD vectorization), implementing such methods can
-improve the speed of assembling an [`HMatrix`](@ref).
+Implementing [`getblock!`](@ref) (e.g. with SIMD vectorization) can improve the speed
+of assembling an [`HMatrix`](@ref).
 """
 abstract type AbstractKernelMatrix{T} <: AbstractMatrix{T} end
 
@@ -39,7 +37,18 @@ end
 Base.size(K::KernelMatrix) = length(K.X), length(K.Y)
 Base.getindex(K::KernelMatrix, i::Int, j::Int) = K.f(K.X[i], K.Y[j])
 
+"""
+    rowelements(K::AbstractKernelMatrix)
+
+The elements associated with the rows of `K`.
+"""
 rowelements(K::KernelMatrix) = K.X
+
+"""
+    colelements(K::AbstractKernelMatrix)
+
+The elements associated with the columns of `K`.
+"""
 colelements(K::KernelMatrix) = K.Y
 kernel(K::KernelMatrix) = K.f
 
@@ -49,26 +58,15 @@ function KernelMatrix(f, X, Y)
 end
 
 """
-    assemble_hmatrix(K::AbstractKernelMatrix[; atol, rank, rtol, kwargs...])
+    assemble_hmatrix(K::AbstractKernelMatrix; kwargs...)
+    assemble_hmatrix(Hermitian(K::AbstractKernelMatrix); kwargs...)
 
-Construct an approximation of `K` as an [`HMatrix`](@ref) using the partial ACA
-algorithm for the low rank blocks. The `atol`, `rank`, and `rtol` optional
-arguments are passed to the [`PartialACA`](@ref) constructor, and the remaining
-keyword arguments are forwarded to the main `assemble_hmatrix` function.
+Approximate `K` by an [`HMatrix`](@ref), clustering the elements of `K` by their
+[`center`](@ref). The keyword arguments are those of [`assemble_hmatrix`](@ref).
 """
-function assemble_hmatrix(
-        K::AbstractKernelMatrix;
-        atol = 0,
-        rank = typemax(Int),
-        rtol = nothing,
-        kwargs...,
-    )
-    # an explicit `rtol = nothing` would override the default of `PartialACA`
-    comp = isnothing(rtol) ? PartialACA(; atol, rank) : PartialACA(; atol, rank, rtol)
-    adm = StrongAdmissibilityStd()
-    X = map(center, rowelements(K))
-    Y = map(center, colelements(K))
-    Xclt = ClusterTree(X)
-    Yclt = ClusterTree(Y)
-    return assemble_hmatrix(K, Xclt, Yclt; adm, comp, kwargs...)
+function assemble_hmatrix(K::AbstractKernelMatrix; kwargs...)
+    return assemble_hmatrix(K, rowelements(K), colelements(K); kwargs...)
+end
+function assemble_hmatrix(K::Hermitian{<:Any, <:AbstractKernelMatrix}; kwargs...)
+    return assemble_hmatrix(K, rowelements(parent(K)); kwargs...)
 end

@@ -1,5 +1,6 @@
 using Test
 using HMatrices
+using HMatrices: ClusterTree, CardinalitySplitter, StrongAdmissibilityStd, PartialACA, ACAWithRecompression
 using LinearAlgebra
 using Random
 using StaticArrays
@@ -23,15 +24,21 @@ Yclt = ClusterTree(Y, splitter)
 adm = StrongAdmissibilityStd(3)
 comp = PartialACA(; atol = 1.0e-10)
 for threads in (false, true)
-    H = assemble_hmatrix(Hermitian(K), Xclt, Yclt; adm, comp, threads, distributed = false)
+    H = assemble_hmatrix(Hermitian(K), Xclt, Yclt; adm, comp, threads)
     hchol = cholesky(H; atol = 1.0e-10)
     y = rand(m)
     M = Matrix(K)
     exact = M \ y
     approx = hchol \ y
+    B = rand(m, 3)
+    @test norm(hchol \ B - M \ B) < 1.0e-7 * norm(M \ B)
+    b = rand(ComplexF64, m)
+    @test norm(hchol \ b - M \ b) < 1.0e-7 * norm(M \ b)
     @test norm(exact - approx) < 1.0e-7 * norm(exact)
     # test multiplication by checking if the solution is correct
-    @test hchol.L * (hchol.U * approx) ≈ y
+    # the factors act in the ordering of the tree
+    @test hchol.L * (hchol.U * approx[hchol.p]) ≈ y[hchol.p]
+    @test propertynames(hchol) == (:L, :U, :p)
     @test startswith(sprint(show, hchol.L), "Lower triangular part of Hermitian HMatrix")
     @test startswith(sprint(show, hchol.U), "Upper triangular part of Hermitian HMatrix")
     # a compressor with its own buffer type

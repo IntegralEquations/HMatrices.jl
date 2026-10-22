@@ -6,9 +6,15 @@ function Base.getproperty(chol::HChol, s::Symbol)
         return adjoint(UpperTriangular(H))
     elseif s == :U
         return UpperTriangular(H)
+    elseif s == :p
+        return rowperm(H)
     else
         return getfield(chol, s)
     end
+end
+
+function Base.propertynames(::HChol, private::Bool = false)
+    return (:L, :U, :p, (private ? fieldnames(Cholesky) : ())...)
 end
 
 function Base.show(io::IO, ::MIME"text/plain", chol::HChol)
@@ -21,8 +27,14 @@ end
 
 Hierarchical Cholesky factorization of `M`, using `comp` to generate the compressed
 blocks during the multiplication routines.
+
+`F \\ b` solves in the ordering of the points used to assemble `M`. The factors `F.L`
+and `F.U` are stored in the ordering of the cluster tree, with
+`F.L * (F.U * x) ≈ Matrix(M)[F.p, F.p] * x`; products and solves with them act in that ordering.
+
+The factorization is currently serial: `threads` is accepted but not used.
 """
-function LinearAlgebra.cholesky!(M::HermitianHMatrix, compressor; threads = use_threads())
+function LinearAlgebra.cholesky!(M::HermitianHMatrix, compressor; threads = true)
     # perform the cholesky decomposition of M in place
     _cholesky!(M, compressor, _buffer_channel(compressor, eltype(M)))
     # wrap the result in the cholesky structure
@@ -30,12 +42,12 @@ function LinearAlgebra.cholesky!(M::HermitianHMatrix, compressor; threads = use_
 end
 
 """
-    cholesky!(M::HMatrix; atol, rank, rtol, threads = use_threads())
+    cholesky!(M::HMatrix; atol, rank, rtol, threads = true)
 
 Hierarchical Cholesky factorization of `M`, using the
 `PartialACA(; atol, rank, rtol)` compressor.
 """
-function LinearAlgebra.cholesky!(M::HermitianHMatrix; threads = use_threads(), kwargs...)
+function LinearAlgebra.cholesky!(M::HermitianHMatrix; threads = true, kwargs...)
     return cholesky!(M, PartialACA(; kwargs...); threads)
 end
 
@@ -66,7 +78,7 @@ function _cholesky!(M::HermitianHMatrix, compressor, bufs = nothing)
             end
             for j in (i + 1):m
                 for k in (i + 1):n
-                    hmul!(
+                    _hmul_tree!(
                         chdM[j, k],
                         adjoint(chdM[i, j]),
                         chdM[i, k],
@@ -82,19 +94,17 @@ function _cholesky!(M::HermitianHMatrix, compressor, bufs = nothing)
     return M
 end
 
-# solve with the factors `L*U` of an LU or Cholesky factorization
-function LinearAlgebra.ldiv!(A::Union{HLU, HChol}, y::AbstractVector; global_index = true)
-    p = A.factors # underlying data
-    ctree = coltree(p)
-    rtree = rowtree(p)
-    # permute input
-    global_index && permute!(y, loc2glob(rtree))
-    L, U = A.L, A.U
-    # solve LUx = y through:
-    # (a) L(z) = y
-    # (b) Ux   = z
-    ldiv!(L, y)
-    ldiv!(U, y)
-    global_index && invpermute!(y, loc2glob(ctree))
-    return y
+# solve with the factors `L*U` of an LU or Cholesky factorization, which are in the
+# ordering of the trees: `L*U*x[q] = y[p]`
+function LinearAlgebra.ldiv!(A::Union{HLU, HChol}, y::AbstractVecOrMat)
+    H = A.factors # underlying data
+    _permute_rows!(y, rowperm(H))
+    ldiv!(A.L, y)
+    ldiv!(A.U, y)
+    return _invpermute_rows!(y, colperm(H))
 end
+
+_permute_rows!(y::AbstractVector, p) = permute!(y, p)
+_permute_rows!(Y::AbstractMatrix, p) = (Y .= Y[p, :])
+_invpermute_rows!(y::AbstractVector, p) = invpermute!(y, p)
+_invpermute_rows!(Y::AbstractMatrix, p) = (Y[p, :] = copy(Y); Y)

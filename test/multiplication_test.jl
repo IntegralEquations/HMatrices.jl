@@ -1,5 +1,6 @@
 using Test
 using HMatrices
+using HMatrices: ClusterTree, CardinalitySplitter, StrongAdmissibilityStd, PartialACA, ACAWithRecompression
 using LinearAlgebra
 using Random
 using StaticArrays
@@ -22,9 +23,9 @@ adm = StrongAdmissibilityStd(; eta = 3)
 atol = 1.0e-5
 comp = PartialACA(; atol)
 K = laplace_matrix(X, Y)
-H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false, distributed = false)
+H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads = false)
 
-H_full = Matrix(H; global_index = false)
+H_full = HMatrices._tree_matrix(H)
 
 R = HMatrices.RkMatrix(rand(m, 10), rand(n, 10))
 P = HMatrices.RkMatrix(rand(m, 10), rand(n, 10))
@@ -33,20 +34,22 @@ P = HMatrices.RkMatrix(rand(m, 10), rand(n, 10))
 β = rand() - 0.5
 
 @testset "hmul!" begin
+    # the rows and columns of `H` come from different points, so the products are
+    # those of the stored blocks (as in the factorizations)
     C = deepcopy(H)
     tmp = β * H_full + α * H_full * H_full
-    HMatrices.hmul!(C, H, H, α, β, PartialACA(; atol = 1.0e-6))
-    @test Matrix(C; global_index = false) ≈ tmp
+    HMatrices._hmul_tree!(C, H, H, α, β, PartialACA(; atol = 1.0e-6))
+    @test HMatrices._tree_matrix(C) ≈ tmp
     # adjoint
     C = deepcopy(H)
     tmp = β * H_full + α * adjoint(H_full) * H_full
-    HMatrices.hmul!(C, adjoint(H), H, α, β, PartialACA(; atol = 1.0e-6))
-    @test Matrix(C; global_index = false) ≈ tmp
+    HMatrices._hmul_tree!(C, adjoint(H), H, α, β, PartialACA(; atol = 1.0e-6))
+    @test HMatrices._tree_matrix(C) ≈ tmp
     # a compressor with its own buffer type
     C = deepcopy(H)
     tmp = β * H_full + α * H_full * H_full
-    HMatrices.hmul!(C, H, H, α, β, ACAWithRecompression(PartialACA(; atol = 1.0e-6)))
-    @test Matrix(C; global_index = false) ≈ tmp
+    HMatrices._hmul_tree!(C, H, H, α, β, ACAWithRecompression(PartialACA(; atol = 1.0e-6)))
+    @test HMatrices._tree_matrix(C) ≈ tmp
 end
 
 @testset "hmul! with adjoints" begin
@@ -56,12 +59,12 @@ end
     Xsclt = ClusterTree(Xs, CardinalitySplitter(; nmax = 30))
     f = (x, y) -> x == y ? 0.0im : exp(2im * norm(x - y)) / (4π * norm(x - y))
     Hs = assemble_hmatrix(KernelMatrix(f, Xs, Xs), Xsclt, Xsclt; comp = PartialACA(; atol = 1.0e-10), threads = false)
-    Ms = Matrix(Hs; global_index = false)
+    Ms = HMatrices._tree_matrix(Hs)
     for opA in (identity, adjoint), opB in (identity, adjoint)
         C = deepcopy(Hs)
         HMatrices.hmul!(C, opA(Hs), opB(Hs), -1, 1, PartialACA(; atol = 1.0e-10))
         exact = Ms - opA(Ms) * opB(Ms)
-        @test norm(Matrix(C; global_index = false) - exact) < 1.0e-8 * norm(exact)
+        @test norm(HMatrices._tree_matrix(C) - exact) < 1.0e-8 * norm(exact)
     end
 end
 
@@ -73,12 +76,12 @@ end
     f = (x, y) -> (d = norm(x - y); x == y ? 10.0 : d < 0.3 ? exp(-d) / (4π * d) : 0.0)
     for comp in (PartialACA(; atol = 1.0e-8), ACAWithRecompression(PartialACA(; atol = 1.0e-8)))
         Hc = assemble_hmatrix(KernelMatrix(f, Xc, Xc), Xcclt, Xcclt; comp, threads = false)
-        Mc = Matrix(Hc; global_index = false)
+        Mc = HMatrices._tree_matrix(Hc)
         C = deepcopy(Hc)
         HMatrices.hmul!(C, Hc, Hc, -1, 1, comp)
         exact = Mc - Mc * Mc
         # the sharp cutoff of the kernel limits the accuracy of the partial ACA
-        @test norm(Matrix(C; global_index = false) - exact) < 1.0e-2 * norm(exact)
+        @test norm(HMatrices._tree_matrix(C) - exact) < 1.0e-2 * norm(exact)
     end
 end
 
@@ -89,38 +92,26 @@ end
     y = rand(T, m)
 
     @testset "serial" begin
-        exact = β * y + α * H_full * x
-        approx = mul!(copy(y), H, x, α, β; threads = false, global_index = false)
-        @test exact ≈ approx
-        exact = β * y + α * Matrix(H; global_index = true) * x
-        approx = mul!(copy(y), H, x, α, β; threads = false, global_index = true)
+        exact = β * y + α * Matrix(H) * x
+        approx = mul!(copy(y), H, x, α, β; threads = false)
         @test exact ≈ approx
 
         # multiply by adjoint
         adjH = adjoint(deepcopy(H))
-        exact = β * y + α * adjoint(H_full) * x
-        approx = mul!(copy(y), adjH, x, α, β; threads = false, global_index = false)
-        @test exact ≈ approx
-        exact = β * y + α * adjoint(Matrix(H; global_index = true)) * x
-        approx = mul!(copy(y), adjH, x, α, β; threads = false, global_index = true)
+        exact = β * y + α * adjoint(Matrix(H)) * x
+        approx = mul!(copy(y), adjH, x, α, β; threads = false)
         @test exact ≈ approx
     end
 
     @testset "threads" begin
-        exact = β * y + α * H_full * x
-        approx = mul!(copy(y), H, x, α, β; threads = true, global_index = false)
-        @test exact ≈ approx
-        exact = β * y + α * Matrix(H; global_index = true) * x
-        approx = mul!(copy(y), H, x, α, β; threads = false, global_index = true)
+        exact = β * y + α * Matrix(H) * x
+        approx = mul!(copy(y), H, x, α, β; threads = true)
         @test exact ≈ approx
 
         # multiply by adjoint
         adjH = adjoint(deepcopy(H))
-        exact = β * y + α * adjoint(H_full) * x
-        approx = mul!(copy(y), adjH, x, α, β; threads = true, global_index = false)
-        @test exact ≈ approx
-        exact = β * y + α * adjoint(Matrix(H; global_index = true)) * x
-        approx = mul!(copy(y), adjH, x, α, β; threads = true, global_index = true)
+        exact = β * y + α * adjoint(Matrix(H)) * x
+        approx = mul!(copy(y), adjH, x, α, β; threads = true)
         @test exact ≈ approx
     end
 
@@ -148,20 +139,14 @@ end
     y = rand(T, m, k)
 
     @testset "serial" begin
-        exact = β * y + α * H_full * x
-        approx = mul!(copy(y), H, x, α, β; threads = false, global_index = false)
-        @test exact ≈ approx
-        exact = β * y + α * Matrix(H; global_index = true) * x
-        approx = mul!(copy(y), H, x, α, β; threads = false, global_index = true)
+        exact = β * y + α * Matrix(H) * x
+        approx = mul!(copy(y), H, x, α, β; threads = false)
         @test exact ≈ approx
     end
 
     @testset "threads" begin
-        exact = β * y + α * H_full * x
-        approx = mul!(copy(y), H, x, α, β; threads = true, global_index = false)
-        @test exact ≈ approx
-        exact = β * y + α * Matrix(H; global_index = true) * x
-        approx = mul!(copy(y), H, x, α, β; threads = false, global_index = true)
+        exact = β * y + α * Matrix(H) * x
+        approx = mul!(copy(y), H, x, α, β; threads = true)
         @test exact ≈ approx
     end
 

@@ -2,6 +2,7 @@
 # Pkg.activate(@__DIR__)
 
 using HMatrices
+using HMatrices: PartialACA, TSVD
 using BenchmarkTools
 using Random
 using LinearAlgebra
@@ -55,7 +56,6 @@ radius = 1
 X = points_on_cylinder(N, radius)
 splitter = HMatrices.CardinalitySplitter(nmax)
 Xclt = HMatrices.ClusterTree(X, splitter)
-Xp = HMatrices.root_elements(Xclt)
 adm = HMatrices.StrongAdmissibilityStd(eta)
 comp = HMatrices.PartialACA(; rtol)
 
@@ -63,12 +63,11 @@ step = 1.75 * π * radius / sqrt(N)
 k = 2 * π / (10 * step) # 10 pts per wavelength
 
 kernels = Dict(
-    "Laplace" => (kernel = laplace_matrix(X, X), global_index = true),
-    "Laplace permuted" => (kernel = laplace_matrix(Xp, Xp), global_index = false),
-    "Laplace vectorized" => (kernel = LaplaceMatrixVec(Xp, Xp), global_index = false),
+    "Laplace" => laplace_matrix(X, X),
+    "Laplace vectorized" => LaplaceMatrixVec(X, X),
 )
 
-for (name, (K, p)) in kernels
+for (name, K) in kernels
     SUITE[name] = BenchmarkGroup([name, N])
     for threads in (true, false)
         # assemble
@@ -79,8 +78,6 @@ for (name, (K, p)) in kernels
             adm = $adm,
             comp = $comp,
             threads = $threads,
-            distributed = false,
-            global_index = $p,
         ) samples = 4 evals = 1
         # gemv and LU times for the same kernel should be the same (it only
         # cares about the hmatrix), so benchmark only one of them
@@ -97,8 +94,6 @@ for (name, (K, p)) in kernels
                     adm = $adm,
                     comp = $comp,
                     threads = true,
-                    distributed = false,
-                    global_index = $p,
                 );
                 x = randn($N);
                 y = zeros($N)
@@ -113,8 +108,6 @@ for (name, (K, p)) in kernels
                     adm = $adm,
                     comp = $comp,
                     threads = true,
-                    distributed = false,
-                    global_index = $p,
                 )
             ) samples = 4 evals = 1
         end

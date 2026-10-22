@@ -23,6 +23,16 @@ function Base.getindex(M::PermutedMatrix, i, j)
     return M.data[ip, jp]
 end
 
+# forward to the (possibly faster) `getblock!` of the original matrix, always with
+# vectors of indices (a column `j` is the block `irange × j:j`)
+function getblock!(out, M::PermutedMatrix, irange, jrange)
+    return getblock!(out, M.data, view(M.rowperm, irange), view(M.colperm, jrange))
+end
+function getblock!(out::AbstractVector, M::PermutedMatrix, irange, j::Integer)
+    getblock!(reshape(out, :, 1), M, irange, j:j)
+    return out
+end
+
 """
     filter_tree(f,tree,isterminal=true)
 

@@ -92,7 +92,7 @@ function LinearAlgebra.ldiv!(L::HLowerTriangular, X::HMatrix, compressor, bufs =
         for k in 1:size(chdX, 2)
             for i in 1:m
                 for j in 1:(i - 1) # j<i
-                    hmul!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor, bufs)
+                    _hmul_tree!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor, bufs)
                 end
                 ldiv!(_wraptriangular(chdH[i, i], L), chdX[i, k], compressor, bufs)
             end
@@ -177,7 +177,7 @@ function LinearAlgebra.rdiv!(X::HMatrix, U::HUpperTriangular, compressor, bufs =
         for k in 1:size(chdX, 1)
             for i in 1:m
                 for j in 1:(i - 1)
-                    hmul!(chdX[k, i], chdX[k, j], chdH[j, i], -1, 1, compressor, bufs)
+                    _hmul_tree!(chdX[k, i], chdX[k, j], chdH[j, i], -1, 1, compressor, bufs)
                 end
                 rdiv!(chdX[k, i], _wraptriangular(chdH[i, i], U), compressor, bufs)
             end
