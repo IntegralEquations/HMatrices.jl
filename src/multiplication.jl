@@ -197,6 +197,14 @@ function getblock!(out, L::MulLinearOp, irange, j::Int)
     return getcol!(out, L, j)
 end
 
+# a block of whole columns, e.g. for a `TSVD` of the product
+function getblock!(out, L::MulLinearOp, irange, jrange::AbstractVector)
+    for (jloc, j) in enumerate(jrange)
+        getblock!(view(out, :, jloc), L, irange, j)
+    end
+    return out
+end
+
 function getcol!(col, adjL::Adjoint{<:Any, <:MulLinearOp}, j)
     fill!(col, zero(eltype(col)))
     L = parent(adjL)

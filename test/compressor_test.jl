@@ -47,6 +47,17 @@ Random.seed!(1)
         R = @test_logs aca(Z, irange, jrange)
         @test Matrix(R) == Z
 
+        # rows much smaller than the others: the next row is taken from the residual
+        # column, not by scanning the rows
+        evals = Ref(0)
+        Zs = zeros(200, 200)
+        Zs[1:100, :] .= 1.0e-12 .* rand(100) * rand(200)'
+        Zs[101:200, :] .= rand(100) * rand(200)'
+        Kc = KernelMatrix((i, j) -> (evals[] += 1; Zs[i, j]), 1:200, 1:200)
+        R = PartialACA(; rtol = 1.0e-14)(Kc)
+        @test norm(Matrix(R) - Zs) < 1.0e-12 * norm(Zs)
+        @test evals[] < 10_000
+
         # invalid tolerances
         for kw in ((; atol = -1.0), (; rank = 0), (; rtol = -1.0), (; rtol = NaN), (; atol = NaN))
             @test_throws ArgumentError PartialACA(; kw...)
@@ -98,6 +109,10 @@ Random.seed!(1)
         @test norm(Matrix(R) - M) < rtol * norm(M)
         # the tolerances can be given directly
         @test ACAWithRecompression(; rtol) == comp
+        # a rank larger than the block is recompressed through the dense matrix
+        A, B = rand(T, 10, 15), rand(T, 30, 15)
+        R = HMatrices.compress!(RkMatrix(copy(A), copy(B)), TSVD(; rtol = 1.0e-10))
+        @test rank(R) == 10 && Matrix(R) ≈ A * B'
         # rank cap is respected
         r = 10
         comp = ACAWithRecompression(PartialACA(; rank = r))

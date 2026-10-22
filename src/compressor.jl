@@ -165,8 +165,9 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
         if σ == 0 || σ <= sqrt(eps(real(eltype(T)))) * maximum(norm, a)
             @debug "zero pivot found during partial aca"
             zero_rows &= iszero(σ)
-            i = findfirst(x -> x == true, I)
-            if isnothing(i)
+            # the residual column, when computed, points to the rows that remain
+            i = σ > 0 ? _aca_partial_pivot(a, I) : something(findfirst(I), -1)
+            if i == -1
                 # ran out of candidate rows: every row has been evaluated, so the
                 # approximation is exact if the rejected rows were exactly zero on the
                 # remaining columns (e.g. a zero block); otherwise some were only small,
@@ -365,7 +366,8 @@ Base.@kwdef struct TSVD <: AbstractCompressor
 end
 
 function (tsvd::TSVD)(K, irange::AbstractRange, jrange::AbstractRange, buf = nothing)
-    M = K[irange, jrange]
+    M = Base.Matrix{eltype(K)}(undef, length(irange), length(jrange))
+    getblock!(M, K, irange, jrange)
     return compress!(M, tsvd)
 end
 
@@ -430,6 +432,11 @@ ACAWithRecompression(; kwargs...) = ACAWithRecompression(PartialACA(; kwargs...)
 function _recompress!(R::RkMatrix{T}, atol, rtol, rmax, bufs = nothing) where {T}
     m, n = size(R)
     k = rank(R)
+    if k >= min(m, n) # the QR factors would not be smaller than the matrix
+        Rt = compress!(R.A * adjoint(R.B), TSVD(atol, rmax, rtol))
+        R.A, R.B = Rt.A, Rt.B
+        return R
+    end
     QA, RA = qr!(R.A)
     QB, RB = qr!(R.B)
     if isnothing(bufs)

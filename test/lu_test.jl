@@ -1,6 +1,6 @@
 using Test
 using HMatrices
-using HMatrices: ClusterTree, CardinalitySplitter, StrongAdmissibilityStd, PartialACA, ACAWithRecompression
+using HMatrices: ClusterTree, CardinalitySplitter, StrongAdmissibilityStd, PartialACA, ACAWithRecompression, TSVD
 using LinearAlgebra
 using Random
 using StaticArrays
@@ -43,6 +43,15 @@ for threads in (false, true)
     # a compressor with its own buffer type
     hlu = lu(H, ACAWithRecompression(PartialACA(; atol = 1.0e-10)))
     @test norm(exact - hlu \ y) < 1.0e-7 * norm(exact)
+end
+
+@testset "TSVD of the products" begin
+    # a compressor that evaluates the whole block of a product
+    S = single_layer_sphere(1000)
+    H = assemble_hmatrix(S; atol = 1.0e-10, threads = false)
+    y = rand(1000)
+    exact = Matrix(S) \ y
+    @test norm(exact - lu(H, TSVD(; atol = 1.0e-10)) \ y) < 1.0e-7 * norm(exact)
 end
 
 @testset "different row and column trees" begin
