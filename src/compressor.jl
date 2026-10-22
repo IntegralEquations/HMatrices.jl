@@ -149,8 +149,9 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, samples, istart, buff
     fill!(J, true)
     ra, rb = fill!(resize!(buffer.ra, m), 0), fill!(resize!(buffer.rb, n), 0)
     i = istart # initial pivot
-    er = Inf
-    est_norm = 0 # approximate norm of K[irange,jrange]
+    R = real(eltype(T))
+    er = R(Inf)
+    est_norm = zero(R) # approximate norm of K[irange,jrange]
     r = 0 # current rank
     zero_rows = true # whether every rejected row of the residual was exactly zero
     exhausted = false # whether every row was used or rejected
@@ -180,7 +181,7 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, samples, istart, buff
             end
             # a pivot at the rounding level of its column means that row `i` of the
             # residual is zero (up to rounding errors, e.g. when `K` is a product)
-            if σ == 0 || σ <= sqrt(eps(real(eltype(T)))) * maximum(norm, a)
+            if σ == 0 || σ <= sqrt(eps(R)) * maximum(norm, a)
                 @debug "zero pivot found during partial aca"
                 zero_rows &= iszero(σ)
                 # the residual column, when computed, points to the rows that remain
@@ -195,7 +196,8 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, samples, istart, buff
                     break
                 end
             else # δ != 0
-                iδ = T <: AbstractArray ? pinv(δ; rtol = 1.0e-8) : inv(δ)
+                # the same cutoff as for the pivots: below it, the pivot is rounding noise
+                iδ = T <: AbstractArray ? pinv(δ; rtol = sqrt(eps(R))) : inv(δ)
                 # b <-- b/δ
                 for k in eachindex(b)
                     b[k] = b[k] * iδ
@@ -228,7 +230,7 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, samples, istart, buff
     end
     # copy from buffer to matrix and create Rk matrix
     R_ = RkMatrix(Matrix(A), Matrix(B))
-    # # indicate that `A` and `B` can be reused
+    # indicate that `A` and `B` can be reused
     reset!(A)
     reset!(B)
     return R_
@@ -459,7 +461,7 @@ function (tsvd::TSVD)(K, irange::AbstractRange, jrange::AbstractRange, buf = not
     return compress!(M, tsvd)
 end
 
-(comp::TSVD)(K::Base.Matrix) = comp(K, 1:size(K, 1), 1:size(K, 2))
+(comp::TSVD)(K::AbstractMatrix) = comp(K, axes(K, 1), axes(K, 2))
 
 # number of singular values `S` (sorted decreasingly) above the tolerance, at most
 # `rmax` (zero if they are all below the tolerance)
@@ -482,7 +484,7 @@ compress!(R::RkMatrix, tsvd::TSVD) = _recompress!(R, tsvd.atol, tsvd.rtol, tsvd.
 """
     compress!(M::Matrix,tsvd::TSVD)
 
-Recompress the matrix `M` using a truncated svd and output an `RkMatrix`. The
+Compress the matrix `M` using a truncated svd and output an `RkMatrix`. The
 data in `M` is invalidated in the process.
 """
 function compress!(M::Base.Matrix, tsvd::TSVD)
