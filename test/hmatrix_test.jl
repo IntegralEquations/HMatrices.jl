@@ -8,11 +8,11 @@ using Random
 
 include(joinpath(HMatrices.PROJECT_ROOT, "test", "testutils.jl"))
 
-# a compressor that only implements the method with index ranges
+# a compressor that only implements the method with index ranges, without annotations
 struct RangeOnlyCompressor <: HMatrices.AbstractCompressor
     rtol::Float64
 end
-function (c::RangeOnlyCompressor)(K, irange::AbstractRange, jrange::AbstractRange, buf)
+function (c::RangeOnlyCompressor)(K, irange, jrange, buf)
     return HMatrices.PartialACA(; rtol = c.rtol)(K, irange, jrange)
 end
 
@@ -169,6 +169,9 @@ end
     @test Hh isa HMatrices.HermitianHMatrix
     y = rand(1500)
     @test norm(cholesky(Hh; rtol = 1.0e-8) \ y - M \ y) < 1.0e-6 * norm(M \ y)
+    # the product in place of its argument
+    z = copy(y)
+    @test norm(mul!(z, H, z) - M * y) < 1.0e-7 * norm(M * y)
     @test_throws ArgumentError assemble_hmatrix(Hermitian(K), X, copy(X))
     # `getblock!` of the matrix is used for every block, with vectors of indices
     Hb = assemble_hmatrix(BlockOnlyMatrix(M), X; rtol = 1.0e-8, threads = false)

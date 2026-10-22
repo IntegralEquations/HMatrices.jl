@@ -365,9 +365,10 @@ function LinearAlgebra.mul!(
     )
     _checkroot(A)
     # `A` is stored in the ordering of its trees, so `x` and `y` are permuted into it,
-    # and `y` back
+    # and `y` back; `x` is copied first in case it aliases `y`
+    xp = a .* view(x, colperm(A))
     permute!(y, rowperm(A))
-    _mul_tree!(y, A, a .* view(x, colperm(A)), b, threads)
+    _mul_tree!(y, A, xp, b, threads)
     return invpermute!(y, rowperm(A))
 end
 

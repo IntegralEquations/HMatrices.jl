@@ -4,17 +4,10 @@
 Types used to compress matrices. A compressor `comp` is called as `comp(K,
 irange, jrange, buf)` and returns an [`RkMatrix`](@ref) approximating
 `K[irange, jrange]`, where `buf` is a workspace created by
-[`allocate_buffer`](@ref)`(comp, T)` (`nothing` by default).
-
-During the assembly of an [`HMatrix`](@ref), it is called as `comp(K, rowtree, coltree,
-buf)` with the cluster trees of the block, which by default calls the method above with
-their index ranges; a compressor can overload it to use the geometry of the clusters.
+[`allocate_buffer`](@ref)`(comp, T)` (`nothing` by default). During the assembly of an
+[`HMatrix`](@ref), it is called with the index ranges of each admissible block.
 """
 abstract type AbstractCompressor end
-
-function (comp::AbstractCompressor)(K, rowtree::ClusterTree, coltree::ClusterTree, buf = nothing)
-    return comp(K, index_range(rowtree), index_range(coltree), buf)
-end
 
 """
     struct PartialACA
@@ -413,6 +406,18 @@ function (comp::ACAWithRecompression)(K, irange::AbstractRange, jrange::Abstract
 end
 
 (comp::ACAWithRecompression)(K::AbstractMatrix) = comp(K, axes(K, 1), axes(K, 2))
+
+"""
+    _compress(comp, K, rowtree, coltree, buf)
+
+Compress the block of `K` with rows in `rowtree` and columns in `coltree`. Calls
+`comp(K, irange, jrange, buf)` with the index ranges of the trees, except for compressors
+that use the geometry of the clusters.
+"""
+function _compress(comp, K, rowtree, coltree, buf)
+    return comp(K, index_range(rowtree), index_range(coltree), buf)
+end
+_compress(comp::Union{PartialACA, ACAWithRecompression}, K, rowtree, coltree, buf) = comp(K, rowtree, coltree, buf)
 
 """
     allocate_buffer(comp, T)
