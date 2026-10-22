@@ -41,6 +41,23 @@ Random.seed!(1)
         # test zero matrix: no warning, since every row is exactly zero
         R = @test_logs aca(zero(M), irange, jrange)
         @test norm(Matrix(R)) ≈ 0.0
+        # nor on a block approximated exactly, whose remaining rows are zero
+        Z = zero(M)
+        Z[:, 1] .= 1
+        R = @test_logs aca(Z, irange, jrange)
+        @test Matrix(R) == Z
+
+        # invalid tolerances
+        for kw in ((; atol = -1.0), (; rank = 0), (; rtol = -1.0), (; rtol = NaN), (; atol = NaN))
+            @test_throws ArgumentError PartialACA(; kw...)
+            @test_throws ArgumentError TSVD(; kw...)
+        end
+
+        # a buffer left in use by an exception can be reused
+        buf = allocate_buffer(aca, T)
+        bad = KernelMatrix((i, j) -> i == 7 ? error("bad entry") : M[i, j], 1:m, 1:n)
+        @test_throws ErrorException aca(bad, irange, jrange, buf)
+        @test norm(Matrix(aca(M, irange, jrange, buf)) - M) < atol
 
         # zero rows use up the candidate rows without increasing the rank
         Z = zeros(T, 4, 5)

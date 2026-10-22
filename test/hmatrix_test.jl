@@ -188,6 +188,8 @@ end
     # a zero block of a dense matrix is not an ACA failure
     Md = Matrix(Kc)
     @test_logs assemble_hmatrix(Md, X; rtol = 1.0e-8, threads = false)
+    # an unattainable tolerance is an `ArgumentError`, raised before the threaded assembly
+    @test_throws ArgumentError assemble_hmatrix(K, X; rtol = 1.0e-17)
     # the number of points must match the size of the matrix
     @test_throws DimensionMismatch assemble_hmatrix(K, X[1:1000])
     # in single precision, an atol below the precision stops at the precision

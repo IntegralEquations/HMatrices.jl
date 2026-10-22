@@ -283,6 +283,8 @@ function assemble_hmatrix(
             "the element type of the matrix, $T, is not concrete; for a `KernelMatrix`, make sure that the kernel function is type stable (e.g. that it does not capture non-constant global variables)",
         ),
     )
+    # once here rather than in each block, where it may be raised inside a task
+    _check_rtol(comp, T)
     # create first the structure. No parallelism used as this should be light.
     hmat_ = HMatrix{T}(rowtree, coltree, adm)
     # wrap hmat in a Hermitian if needed

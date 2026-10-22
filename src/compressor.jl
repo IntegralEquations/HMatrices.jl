@@ -47,6 +47,7 @@ Base.@kwdef struct PartialACA <: AbstractCompressor
     atol::Float64 = 0
     rank::Int = typemax(Int)
     rtol::Union{Nothing, Float64} = nothing
+    PartialACA(atol, rank, rtol) = new(_check_tolerances(atol, rank, rtol)...)
 end
 
 function (paca::PartialACA)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs = nothing)
@@ -123,7 +124,9 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
     ishift, jshift = first(irange) - 1, first(jrange) - 1
     buffer = isnothing(buffer_) ? ACABuffer(T, m, n) : buffer_
     A, B, I, J = buffer.A, buffer.B, buffer.I, buffer.J # extract the individual buffers for convenience
-    @assert A.k == 0 && B.k == 0 "buffers must be empty"
+    # reset rather than assume empty buffers: a previous call may have thrown
+    reset!(A)
+    reset!(B)
     A.m, B.m = m, n
     rmax = min(m, n, rmax)
     resize!(I, m)
@@ -134,7 +137,7 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
     er = Inf
     est_norm = 0 # approximate norm of K[irange,jrange]
     r = 0 # current rank
-    zero_rows = true # whether every row of the residual evaluated so far is exactly zero
+    zero_rows = true # whether every rejected row of the residual was exactly zero
     while er > max(atol, rtol * est_norm) && r < rmax
         # remove index i from allowed row
         I[i] = false
@@ -148,7 +151,6 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
         for k in 1:r
             axpy!(-adjoint(A[k][i]), B[k], b)
         end
-        zero_rows &= iszero(b)
         j = _aca_partial_pivot(b, J)
         δ = b[j]
         σ = min_svd_vals(δ)
@@ -162,11 +164,13 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
         # residual is zero (up to rounding errors, e.g. when `K` is a product)
         if σ == 0 || σ <= sqrt(eps(real(eltype(T)))) * maximum(norm, a)
             @debug "zero pivot found during partial aca"
+            zero_rows &= iszero(σ)
             i = findfirst(x -> x == true, I)
             if isnothing(i)
                 # ran out of candidate rows: every row has been evaluated, so the
-                # approximation is exact if all residual rows were exactly zero (e.g. a
-                # zero block); otherwise some were only small, and ACA may have failed
+                # approximation is exact if the rejected rows were exactly zero on the
+                # remaining columns (e.g. a zero block); otherwise some were only small,
+                # and ACA may have failed
                 zero_rows || @warn "aca possibly failed on $irange × $jrange" maxlog = 1
                 break
             end
@@ -259,6 +263,20 @@ function _aca_partial_pivot(v, J)
 end
 
 """
+    _check_tolerances(atol, rank, rtol)
+
+Throw an `ArgumentError` unless `atol ≥ 0`, `rank ≥ 1` and `rtol` is `nothing` or
+`≥ 0`; return them otherwise. Whether `rtol` is attainable depends on the entries, and
+is checked by [`_rtol`](@ref).
+"""
+function _check_tolerances(atol, rank, rtol)
+    atol >= 0 || throw(ArgumentError("atol = $atol must be nonnegative"))
+    rank >= 1 || throw(ArgumentError("rank = $rank must be positive"))
+    isnothing(rtol) || rtol >= 0 || throw(ArgumentError("rtol = $rtol must be nonnegative"))
+    return atol, rank, rtol
+end
+
+"""
     _rtol(rtol, atol, rank, T)
 
 The relative tolerance used to compress a matrix with entries of type `T`, where `R` is
@@ -315,6 +333,7 @@ Base.@kwdef struct TSVD <: AbstractCompressor
     atol::Float64 = 0
     rank::Int = typemax(Int)
     rtol::Union{Nothing, Float64} = nothing
+    TSVD(atol, rank, rtol) = new(_check_tolerances(atol, rank, rtol)...)
 end
 
 function (tsvd::TSVD)(K, irange::AbstractRange, jrange::AbstractRange, buf = nothing)
@@ -418,6 +437,19 @@ function _compress(comp, K, rowtree, coltree, buf)
     return comp(K, index_range(rowtree), index_range(coltree), buf)
 end
 _compress(comp::Union{PartialACA, ACAWithRecompression}, K, rowtree, coltree, buf) = comp(K, rowtree, coltree, buf)
+
+"""
+    _check_rtol(comp, T)
+
+Check that the tolerances of `comp` are attainable for entries of type `T`, before
+compressing any block.
+"""
+_check_rtol(comp, T) = nothing
+function _check_rtol(comp::Union{PartialACA, TSVD}, T)
+    _rtol(comp.rtol, comp.atol, comp.rank, T)
+    return nothing
+end
+_check_rtol(comp::ACAWithRecompression, T) = _check_rtol(comp.aca, T)
 
 """
     allocate_buffer(comp, T)
