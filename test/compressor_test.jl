@@ -220,7 +220,9 @@ end
         b .= rand(T, n)
         R = Matrix(A) * collect(adjoint(Matrix(B)))
         new_norm = norm(R, 2)
-        HMatrices._update_frob_norm(old_norm, A, B)
-        @test_broken new_norm ≈ HMatrices._update_frob_norm(old_norm, A, B)
+        @test new_norm ≈ HMatrices._update_frob_norm(old_norm, A, B)
+        # the smallest singular value of rectangular entries
+        @test HMatrices.min_svd_vals(SMatrix{3, 2}(1.0, 0, 0, 0, 2, 0)) ≈ 1
+        @test HMatrices.min_svd_vals(SMatrix{2, 3}(1.0, 0, 0, 2, 0, 0)) ≈ 1
     end
 end

@@ -185,8 +185,8 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = not
             r += 1
             A.k += 1
             B.k += 1
-            # estimate the error by || R_{k} - R_{k-1} || = ||a|| ||b||
-            er = norm(a) * norm(b)
+            # estimate the error by || R_{k} - R_{k-1} || = ||a bᴴ||
+            er = sqrt(_frob2(a, b))
             # estimate the norm by || K || ≈ || R_k ||
             est_norm = _update_frob_norm(est_norm, A, B)
             i = _aca_partial_pivot(a, I)
@@ -213,20 +213,46 @@ compute the Frobenius norm of `Rₖ₊₁ = A*adjoint(B)` efficiently.
     k = length(A)
     a = A[k]
     b = B[k]
-    out = norm(a)^2 * norm(b)^2
+    out = _frob2(a, b)
     for l in 1:(k - 1)
-        out += 2 * real(dot(A[l], a) * (dot(b, B[l])))
+        out += 2 * real(tr(_gram(A[l], a) * _gram(b, B[l])))
     end
-    return sqrt(cur^2 + out)
+    # rounding errors can make the update negative when `cur` is small
+    return sqrt(max(cur^2 + out, zero(out)))
 end
+
+"""
+    _gram(x, y)
+
+`∑ᵢ xᵢᴴ yᵢ`. For scalar entries this is `dot(x, y)`; for matrix entries it is a
+matrix, since the entries do not commute.
+"""
+_gram(x::AbstractVector{<:Number}, y) = dot(x, y)
+function _gram(x, y)
+    s = zero(adjoint(first(x)) * first(y))
+    for i in eachindex(x, y)
+        s += adjoint(x[i]) * y[i]
+    end
+    return s
+end
+
+"""
+    _frob2(a, b)
+
+The squared Frobenius norm of the cross `a bᴴ`, i.e. `tr(∑ᵢ aᵢᴴ aᵢ ∑ⱼ bⱼᴴ bⱼ)`.
+"""
+_frob2(a::AbstractVector{<:Number}, b) = norm(a)^2 * norm(b)^2
+_frob2(a, b) = real(tr(_gram(a, a) * _gram(b, b)))
 
 min_svd_vals(x::Number) = abs(x)
 function min_svd_vals(A::SMatrix)
     n, m = size(A)
-    if (n == 2) || (n == 3)
-        λ = minimum(eigvals(Hermitian(A * adjoint(A))))
-        # try to avoid some floating point issues
-        return max(λ, zero(λ)) |> sqrt
+    if n <= 3 && m <= 3
+        # the eigenvalues of the smaller Gram matrix are the squared singular values;
+        # they have a closed form, much faster than `svdvals`
+        G = n <= m ? A * adjoint(A) : adjoint(A) * A
+        λ = minimum(eigvals(Hermitian(G)))
+        return sqrt(max(λ, zero(λ)))
     else
         return svdvals(A)[end]
     end
@@ -252,9 +278,9 @@ function _aca_partial_pivot(v, J)
     idx = -1
     val = -Inf
     for n in 1:length(J)
-        x = v[n]
-        σ = min_svd_vals(x)
-        if σ > val && J[n]
+        J[n] || continue
+        σ = min_svd_vals(v[n])
+        if σ > val
             idx = n
             val = σ
         end
