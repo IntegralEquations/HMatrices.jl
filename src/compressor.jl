@@ -63,26 +63,8 @@ Base.@kwdef struct PartialACA <: AbstractCompressor
     end
 end
 
-function (paca::PartialACA)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs = nothing)
-    # find initial column pivot for partial ACA
-    istart = _aca_partial_initial_pivot(rowtree)
-    irange = index_range(rowtree)
-    jrange = index_range(coltree)
-    return _aca_partial(
-        K,
-        irange,
-        jrange,
-        paca.atol,
-        paca.rank,
-        paca.rtol,
-        paca.samples,
-        istart - irange.start + 1,
-        bufs,
-    )
-end
-
 function (paca::PartialACA)(K, irange::AbstractRange, jrange::AbstractRange, bufs = nothing)
-    return _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol, paca.samples, 1, bufs)
+    return _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol, paca.samples, bufs)
 end
 
 (paca::PartialACA)(K::AbstractMatrix) = paca(K, axes(K, 1), axes(K, 2))
@@ -121,7 +103,7 @@ function _get_scratch!(buf::ACAWithRecompressionBuffer{T}, k) where {T}
 end
 
 """
-    _aca_partial(K, irange, jrange, atol, rmax, rtol, samples, istart, buffer = nothing)
+    _aca_partial(K, irange, jrange, atol, rmax, rtol, samples, buffer = nothing)
 
 Internal function implementing the adaptive cross-approximation algorithm with
 partial pivoting. The returned `R::RkMatrix` provides an approximation to
@@ -129,7 +111,7 @@ partial pivoting. The returned `R::RkMatrix` provides an approximation to
 max(atol,rtol*|M|)`, but this inequality may fail to hold due to the various
 errors involved in estimating the error and |M|.
 """
-function _aca_partial(K, irange, jrange, atol, rmax, rtol, samples, istart, buffer_ = nothing)
+function _aca_partial(K, irange, jrange, atol, rmax, rtol, samples, buffer_ = nothing)
     Kadj = adjoint(K)
     T = eltype(K)
     rtol = _rtol(rtol, atol, rmax, T)
@@ -148,7 +130,10 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, samples, istart, buff
     fill!(I, true)
     fill!(J, true)
     ra, rb = fill!(resize!(buffer.ra, m), 0), fill!(resize!(buffer.rb, n), 0)
-    i = istart # initial pivot
+    # the first row is as good as any: the other rows follow from the residual columns,
+    # and a geometric choice (the point closest to the center of the cluster, as suggested
+    # by Bebendorf) did not change the ranks or the errors
+    i = 1
     R = real(eltype(T))
     er = R(Inf)
     est_norm = zero(R) # approximate norm of K[irange,jrange]
@@ -419,25 +404,6 @@ function _rtol(rtol, atol, rank, T)
     return max(rtol, 10 * eps(R))
 end
 
-function _aca_partial_initial_pivot(rowtree)
-    # the method below is suggested in Bebendorf, but it does not seem to
-    # improve the error. The idea is that the initial pivot is the closest
-    # point to the center of the cluster
-    xc = center(container(rowtree))
-    d = Inf
-    els = root_elements(rowtree)
-    loc_idxs = index_range(rowtree)
-    istart = first(loc_idxs)
-    for i in loc_idxs
-        x = els[i]
-        if norm(x - xc) < d
-            d = norm(x - xc)
-            istart = i
-        end
-    end
-    return istart
-end
-
 """
     struct TSVD
 
@@ -587,13 +553,6 @@ function _block_matrix(::Type{S}, M) where {S <: SMatrix}
     return [S(view(Mp, ((i - 1) * p + 1):(i * p), ((j - 1) * q + 1):(j * q))) for i in 1:m, j in 1:k]
 end
 
-function (comp::ACAWithRecompression)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs = nothing)
-    aca_buf = isnothing(bufs) ? nothing : bufs.aca
-    # the method of `PartialACA` with trees chooses the first pivot from the geometry
-    R = comp.aca(K, rowtree, coltree, aca_buf)
-    return _recompress!(R, comp.aca.atol, comp.aca.rtol, comp.aca.rank, bufs)
-end
-
 function (comp::ACAWithRecompression)(K, irange::AbstractRange, jrange::AbstractRange, bufs = nothing)
     aca_buf = isnothing(bufs) ? nothing : bufs.aca
     R = comp.aca(K, irange, jrange, aca_buf)
@@ -601,18 +560,6 @@ function (comp::ACAWithRecompression)(K, irange::AbstractRange, jrange::Abstract
 end
 
 (comp::ACAWithRecompression)(K::AbstractMatrix) = comp(K, axes(K, 1), axes(K, 2))
-
-"""
-    _compress(comp, K, rowtree, coltree, buf)
-
-Compress the block of `K` with rows in `rowtree` and columns in `coltree`. Calls
-`comp(K, irange, jrange, buf)` with the index ranges of the trees, except for compressors
-that use the geometry of the clusters.
-"""
-function _compress(comp, K, rowtree, coltree, buf)
-    return comp(K, index_range(rowtree), index_range(coltree), buf)
-end
-_compress(comp::Union{PartialACA, ACAWithRecompression}, K, rowtree, coltree, buf) = comp(K, rowtree, coltree, buf)
 
 """
     _check_rtol(comp, T)

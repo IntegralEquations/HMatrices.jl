@@ -412,7 +412,7 @@ function _assemble_threads!(hmat, K, comp)
 end
 
 function _assemble_sparse_block!(hmat, K, comp, bufs)
-    return hmat.data = _compress(comp, K, hmat.rowtree, hmat.coltree, bufs)
+    return hmat.data = comp(K, rowrange(hmat), colrange(hmat), bufs)
 end
 
 function _assemble_dense_block!(hmat, K)
