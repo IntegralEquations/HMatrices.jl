@@ -46,6 +46,12 @@ out; it continues from the largest residual if they show an error above the tole
 `samples = 0` disables this check, which is also skipped when an entry costs a whole
 column (in the products of the factorizations).
 
+With `recompress = true`, the result is recompressed by a truncated SVD (see
+[`TSVD`](@ref)) with the same tolerances, which lowers its rank (about 20% less memory
+for single layers) at the cost of a QR and an SVD of the factors (an assembly up to 2–3
+times slower with cheap kernels). The errors of the two steps add up, so the error can
+be up to twice the tolerance.
+
 The default `rtol` is `sqrt(eps(R))`, where `R` is the real type underlying the
 entries of the compressed matrix, or only the accuracy attainable with `R` if `atol` or
 `rank` is given. An `rtol` smaller than that accuracy (`10eps(R)`) is raised to it, or
@@ -57,14 +63,17 @@ Base.@kwdef struct PartialACA <: AbstractCompressor
     rank::Int = typemax(Int)
     rtol::Union{Nothing, Float64} = nothing
     samples::Int = 4
-    function PartialACA(atol, rank, rtol, samples)
+    recompress::Bool = false
+    function PartialACA(atol, rank, rtol, samples, recompress)
         samples >= 0 || throw(ArgumentError("samples = $samples must be nonnegative"))
-        return new(_check_tolerances(atol, rank, rtol)..., samples)
+        return new(_check_tolerances(atol, rank, rtol)..., samples, recompress)
     end
 end
 
 function (paca::PartialACA)(K, irange::AbstractRange, jrange::AbstractRange, bufs = nothing)
-    return _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol, paca.samples, bufs)
+    R = _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol, paca.samples, bufs)
+    paca.recompress || return R
+    return _recompress!(R, paca.atol, paca.rtol, paca.rank, bufs)
 end
 
 (paca::PartialACA)(K::AbstractMatrix) = paca(K, axes(K, 1), axes(K, 2))
@@ -78,23 +87,15 @@ struct ACABuffer{T}
     rb::Vector{Float64} # squared norms of the rows of `B`, `Inf` for the used columns
     pa::Vector{Int}
     pb::Vector{Int}
+    data::Vector{T} # scratch of the recompression, grown via resize!, never shrunk
 end
 
 # every field is resized by each call of `_aca_partial`
 function ACABuffer(T)
-    return ACABuffer{T}(VectorOfVectors(T), VectorOfVectors(T), BitVector(), BitVector(), Float64[], Float64[], Int[], Int[])
+    return ACABuffer{T}(VectorOfVectors(T), VectorOfVectors(T), BitVector(), BitVector(), Float64[], Float64[], Int[], Int[], T[])
 end
 
-struct ACAWithRecompressionBuffer{T}
-    aca::ACABuffer{T}
-    data::Vector{T}   # flat scratch, grown via resize!, never shrunk
-end
-
-function ACAWithRecompressionBuffer(T)
-    return ACAWithRecompressionBuffer{T}(ACABuffer(T), Vector{T}(undef, 0))
-end
-
-function _get_scratch!(buf::ACAWithRecompressionBuffer{T}, k) where {T}
+function _get_scratch!(buf::ACABuffer{T}, k) where {T}
     n = k * k
     if length(buf.data) < n
         resize!(buf.data, n)
@@ -467,24 +468,6 @@ function compress!(M::Base.Matrix, tsvd::TSVD)
     return RkMatrix(A, B)
 end
 
-"""
-    struct ACAWithRecompression
-
-    ACAWithRecompression(; atol, rank, rtol)
-
-A two-stage compressor that applies [`PartialACA`](@ref) followed by
-recompression via [`TSVD`](@ref), both with the tolerances `atol`, `rank` and `rtol`.
-The ACA step produces a low-rank approximation quickly using partial pivoting; the
-subsequent SVD step can reduce the rank further, at the cost of a small additional
-computation. The errors of the two steps add up, so the error can be up to twice the
-tolerance.
-"""
-struct ACAWithRecompression <: AbstractCompressor
-    aca::PartialACA
-end
-
-ACAWithRecompression(; kwargs...) = ACAWithRecompression(PartialACA(; kwargs...))
-
 function _recompress!(R::RkMatrix{T}, atol, rtol, rmax, bufs = nothing) where {T}
     m, n = size(R)
     k = rank(R)
@@ -553,14 +536,6 @@ function _block_matrix(::Type{S}, M) where {S <: SMatrix}
     return [S(view(Mp, ((i - 1) * p + 1):(i * p), ((j - 1) * q + 1):(j * q))) for i in 1:m, j in 1:k]
 end
 
-function (comp::ACAWithRecompression)(K, irange::AbstractRange, jrange::AbstractRange, bufs = nothing)
-    aca_buf = isnothing(bufs) ? nothing : bufs.aca
-    R = comp.aca(K, irange, jrange, aca_buf)
-    return _recompress!(R, comp.aca.atol, comp.aca.rtol, comp.aca.rank, bufs)
-end
-
-(comp::ACAWithRecompression)(K::AbstractMatrix) = comp(K, axes(K, 1), axes(K, 2))
-
 """
     _check_rtol(comp, T)
 
@@ -572,7 +547,6 @@ function _check_rtol(comp::Union{PartialACA, TSVD}, T)
     _rtol(comp.rtol, comp.atol, comp.rank, T)
     return nothing
 end
-_check_rtol(comp::ACAWithRecompression, T) = _check_rtol(comp.aca, T)
 
 """
     allocate_buffer(comp, T)
@@ -583,5 +557,4 @@ can be passed to (and reused by) its calls; `nothing` if `comp` needs none.
 function allocate_buffer end
 
 allocate_buffer(::PartialACA, T) = ACABuffer(T)
-allocate_buffer(::ACAWithRecompression, T) = ACAWithRecompressionBuffer(T)
 allocate_buffer(::Any, T) = nothing

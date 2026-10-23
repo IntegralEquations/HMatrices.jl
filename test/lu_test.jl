@@ -1,6 +1,6 @@
 using Test
 using HMatrices
-using HMatrices: ClusterTree, CardinalitySplitter, StrongAdmissibilityStd, PartialACA, ACAWithRecompression, TSVD
+using HMatrices: ClusterTree, CardinalitySplitter, StrongAdmissibilityStd, PartialACA, TSVD
 using LinearAlgebra
 using Random
 using StaticArrays
@@ -40,8 +40,8 @@ for threads in (false, true)
         z = mul!(zero(y), hlu.U, approx[hlu.q], 1, 0; threads = t)
         @test mul!(zero(y), hlu.L, z, 1, 0; threads = t) ≈ y[hlu.p]
     end
-    # a compressor with its own buffer type
-    hlu = lu(H, ACAWithRecompression(PartialACA(; atol = 1.0e-10)))
+    # recompression after ACA
+    hlu = lu(H, PartialACA(; atol = 1.0e-10, recompress = true))
     @test norm(exact - hlu \ y) < 1.0e-7 * norm(exact)
 end
 
