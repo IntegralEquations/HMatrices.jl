@@ -283,6 +283,8 @@ function assemble_hmatrix(
             "the element type of the matrix, $T, is not concrete; for a `KernelMatrix`, make sure that the kernel function is type stable (e.g. that it does not capture non-constant global variables)",
         ),
     )
+    # once here rather than in each block, where it may be raised inside a task
+    _check_rtol(comp, T)
     # create first the structure. No parallelism used as this should be light.
     hmat_ = HMatrix{T}(rowtree, coltree, adm)
     # wrap hmat in a Hermitian if needed
@@ -410,7 +412,7 @@ function _assemble_threads!(hmat, K, comp)
 end
 
 function _assemble_sparse_block!(hmat, K, comp, bufs)
-    return hmat.data = _compress(comp, K, hmat.rowtree, hmat.coltree, bufs)
+    return hmat.data = comp(K, rowrange(hmat), colrange(hmat), bufs)
 end
 
 function _assemble_dense_block!(hmat, K)

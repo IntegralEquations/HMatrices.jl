@@ -37,6 +37,21 @@ evaluated at every `i,j`. This is usually much faster than [`TSVD`](@ref), but
 due to the pivoting strategy the algorithm may fail in special cases, even when
 the underlying linear operator is of low rank.
 
+ACA estimates its error from the last cross only, which can stop it too early, or miss
+part of a block whose rows visited by ACA vanish on it (e.g. a double layer between two
+parallel sheets). Before stopping, it checks the residual at `max(samples*k, 20)`
+entries, where `k` is the current rank: half at pseudo-random positions, half in the
+rows and columns of the smallest norms in the factors, which the approximation leaves
+out; it continues from the largest residual if they show an error above the tolerance.
+`samples = 0` disables this check, which is also skipped when an entry costs a whole
+column (in the products of the factorizations).
+
+With `recompress = true`, the result is recompressed by a truncated SVD (see
+[`TSVD`](@ref)) with the same tolerances, which lowers its rank (about 20% less memory
+for single layers) at the cost of a QR and an SVD of the factors (an assembly up to 2–3
+times slower with cheap kernels). The errors of the two steps add up, so the error can
+be up to twice the tolerance.
+
 The default `rtol` is `sqrt(eps(R))`, where `R` is the real type underlying the
 entries of the compressed matrix, or only the accuracy attainable with `R` if `atol` or
 `rank` is given. An `rtol` smaller than that accuracy (`10eps(R)`) is raised to it, or
@@ -47,27 +62,18 @@ Base.@kwdef struct PartialACA <: AbstractCompressor
     atol::Float64 = 0
     rank::Int = typemax(Int)
     rtol::Union{Nothing, Float64} = nothing
-end
-
-function (paca::PartialACA)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs = nothing)
-    # find initial column pivot for partial ACA
-    istart = _aca_partial_initial_pivot(rowtree)
-    irange = index_range(rowtree)
-    jrange = index_range(coltree)
-    return _aca_partial(
-        K,
-        irange,
-        jrange,
-        paca.atol,
-        paca.rank,
-        paca.rtol,
-        istart - irange.start + 1,
-        bufs,
-    )
+    samples::Int = 4
+    recompress::Bool = false
+    function PartialACA(atol, rank, rtol, samples, recompress)
+        samples >= 0 || throw(ArgumentError("samples = $samples must be nonnegative"))
+        return new(_check_tolerances(atol, rank, rtol)..., samples, recompress)
+    end
 end
 
 function (paca::PartialACA)(K, irange::AbstractRange, jrange::AbstractRange, bufs = nothing)
-    return _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol, 1, bufs)
+    R = _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol, paca.samples, bufs)
+    paca.recompress || return R
+    return _recompress!(R, paca.atol, paca.rtol, paca.rank, bufs)
 end
 
 (paca::PartialACA)(K::AbstractMatrix) = paca(K, axes(K, 1), axes(K, 2))
@@ -77,27 +83,19 @@ struct ACABuffer{T}
     B::VectorOfVectors{T}
     I::BitVector
     J::BitVector
+    ra::Vector{Float64} # squared norms of the rows of `A`, `Inf` for the used rows
+    rb::Vector{Float64} # squared norms of the rows of `B`, `Inf` for the used columns
+    pa::Vector{Int}
+    pb::Vector{Int}
+    data::Vector{T} # scratch of the recompression, grown via resize!, never shrunk
 end
 
-function ACABuffer(T, m = 0, n = 0)
-    return ACABuffer{T}(
-        VectorOfVectors(T, m),
-        VectorOfVectors(T, n),
-        BitVector(undef, m),
-        BitVector(undef, n),
-    )
+# every field is resized by each call of `_aca_partial`
+function ACABuffer(T)
+    return ACABuffer{T}(VectorOfVectors(T), VectorOfVectors(T), BitVector(), BitVector(), Float64[], Float64[], Int[], Int[], T[])
 end
 
-struct ACAWithRecompressionBuffer{T}
-    aca::ACABuffer{T}
-    data::Vector{T}   # flat scratch, grown via resize!, never shrunk
-end
-
-function ACAWithRecompressionBuffer(T)
-    return ACAWithRecompressionBuffer{T}(ACABuffer(T), Vector{T}(undef, 0))
-end
-
-function _get_scratch!(buf::ACAWithRecompressionBuffer{T}, k) where {T}
+function _get_scratch!(buf::ACABuffer{T}, k) where {T}
     n = k * k
     if length(buf.data) < n
         resize!(buf.data, n)
@@ -106,7 +104,7 @@ function _get_scratch!(buf::ACAWithRecompressionBuffer{T}, k) where {T}
 end
 
 """
-    _aca_partial(K,irange,jrange,atol,rmax,rtol,istart=1)
+    _aca_partial(K, irange, jrange, atol, rmax, rtol, samples, buffer = nothing)
 
 Internal function implementing the adaptive cross-approximation algorithm with
 partial pivoting. The returned `R::RkMatrix` provides an approximation to
@@ -114,89 +112,172 @@ partial pivoting. The returned `R::RkMatrix` provides an approximation to
 max(atol,rtol*|M|)`, but this inequality may fail to hold due to the various
 errors involved in estimating the error and |M|.
 """
-function _aca_partial(K, irange, jrange, atol, rmax, rtol, istart, buffer_ = nothing)
+function _aca_partial(K, irange, jrange, atol, rmax, rtol, samples, buffer_ = nothing)
     Kadj = adjoint(K)
     T = eltype(K)
     rtol = _rtol(rtol, atol, rmax, T)
     m, n = length(irange), length(jrange)
     # maps local indices to indices of `K`
     ishift, jshift = first(irange) - 1, first(jrange) - 1
-    buffer = isnothing(buffer_) ? ACABuffer(T, m, n) : buffer_
+    buffer = isnothing(buffer_) ? ACABuffer(T) : buffer_
     A, B, I, J = buffer.A, buffer.B, buffer.I, buffer.J # extract the individual buffers for convenience
-    @assert A.k == 0 && B.k == 0 "buffers must be empty"
+    # reset rather than assume empty buffers: a previous call may have thrown
+    reset!(A)
+    reset!(B)
     A.m, B.m = m, n
     rmax = min(m, n, rmax)
     resize!(I, m)
     resize!(J, n)
     fill!(I, true)
     fill!(J, true)
-    i = istart # initial pivot
-    er = Inf
-    est_norm = 0 # approximate norm of K[irange,jrange]
+    ra, rb = fill!(resize!(buffer.ra, m), 0), fill!(resize!(buffer.rb, n), 0)
+    # the first row is as good as any: the other rows follow from the residual columns,
+    # and a geometric choice (the point closest to the center of the cluster, as suggested
+    # by Bebendorf) did not change the ranks or the errors
+    i = 1
+    R = real(eltype(T))
+    er = R(Inf)
+    est_norm = zero(R) # approximate norm of K[irange,jrange]
     r = 0 # current rank
-    zero_rows = true # whether every row of the residual evaluated so far is exactly zero
-    while er > max(atol, rtol * est_norm) && r < rmax
-        # remove index i from allowed row
-        I[i] = false
-        # pre-allocate row and column
-        a = newcol!(A)
-        A.k -= 1
-        b = newcol!(B)
-        B.k -= 1
-        # compute next row by row <-- K[i+ishift,jrange] - R[i,:]
-        getblock!(b, Kadj, jrange, i + ishift)
-        for k in 1:r
-            axpy!(-adjoint(A[k][i]), B[k], b)
-        end
-        zero_rows &= iszero(b)
-        j = _aca_partial_pivot(b, J)
-        δ = b[j]
-        σ = min_svd_vals(δ)
-        if σ > 0 # compute next col by col <-- K[irange,j+jshift] - R[:,j]
-            getblock!(a, K, irange, j + jshift)
+    zero_rows = true # whether every rejected row of the residual was exactly zero
+    exhausted = false # whether every row was used or rejected
+    while true
+        while er > max(atol, rtol * est_norm) && r < rmax
+            # remove index i from allowed row
+            I[i] = false
+            ra[i] = Inf
+            # pre-allocate row and column
+            a = newcol!(A)
+            A.k -= 1
+            b = newcol!(B)
+            B.k -= 1
+            # compute next row by row <-- K[i+ishift,jrange] - R[i,:]
+            getblock!(b, Kadj, jrange, i + ishift)
             for k in 1:r
-                axpy!(-adjoint(B[k][j]), A[k], a)
+                axpy!(-adjoint(A[k][i]), B[k], b)
+            end
+            j = _aca_partial_pivot(b, J)
+            δ = b[j]
+            σ = min_svd_vals(δ)
+            if σ > 0 # compute next col by col <-- K[irange,j+jshift] - R[:,j]
+                getblock!(a, K, irange, j + jshift)
+                for k in 1:r
+                    axpy!(-adjoint(B[k][j]), A[k], a)
+                end
+            end
+            # a pivot at the rounding level of its column means that row `i` of the
+            # residual is zero (up to rounding errors, e.g. when `K` is a product)
+            if σ == 0 || σ <= sqrt(eps(R)) * maximum(norm, a)
+                @debug "zero pivot found during partial aca"
+                zero_rows &= iszero(σ)
+                # the residual column, when computed, points to the rows that remain
+                i = σ > 0 ? _aca_partial_pivot(a, I) : something(findfirst(I), -1)
+                if i == -1
+                    # ran out of candidate rows: every row has been evaluated, so the
+                    # approximation is exact if the rejected rows were exactly zero on the
+                    # remaining columns (e.g. a zero block); otherwise some were only small,
+                    # and ACA may have failed
+                    zero_rows || @warn "aca possibly failed on $irange × $jrange" maxlog = 1
+                    exhausted = true
+                    break
+                end
+            else # δ != 0
+                # the same cutoff as for the pivots: below it, the pivot is rounding noise
+                iδ = T <: AbstractArray ? pinv(δ; rtol = sqrt(eps(R))) : inv(δ)
+                # b <-- b/δ
+                for k in eachindex(b)
+                    b[k] = b[k] * iδ
+                end
+                J[j] = false
+                rb[j] = Inf
+                # increase rank and push cross
+                r += 1
+                A.k += 1
+                B.k += 1
+                # estimate the error by || R_{k} - R_{k-1} || = ||a bᴴ||
+                er = sqrt(_frob2(a, b))
+                # estimate the norm by || K || ≈ || R_k ||
+                est_norm = _update_frob_norm(est_norm, A, B)
+                _add_abs2!(ra, a)
+                _add_abs2!(rb, b)
+                i = _aca_partial_pivot(a, I)
+                # no candidate row left: every row was used, so the approximation is exact
+                i == -1 && (exhausted = true; break)
+                @debug r, er, m, n
             end
         end
-        # a pivot at the rounding level of its column means that row `i` of the
-        # residual is zero (up to rounding errors, e.g. when `K` is a product)
-        if σ == 0 || σ <= sqrt(eps(real(eltype(T)))) * maximum(norm, a)
-            @debug "zero pivot found during partial aca"
-            i = findfirst(x -> x == true, I)
-            if isnothing(i)
-                # ran out of candidate rows: every row has been evaluated, so the
-                # approximation is exact if all residual rows were exactly zero (e.g. a
-                # zero block); otherwise some were only small, and ACA may have failed
-                zero_rows || @warn "aca possibly failed on $irange × $jrange" maxlog = 1
-                break
-            end
-        else # δ != 0
-            iδ = T <: AbstractArray ? pinv(δ; rtol = 1.0e-8) : inv(δ)
-            # b <-- b/δ
-            for k in eachindex(b)
-                b[k] = b[k] * iδ
-            end
-            J[j] = false
-            # increase rank and push cross
-            r += 1
-            A.k += 1
-            B.k += 1
-            # estimate the error by || R_{k} - R_{k-1} || = ||a|| ||b||
-            er = norm(a) * norm(b)
-            # estimate the norm by || K || ≈ || R_k ||
-            est_norm = _update_frob_norm(est_norm, A, B)
-            i = _aca_partial_pivot(a, I)
-            # no candidate row left: every row was used, so the approximation is exact
-            i == -1 && break
-            @debug r, er, m, n
-        end
+        # the error estimate only uses the last cross: check the residual at a few
+        # entries before stopping
+        (exhausted || r >= rmax || samples == 0 || !_can_sample(K)) && break
+        ns = max(samples * r, 20)
+        i = _aca_residual_sample(K, A, B, I, J, buffer, irange, jrange, ns, max(atol, rtol * est_norm), r)
+        i == -1 && break
+        er = oftype(er, Inf)
     end
     # copy from buffer to matrix and create Rk matrix
     R_ = RkMatrix(Matrix(A), Matrix(B))
-    # # indicate that `A` and `B` can be reused
+    # indicate that `A` and `B` can be reused
     reset!(A)
     reset!(B)
     return R_
+end
+
+# whether single entries of `K` are cheap, as needed by `_aca_residual_sample`
+_can_sample(K) = true
+
+"""
+    _aca_residual_sample(K, A, B, I, J, buffer, irange, jrange, ns, tol, r)
+
+Check the residual `K[irange, jrange] - A*Bᴴ` at `ns` entries, and return the unused row
+of the largest residual found if it shows an error above `tol`, and `-1` otherwise.
+
+Half of the entries are at pseudo-random positions, from which the Frobenius norm of the
+residual is estimated. The other half pair the unused rows of `A` and of `B` of the
+smallest norms (kept in `buffer.ra` and `buffer.rb`), which the approximation leaves
+out: an entry there more than 10 times above the average allowed by `tol` means that ACA
+missed part of the block.
+"""
+function _aca_residual_sample(K, A, B, I, J, buffer, irange, jrange, ns, tol, r)
+    m, n = length(irange), length(jrange)
+    out = Base.Matrix{eltype(K)}(undef, 1, 1)
+    function residual(i, j)
+        getblock!(out, K, irange[i]:irange[i], jrange[j]:jrange[j])
+        v = out[1]
+        for k in 1:length(A)
+            v -= A[k][i] * adjoint(B[k][j])
+        end
+        return norm(v)
+    end
+    nu = ns ÷ 2
+    seed = hash((first(irange), first(jrange), r))
+    s2 = 0.0
+    imax, vmax = -1, -1.0
+    for t in 1:nu
+        h = hash(t, seed)
+        i = Int(h % UInt(m)) + 1
+        j = Int((h >> 32) % UInt(n)) + 1
+        nv = residual(i, j)
+        s2 += nv^2
+        if nv > vmax && I[i]
+            imax, vmax = i, nv
+        end
+    end
+    # a large residual on used rows only (`imax == -1`) is left to the targeted entries
+    imax != -1 && sqrt(m * n * s2 / nu) > tol && return imax
+    nt = min(ns - nu, count(I), count(J))
+    rows = partialsortperm!(resize!(buffer.pa, m), buffer.ra, 1:nt)
+    cols = partialsortperm!(resize!(buffer.pb, n), buffer.rb, 1:nt)
+    for t in 1:nt
+        sqrt(m * n) * residual(rows[t], cols[t]) > 10 * tol && return rows[t]
+    end
+    return -1
+end
+
+function _add_abs2!(out, a)
+    for i in eachindex(out, a)
+        out[i] += sum(abs2, a[i])
+    end
+    return out
 end
 
 """
@@ -209,25 +290,51 @@ compute the Frobenius norm of `Rₖ₊₁ = A*adjoint(B)` efficiently.
     k = length(A)
     a = A[k]
     b = B[k]
-    out = norm(a)^2 * norm(b)^2
+    out = _frob2(a, b)
     for l in 1:(k - 1)
-        out += 2 * real(dot(A[l], a) * (dot(b, B[l])))
+        out += 2 * real(tr(_gram(A[l], a) * _gram(b, B[l])))
     end
-    return sqrt(cur^2 + out)
+    # rounding errors can make the update negative when `cur` is small
+    return sqrt(max(cur^2 + out, zero(out)))
 end
+
+"""
+    _gram(x, y)
+
+`∑ᵢ xᵢᴴ yᵢ`. For scalar entries this is `dot(x, y)`; for matrix entries it is a
+matrix, since the entries do not commute.
+"""
+_gram(x::AbstractVector{<:Number}, y) = dot(x, y)
+function _gram(x, y)
+    s = zero(adjoint(first(x)) * first(y))
+    for i in eachindex(x, y)
+        s += adjoint(x[i]) * y[i]
+    end
+    return s
+end
+
+"""
+    _frob2(a, b)
+
+The squared Frobenius norm of the cross `a bᴴ`, i.e. `tr(∑ᵢ aᵢᴴ aᵢ ∑ⱼ bⱼᴴ bⱼ)`.
+"""
+_frob2(a::AbstractVector{<:Number}, b) = norm(a)^2 * norm(b)^2
+_frob2(a, b) = real(tr(_gram(a, a) * _gram(b, b)))
 
 min_svd_vals(x::Number) = abs(x)
 function min_svd_vals(A::SMatrix)
     n, m = size(A)
-    if (n == 2) || (n == 3)
-        λ = minimum(eigvals(Hermitian(A * adjoint(A))))
-        # try to avoid some floating point issues
-        return max(λ, zero(λ)) |> sqrt
+    if n <= 3 && m <= 3
+        # the eigenvalues of the smaller Gram matrix are the squared singular values;
+        # they have a closed form, much faster than `svdvals`
+        G = n <= m ? A * adjoint(A) : adjoint(A) * A
+        λ = minimum(eigvals(Hermitian(G)))
+        return sqrt(max(λ, zero(λ)))
     else
         return svdvals(A)[end]
     end
 end
-min_svd_vals(A::Any) = svdvals(A::Any)[end] # fallback
+min_svd_vals(A) = svdvals(A)[end] # fallback
 
 """
     _aca_partial_pivot(v,I)
@@ -248,14 +355,28 @@ function _aca_partial_pivot(v, J)
     idx = -1
     val = -Inf
     for n in 1:length(J)
-        x = v[n]
-        σ = min_svd_vals(x)
-        if σ > val && J[n]
+        J[n] || continue
+        σ = min_svd_vals(v[n])
+        if σ > val
             idx = n
             val = σ
         end
     end
     return idx
+end
+
+"""
+    _check_tolerances(atol, rank, rtol)
+
+Throw an `ArgumentError` unless `atol ≥ 0`, `rank ≥ 1` and `rtol` is `nothing` or
+`≥ 0`; return them otherwise. Whether `rtol` is attainable depends on the entries, and
+is checked by [`_rtol`](@ref).
+"""
+function _check_tolerances(atol, rank, rtol)
+    atol >= 0 || throw(ArgumentError("atol = $atol must be nonnegative"))
+    rank >= 1 || throw(ArgumentError("rank = $rank must be positive"))
+    isnothing(rtol) || rtol >= 0 || throw(ArgumentError("rtol = $rtol must be nonnegative"))
+    return atol, rank, rtol
 end
 
 """
@@ -284,45 +405,30 @@ function _rtol(rtol, atol, rank, T)
     return max(rtol, 10 * eps(R))
 end
 
-function _aca_partial_initial_pivot(rowtree)
-    # the method below is suggested in Bebendorf, but it does not seem to
-    # improve the error. The idea is that the initial pivot is the closest
-    # point to the center of the cluster
-    xc = center(container(rowtree))
-    d = Inf
-    els = root_elements(rowtree)
-    loc_idxs = index_range(rowtree)
-    istart = first(loc_idxs)
-    for i in loc_idxs
-        x = els[i]
-        if norm(x - xc) < d
-            d = norm(x - xc)
-            istart = i
-        end
-    end
-    return istart
-end
-
 """
     struct TSVD
 
-Compression algorithm based on *a posteriori* truncation of an `SVD`. This is
-the optimal approximation in Frobenius norm; however, it also tends to be very
-expensive and thus should be used mostly for "small" matrices. The default `rtol`
-is the same as for [`PartialACA`](@ref).
+Compression algorithm based on *a posteriori* truncation of an `SVD`: the singular
+values `σₖ ≤ max(atol, rtol*σ₁)` are dropped, and at most `rank` are kept. This is the
+best approximation of its rank, and its error in the spectral norm is below the
+tolerance; note that [`PartialACA`](@ref) estimates its error in the Frobenius norm
+instead. It evaluates every entry of the block, so it should be used mostly for "small"
+matrices. The default `rtol` is the same as for [`PartialACA`](@ref).
 """
 Base.@kwdef struct TSVD <: AbstractCompressor
     atol::Float64 = 0
     rank::Int = typemax(Int)
     rtol::Union{Nothing, Float64} = nothing
+    TSVD(atol, rank, rtol) = new(_check_tolerances(atol, rank, rtol)...)
 end
 
 function (tsvd::TSVD)(K, irange::AbstractRange, jrange::AbstractRange, buf = nothing)
-    M = K[irange, jrange]
+    M = Base.Matrix{eltype(K)}(undef, length(irange), length(jrange))
+    getblock!(M, K, irange, jrange)
     return compress!(M, tsvd)
 end
 
-(comp::TSVD)(K::Base.Matrix) = comp(K, 1:size(K, 1), 1:size(K, 2))
+(comp::TSVD)(K::AbstractMatrix) = comp(K, axes(K, 1), axes(K, 2))
 
 # number of singular values `S` (sorted decreasingly) above the tolerance, at most
 # `rmax` (zero if they are all below the tolerance)
@@ -334,7 +440,7 @@ function _truncation_rank(S, atol, rtol, rmax)
 end
 
 """
-    compress!(M::RkMatrix,tsvd::TSVD)
+    compress!(R::RkMatrix, tsvd::TSVD)
 
 Recompress the matrix `R` using a truncated svd of `R`. The implementation uses
 the `qr-svd` strategy to efficiently compute `svd(R)` when `rank(R) ≪
@@ -345,7 +451,7 @@ compress!(R::RkMatrix, tsvd::TSVD) = _recompress!(R, tsvd.atol, tsvd.rtol, tsvd.
 """
     compress!(M::Matrix,tsvd::TSVD)
 
-Recompress the matrix `M` using a truncated svd and output an `RkMatrix`. The
+Compress the matrix `M` using a truncated svd and output an `RkMatrix`. The
 data in `M` is invalidated in the process.
 """
 function compress!(M::Base.Matrix, tsvd::TSVD)
@@ -362,21 +468,14 @@ function compress!(M::Base.Matrix, tsvd::TSVD)
     return RkMatrix(A, B)
 end
 
-"""
-    struct ACAWithRecompression
-
-A two-stage compressor that applies [`PartialACA`](@ref) followed by
-recompression via [`TSVD`](@ref). The ACA step produces a low-rank approximation
-quickly using partial pivoting; the subsequent SVD step can reduce the rank
-further, at the cost of a small additional computation.
-"""
-struct ACAWithRecompression <: AbstractCompressor
-    aca::PartialACA
-end
-
 function _recompress!(R::RkMatrix{T}, atol, rtol, rmax, bufs = nothing) where {T}
     m, n = size(R)
     k = rank(R)
+    if k >= min(m, n) # the QR factors would not be smaller than the matrix
+        Rt = compress!(R.A * adjoint(R.B), TSVD(atol, rmax, rtol))
+        R.A, R.B = Rt.A, Rt.B
+        return R
+    end
     QA, RA = qr!(R.A)
     QB, RB = qr!(R.B)
     if isnothing(bufs)
@@ -392,32 +491,62 @@ function _recompress!(R::RkMatrix{T}, atol, rtol, rmax, bufs = nothing) where {T
     return R
 end
 
-function (comp::ACAWithRecompression)(K, rowtree::ClusterTree, coltree::ClusterTree, bufs = nothing)
-    aca_buf = isnothing(bufs) ? nothing : bufs.aca
-    # the method of `PartialACA` with trees chooses the first pivot from the geometry
-    R = comp.aca(K, rowtree, coltree, aca_buf)
-    return _recompress!(R, comp.aca.atol, comp.aca.rtol, comp.aca.rank, bufs)
+# matrix entries: truncate the equivalent scalar matrix, whose rank is rounded up to a
+# multiple of the size of the entries
+function _recompress!(R::RkMatrix{S}, atol, rtol, rmax, bufs = nothing) where {S <: SMatrix}
+    q = size(S, 2)
+    Rs = RkMatrix(_scalar_matrix(R.A), _scalar_matrix(R.B))
+    _recompress!(Rs, atol, rtol, rmax > typemax(Int) ÷ q ? typemax(Int) : q * rmax)
+    R.A = _block_matrix(S, Rs.A)
+    R.B = _block_matrix(S, Rs.B)
+    return R
 end
 
-function (comp::ACAWithRecompression)(K, irange::AbstractRange, jrange::AbstractRange, bufs = nothing)
-    aca_buf = isnothing(bufs) ? nothing : bufs.aca
-    R = comp.aca(K, irange, jrange, aca_buf)
-    return _recompress!(R, comp.aca.atol, comp.aca.rtol, comp.aca.rank, bufs)
+function compress!(M::Base.Matrix{S}, tsvd::TSVD) where {S <: SMatrix}
+    q = size(S, 2)
+    rmax = tsvd.rank > typemax(Int) ÷ q ? typemax(Int) : q * tsvd.rank
+    Rs = compress!(_scalar_matrix(M), TSVD(tsvd.atol, rmax, tsvd.rtol))
+    return RkMatrix(_block_matrix(S, Rs.A), _block_matrix(S, Rs.B))
 end
-
-(comp::ACAWithRecompression)(K::AbstractMatrix) = comp(K, axes(K, 1), axes(K, 2))
 
 """
-    _compress(comp, K, rowtree, coltree, buf)
+    _scalar_matrix(A::Matrix{<:SMatrix})
 
-Compress the block of `K` with rows in `rowtree` and columns in `coltree`. Calls
-`comp(K, irange, jrange, buf)` with the index ranges of the trees, except for compressors
-that use the geometry of the clusters.
+The scalar matrix whose blocks are the entries of `A`.
 """
-function _compress(comp, K, rowtree, coltree, buf)
-    return comp(K, index_range(rowtree), index_range(coltree), buf)
+function _scalar_matrix(A::Base.Matrix{S}) where {S <: SMatrix}
+    p, q = size(S)
+    out = Base.Matrix{eltype(S)}(undef, size(A, 1) * p, size(A, 2) * q)
+    for j in axes(A, 2), i in axes(A, 1)
+        out[((i - 1) * p + 1):(i * p), ((j - 1) * q + 1):(j * q)] = A[i, j]
+    end
+    return out
 end
-_compress(comp::Union{PartialACA, ACAWithRecompression}, K, rowtree, coltree, buf) = comp(K, rowtree, coltree, buf)
+
+"""
+    _block_matrix(S, M)
+
+The matrix with entries of type `S` made of the blocks of `M`, whose columns are padded
+with zeros to a multiple of the size of `S`.
+"""
+function _block_matrix(::Type{S}, M) where {S <: SMatrix}
+    p, q = size(S)
+    m, k = size(M, 1) ÷ p, cld(size(M, 2), q)
+    Mp = [M zeros(eltype(M), size(M, 1), k * q - size(M, 2))]
+    return [S(view(Mp, ((i - 1) * p + 1):(i * p), ((j - 1) * q + 1):(j * q))) for i in 1:m, j in 1:k]
+end
+
+"""
+    _check_rtol(comp, T)
+
+Check that the tolerances of `comp` are attainable for entries of type `T`, before
+compressing any block.
+"""
+_check_rtol(comp, T) = nothing
+function _check_rtol(comp::Union{PartialACA, TSVD}, T)
+    _rtol(comp.rtol, comp.atol, comp.rank, T)
+    return nothing
+end
 
 """
     allocate_buffer(comp, T)
@@ -428,5 +557,4 @@ can be passed to (and reused by) its calls; `nothing` if `comp` needs none.
 function allocate_buffer end
 
 allocate_buffer(::PartialACA, T) = ACABuffer(T)
-allocate_buffer(::ACAWithRecompression, T) = ACAWithRecompressionBuffer(T)
 allocate_buffer(::Any, T) = nothing
