@@ -1,5 +1,16 @@
 using HMatrices
 using Documenter
+using LinearAlgebra
+
+# the public API: the exported and `public` names, and the methods of `Base` and
+# `LinearAlgebra` functions documented for an `HMatrix` (used by `references.md`)
+const PUBLIC_API = Set{Any}(
+    [
+        (getfield(HMatrices, n) for n in names(HMatrices) if n !== :HMatrices)...,
+        lu, lu!, cholesky, cholesky!, mul!, Matrix,
+    ]
+)
+ispublicapi(x) = x in PUBLIC_API
 
 DocMeta.setdocmeta!(HMatrices, :DocTestSetup, :(using HMatrices); recursive = true)
 
@@ -17,7 +28,8 @@ makedocs(;
     pages = [
         "Getting started" => "index.md",
         "Kernel matrices" => "kernelmatrix.md",
-        "References" => "references.md",
+        "Reference" => "references.md",
+        "Internals" => ["internals.md", "internals_arithmetic.md"],
     ],
     warnonly = on_CI ? false : Documenter.except(:linkcheck_remotes),
     pagesonly = true,
