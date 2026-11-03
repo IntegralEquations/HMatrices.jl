@@ -92,8 +92,8 @@ H = assemble_hmatrix(K, X, Y; atol = 1e-6, threads = false)
 ```
 
 The keyword arguments of [`assemble_hmatrix`](@ref) control the accuracy of the
-low-rank blocks (`atol`, `rtol` and `rank`, for a partial ACA followed by a
-recompression, see [`PartialACA`](@ref)), which blocks are compressed (`eta`), and
+low-rank blocks (`atol`, `rtol` and `rank`, for a partial ACA, see
+[`PartialACA`](@ref)), which blocks are compressed (`eta`), and
 the size of the smallest clusters (`nmax`). If `K` is a `Hermitian` matrix, wrapping
 it as `Hermitian(K)` assembles only half of it and allows for a Cholesky
 factorization. When `K` is a [`KernelMatrix`](@ref), the points can be omitted (see the

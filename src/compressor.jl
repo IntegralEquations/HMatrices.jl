@@ -46,11 +46,10 @@ out; it continues from the largest residual if they show an error above the tole
 `samples = 0` disables this check, which is also skipped when an entry costs a whole
 column (in the products of the factorizations).
 
-With `recompress = true` (the default), the result is recompressed by a truncated SVD,
-computed from QR factorizations of its factors (see [`TSVD`](@ref)), with the same
-tolerances, which lowers its rank at the cost of a QR factorization of each factor and
-an SVD of a small matrix. In the factorizations, the lower ranks also make the later
-products cheaper.
+With `recompress = true`, the result is recompressed by a truncated SVD, computed from
+QR factorizations of its factors (see [`TSVD`](@ref)), with the same tolerances, which
+lowers its rank at the cost of a QR factorization of each factor and an SVD of a small
+matrix. In the factorizations, the lower ranks also make the later products cheaper.
 
 The default `rtol` is `sqrt(eps(R))`, where `R` is the real type underlying the
 entries of the compressed matrix, or only the accuracy attainable with `R` if `atol` or
@@ -63,7 +62,7 @@ Base.@kwdef struct PartialACA <: AbstractCompressor
     rank::Int = typemax(Int)
     rtol::Union{Nothing, Float64} = nothing
     samples::Int = 4
-    recompress::Bool = true
+    recompress::Bool = false
     function PartialACA(atol, rank, rtol, samples, recompress)
         samples >= 0 || throw(ArgumentError("samples = $samples must be nonnegative"))
         return new(_check_tolerances(atol, rank, rtol)..., samples, recompress)

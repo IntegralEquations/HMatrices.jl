@@ -55,14 +55,14 @@ end
         @test R.orthogonality == :none && isempty(R.truncation_error)
     end
     @testset "PartialACA" begin
-        R = PartialACA(; atol = 1.0e-6, recompress = false)(M)
+        R = PartialACA(; atol = 1.0e-6)(M)
         @test R.orthogonality == :none
         @test length(R.truncation_error) == rank(R)
         @test issorted(R.truncation_error; rev = true)
     end
     @testset "SVD forms" begin
         for R in (
-                PartialACA(; atol = 1.0e-6)(M),
+                PartialACA(; atol = 1.0e-6, recompress = true)(M),
                 HMatrices.RandomizedSVD(; atol = 1.0e-6)(M),
                 HMatrices.compress!(copy(M), TSVD(; atol = 1.0e-6)),
                 HMatrices.compress!(RkMatrix(copy(M), Matrix(1.0I, n, n)), TSVD(; atol = 1.0e-6)),
@@ -77,7 +77,7 @@ end
         end
     end
     @testset "in-place modifications" begin
-        R = PartialACA(; atol = 1.0e-6)(M)
+        R = PartialACA(; atol = 1.0e-6, recompress = true)(M)
         e = copy(R.truncation_error)
         rmul!(R, -2.0)
         @test R.orthogonality == :AB && R.truncation_error ≈ 2 * e

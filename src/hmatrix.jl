@@ -226,9 +226,9 @@ columns of `K`. The points are only used to cluster the indices, and are not mod
   If `K` is a `Hermitian`, only its upper triangle is assembled and a `Hermitian`
   `HMatrix` is returned (this requires `Y === X`).
 - `atol`, `rtol` and `rank` control the compression of the low-rank blocks, by a
-  partial ACA followed by a recompression (see [`PartialACA`](@ref)); by default
-  `rtol = sqrt(eps)` of the real type of the entries, or only the accuracy attainable
-  with that type if `atol` or `rank` is given.
+  partial ACA (see [`PartialACA`](@ref)); by default `rtol = sqrt(eps)` of the real type
+  of the entries, or only the accuracy attainable with that type if `atol` or `rank` is
+  given.
 - Two clusters are compressed if `min(diameters) < eta * distance`; `eta = Inf`
   compresses every pair of disjoint clusters (weak admissibility).
 - `nmax` is the maximum number of points in a leaf of the cluster trees.

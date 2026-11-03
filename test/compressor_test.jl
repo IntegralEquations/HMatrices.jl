@@ -26,15 +26,15 @@ Random.seed!(1)
     @testset "aca_partial" begin
         # the ACA alone (see below for its recompression)
         atol = 1.0e-5
-        aca = PartialACA(; atol, recompress = false)
+        aca = PartialACA(; atol)
         R = aca(M, irange, jrange)
         @test norm(Matrix(R) - M) < atol
         rtol = 1.0e-5
-        aca = PartialACA(; rtol, recompress = false)
+        aca = PartialACA(; rtol)
         R = aca(M, irange, jrange)
         @test norm(Matrix(R) - M) < rtol * norm(M)
         r = 10
-        aca = PartialACA(; rank = r, recompress = false)
+        aca = PartialACA(; rank = r)
         R = aca(M, irange, jrange)
         @test rank(R) == r
 
@@ -100,7 +100,7 @@ Random.seed!(1)
     @testset "aca with recompression" begin
         # accuracy: atol
         atol = 1.0e-5
-        comp = PartialACA(; atol)
+        comp = PartialACA(; atol, recompress = true)
         R = comp(M, irange, jrange)
         @test norm(Matrix(R) - M) < 2 * atol
         # the truncation drops the most singular values whose Frobenius norm is below the
@@ -114,7 +114,7 @@ Random.seed!(1)
         @test norm(Matrix(R1) - Matrix(R0)) <= 0.1 * norm(Matrix(R0))
         # accuracy: rtol
         rtol = 1.0e-5
-        comp = PartialACA(; rtol)
+        comp = PartialACA(; rtol, recompress = true)
         R = comp(M, irange, jrange)
         @test norm(Matrix(R) - M) < rtol * norm(M)
         # a rank larger than the block is recompressed through the dense matrix
@@ -123,16 +123,16 @@ Random.seed!(1)
         @test rank(R) == 10 && Matrix(R) ≈ A * B'
         # rank cap is respected
         r = 10
-        comp = PartialACA(; rank = r)
+        comp = PartialACA(; rank = r, recompress = true)
         R = comp(M, irange, jrange)
         @test rank(R) <= r
         # recompression should not increase rank vs PartialACA alone
-        aca = PartialACA(; rtol = 1.0e-5, recompress = false)
+        aca = PartialACA(; rtol = 1.0e-5)
         R_aca = aca(M, irange, jrange)
-        R_recomp = PartialACA(; rtol = 1.0e-5)(M, irange, jrange)
+        R_recomp = PartialACA(; rtol = 1.0e-5, recompress = true)(M, irange, jrange)
         @test rank(R_recomp) <= rank(R_aca)
         # with explicit buffer: results should match no-buffer path
-        comp_buf = PartialACA(; rtol = 1.0e-5)
+        comp_buf = PartialACA(; rtol = 1.0e-5, recompress = true)
         buf = allocate_buffer(comp_buf, T)
         R_with_buf = comp_buf(M, irange, jrange, buf)
         R_no_buf = comp_buf(M, irange, jrange)
@@ -167,7 +167,7 @@ Random.seed!(1)
         # every singular value is below the tolerance: truncate to rank zero
         small = 1.0e-12 * M
         R = RkMatrix(1.0e-12 * rand(T, m, 3), rand(T, n, 3))
-        for comp in (TSVD(; atol = 1.0e-6), PartialACA(; atol = 1.0e-6), RandomizedSVD(; atol = 1.0e-6))
+        for comp in (TSVD(; atol = 1.0e-6), PartialACA(; atol = 1.0e-6, recompress = true), RandomizedSVD(; atol = 1.0e-6))
             @test rank(comp(small)) == 0
             @test rank(comp(zero(M))) == 0
         end
@@ -179,21 +179,21 @@ Random.seed!(1)
     @testset "single precision" begin
         M32 = ComplexF32.(M)
         # the default tolerance follows the precision of the entries
-        for comp in (PartialACA(; recompress = false), TSVD(), PartialACA(), RandomizedSVD())
+        for comp in (PartialACA(), TSVD(), PartialACA(; recompress = true), RandomizedSVD())
             R = comp(M32)
             @test eltype(R) == ComplexF32
             @test rank(R) < 20
             @test norm(Matrix(R) - M32) < 1.0e-3 * norm(M32)
         end
         # a tolerance that cannot be reached is an error, not a full-rank block
-        for comp in (PartialACA(; rtol = 1.0e-8, recompress = false), TSVD(; rtol = 1.0e-8), PartialACA(; rtol = 1.0e-8), RandomizedSVD(; rtol = 1.0e-8))
+        for comp in (PartialACA(; rtol = 1.0e-8), TSVD(; rtol = 1.0e-8), PartialACA(; rtol = 1.0e-8, recompress = true), RandomizedSVD(; rtol = 1.0e-8))
             @test_throws ArgumentError comp(M32)
             @test rank(comp(M)) < m
         end
         @test_throws ArgumentError PartialACA(; rtol = 1.0e-16)(M)
         # an atol below the precision stops at the precision instead of at full rank,
         # also with an explicit `rtol = 0` or `rtol = nothing`
-        makers = (kw -> PartialACA(; kw..., recompress = false), kw -> TSVD(; kw...), kw -> PartialACA(; kw...), kw -> RandomizedSVD(; kw...))
+        makers = (kw -> PartialACA(; kw...), kw -> TSVD(; kw...), kw -> PartialACA(; kw..., recompress = true), kw -> RandomizedSVD(; kw...))
         for rtol in (0, nothing), comp in makers
             R = comp((; atol = 1.0e-12, rtol))(M32)
             @test rank(R) < 20
@@ -273,8 +273,8 @@ end
         # recompression of matrix entries, through the equivalent scalar matrix
         fro(X) = sqrt(sum(x -> norm(x)^2, X))
         for rtol in (1.0e-4, 1.0e-8)
-            Ra = PartialACA(; rtol, recompress = false)(M)
-            Rw = PartialACA(; rtol)(M)
+            Ra = PartialACA(; rtol)(M)
+            Rw = PartialACA(; rtol, recompress = true)(M)
             Rt = TSVD(; rtol)(M)
             @test rank(Rw) < rank(Ra) && rank(Rt) == rank(Rw)
             @test fro(Matrix(Rw) - M) < rtol * fro(M)

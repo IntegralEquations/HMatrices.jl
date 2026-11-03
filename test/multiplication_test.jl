@@ -75,7 +75,7 @@ end
     Xc = X[1:1000]
     Xcclt = ClusterTree(Xc, CardinalitySplitter(; nmax = 30))
     f = (x, y) -> (d = norm(x - y); x == y ? 10.0 : d < 0.3 ? exp(-d) / (4π * d) : 0.0)
-    for comp in (PartialACA(; atol = 1.0e-8, recompress = false), PartialACA(; atol = 1.0e-8))
+    for comp in (PartialACA(; atol = 1.0e-8), PartialACA(; atol = 1.0e-8, recompress = true))
         Hc = assemble_hmatrix(KernelMatrix(f, Xc, Xc), Xcclt, Xcclt; comp, threads = false)
         Mc = HMatrices._tree_matrix(Hc)
         C = deepcopy(Hc)

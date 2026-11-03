@@ -23,7 +23,7 @@ relerr(A, B) = norm(A - B) / norm(B)
 same(A, B) = relerr(A, B) <= 1.0e-12
 
 @testset "Lazy updates" begin
-    for comp in (PartialACA(; atol = 1.0e-6, recompress = false), PartialACA(; atol = 1.0e-6), RandomizedSVD(; atol = 1.0e-6))
+    for comp in (PartialACA(; atol = 1.0e-6), PartialACA(; atol = 1.0e-6, recompress = true), RandomizedSVD(; atol = 1.0e-6))
         @testset "$comp" begin
             @testset "single product" begin
                 C = deepcopy(H)
@@ -190,7 +190,7 @@ end
             y = rand(eltype(M), n)
             exact = M \ y
             atol = 1.0e-8
-            for comp in (PartialACA(; atol, recompress = false), PartialACA(; atol), RandomizedSVD(; atol))
+            for comp in (PartialACA(; atol), PartialACA(; atol, recompress = true), RandomizedSVD(; atol))
                 F = lu(H, comp)
                 @test HMatrices.isclean(F.factors)
                 approx = F \ y
