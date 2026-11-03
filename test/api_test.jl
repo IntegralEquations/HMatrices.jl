@@ -9,7 +9,7 @@ public_names = filter(n -> Base.ispublic(HMatrices, n) && !Base.isexported(HMatr
     [
         :ClusterTree, :AbstractSplitter, :GeometricSplitter, :CardinalitySplitter,
         :PrincipalComponentSplitter, :HyperRectangle, :StrongAdmissibilityStd,
-        :WeakAdmissibilityStd, :AbstractCompressor, :PartialACA, :TSVD,
+        :WeakAdmissibilityStd, :AbstractCompressor, :PartialACA, :TSVD, :RandomizedSVD,
         :allocate_buffer, :getblock!, :rowperm, :colperm, :center,
         :rowelements, :colelements,
     ]

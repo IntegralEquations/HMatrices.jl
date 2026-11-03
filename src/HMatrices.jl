@@ -9,6 +9,7 @@ using Printf
 using RecipesBase
 using Base.Threads
 using SparseArrays
+import Random
 
 const AdjOrMat = Union{Matrix, Adjoint{<:Any, <:Matrix}}
 
@@ -66,6 +67,7 @@ public ClusterTree,
     AbstractCompressor,
     PartialACA,
     TSVD,
+    RandomizedSVD,
     allocate_buffer,
     getblock!,
     rowperm,

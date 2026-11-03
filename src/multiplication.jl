@@ -488,6 +488,8 @@ function LinearAlgebra.rmul!(R::RkMatrix, b::Number)
     else
         rmul!(R.A, b)
     end
+    # scaling a factor keeps its columns orthogonal, and scales the errors
+    R.truncation_error .*= abs(b)
     return R
 end
 
