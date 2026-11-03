@@ -121,20 +121,13 @@ _rkfactors(R::RkMatrix) = (R.A, R.B)
 _rkfactors(adjR::AdjRk) = (parent(adjR).B, parent(adjR).A)
 
 """
-    getcol!(col, R, j[, Val(add)])
+    getcol!(col, R, j)
 
-Fill `col` with column `j` of the low-rank matrix `R`, or add it to `col` if `add` is
-`true`.
+Fill `col` with column `j` of the low-rank matrix `R`.
 """
-function getcol!(col, R::AdjRkOrRk, j::Int, ::Val{T} = Val(false)) where {T}
-    # NOTE: using a `Val` argument to dispatch on the type of `T` is important
-    # for performance
+function getcol!(col, R::AdjRkOrRk, j::Int)
     U, V = _rkfactors(R)
-    return if T
-        mul!(col, U, view(adjoint(V), :, j), true, true)
-    else
-        mul!(col, U, view(adjoint(V), :, j))
-    end
+    return mul!(col, U, view(adjoint(V), :, j))
 end
 
 Base.copy(R::RkMatrix) = RkMatrix(copy(R.A), copy(R.B), R.orthogonality, copy(R.truncation_error))

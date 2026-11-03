@@ -50,6 +50,7 @@ include("compressor.jl")
 include("hmatrix.jl")
 include("multiplication.jl")
 include("thread_executor.jl")
+include("lazy_factorization.jl")
 include("triangular.jl")
 include("lu.jl")
 include("cholesky.jl")
@@ -69,6 +70,8 @@ public ClusterTree,
     PartialACA,
     TSVD,
     RandomizedSVD,
+    ThreadsExecutor,
+    SerialExecutor,
     allocate_buffer,
     getblock!,
     rowperm,

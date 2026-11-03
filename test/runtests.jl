@@ -32,6 +32,10 @@ end
     include("thread_executor_test.jl")
 end
 
+@safetestset "Lazy factorization" begin
+    include("lazy_factorization_test.jl")
+end
+
 @safetestset "Triangular" begin
     include("triangular_test.jl")
 end

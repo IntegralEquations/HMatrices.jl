@@ -11,7 +11,7 @@ public_names = filter(n -> Base.ispublic(HMatrices, n) && !Base.isexported(HMatr
         :PrincipalComponentSplitter, :HyperRectangle, :StrongAdmissibilityStd,
         :WeakAdmissibilityStd, :AbstractCompressor, :PartialACA, :TSVD, :RandomizedSVD,
         :allocate_buffer, :getblock!, :rowperm, :colperm, :center,
-        :rowelements, :colelements,
+        :rowelements, :colelements, :ThreadsExecutor, :SerialExecutor,
     ]
 )
 for n in union(exported, public_names)

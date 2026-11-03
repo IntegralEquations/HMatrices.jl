@@ -1,243 +1,138 @@
 """
-    hmul!(C::HMatrix, A::HMatrix, B::HMatrix, a, b, compressor)
+    struct LeafOperator{T,M,V,S} <: AbstractMatrix{T}
 
-Similar to `mul!` : compute `C <-- A*B*a + C*b`, where `A,B,C` are hierarchical
-matrices and `compressor` is a function/functor used in the intermediate stages
-of the multiplication to avoid growing the rank of admissible blocks after
-addition is performed.
-
-The rows of `A` and `C`, the columns of `A` and the rows of `B`, and the columns of
-`B` and `C` must be clustered in the same way (e.g. built from the same points);
-otherwise an `ArgumentError` is thrown.
-"""
-function hmul!(C::Union{HMatrix, HermitianHMatrix}, A::HTypes, B::HTypes, a, b, compressor)
-    rowperm(C) == rowperm(A) && colperm(A) == rowperm(B) && colperm(B) == colperm(C) ||
-        throw(ArgumentError("the factors of `hmul!` must be clustered consistently with each other and with the result"))
-    return _hmul_tree!(C, A, B, a, b, compressor)
-end
-
-"""
-    _hmul_tree!(C, A, B, a, b, compressor, bufs = nothing, Cflag = 'N')
-
-Compute `C <-- A*B*a + C*b` in the ordering in which the H-matrices are stored, i.e.
-as products of the stored blocks, whatever the points they come from.
-"""
-function _hmul_tree!(
-        C::T,
-        A::HTypes,
-        B::HTypes,
-        a,
-        b,
-        compressor,
-        bufs_ = nothing,
-        Cflag = 'N',
-    ) where {T <: HMatrix}
-    bufs = isnothing(bufs_) ? _buffer_channel(compressor, eltype(C)) : bufs_
-    b == true || rmul!(C, b)
-    dict = IdDict{T, Vector{Tuple{eltype(children(A)), eltype(children(B))}}}()
-    _plan_dict!(dict, C, A, B, Cflag)
-    _hmul!(C, compressor, dict, a, nothing, bufs, Cflag)
-    return C
-end
-
-function _hmul_tree!(C::HermitianHMatrix, A, B, a, b, compressor, bufs = nothing)
-    return _hmul_tree!(parent(C), A, B, a, b, compressor, bufs, C.uplo)
-end
-
-# a channel holding one buffer of `compressor` per thread
-function _buffer_channel(compressor, T)
-    nt = Threads.nthreads()
-    bufs = [allocate_buffer(compressor, T) for _ in 1:nt]
-    chn = Channel{eltype(bufs)}(nt)
-    foreach(buf -> put!(chn, buf), bufs)
-    return chn
-end
-
-function _plan_dict!(dict, C::T, A::HTypes, B::HTypes, Cflag) where {T <: HMatrix}
-    pairs = get!(dict, C, Tuple{T, T}[])
-    if isleaf(A) || isleaf(B) || isleaf(C)
-        push!(pairs, (A, B))
-    else
-        ni, nj = blocksize(C)
-        _, nk = blocksize(A)
-        A_children = children(A)
-        B_children = children(B)
-        C_children = children(C)
-        for i in 1:ni
-            for j in 1:nj
-                (Cflag == 'U' && (i > j)) && continue
-                (Cflag == 'L' && (j > i)) && continue
-                for k in 1:nk
-                    _plan_dict!(
-                        dict,
-                        C_children[i, j],
-                        A_children[i, k],
-                        B_children[k, j],
-                        i == j ? Cflag : 'N',
-                    )
-                end
-            end
-        end
-    end
-    return dict
-end
-
-function _hmul!(C::HMatrix, compressor, dict, a, R, bufs, Cflag)
-    execute_node!(C, compressor, dict, a, R, bufs)
-    shift = offset(C)
-    C_children = children(C)
-    ni, nj = size(C_children)
-    for i in 1:ni
-        for j in 1:nj
-            (Cflag == 'U' && (i > j)) && continue
-            (Cflag == 'L' && (j > i)) && continue
-            chd = C_children[i, j]
-            irange = rowrange(chd) .- shift[1]
-            jrange = colrange(chd) .- shift[2]
-            Rp = data(C)
-            Rv = hasdata(C) ? RkMatrix(Rp.A[irange, :], Rp.B[jrange, :]) : nothing
-            _hmul!(chd, compressor, dict, a, Rv, bufs, i == j ? Cflag : 'N')
-        end
-    end
-    isleaf(C) || (setdata!(C, nothing))
-    return C
-end
-
-# non-recursive execution
-function execute_node!(C::HMatrix, compressor, dict, a, R, bufs)
-    T = typeof(C)
-    S = eltype(C)
-    pairs = get(dict, C, Tuple{T, T}[])
-    isnothing(R) && isempty(pairs) && (return C)
-    if isleaf(C) && !isadmissible(C)
-        d = data(C)::Matrix{S}
-        for (A, B) in pairs
-            _mul_dense!(d, A, B, a)
-        end
-        isnothing(R) || mul!(d, R.A, adjoint(R.B), true, true)
-    else
-        L = MulLinearOp{S}(data(C), R, pairs, a)
-        buf = take!(bufs)
-        R = compressor(L, axes(L, 1), axes(L, 2), buf)
-        put!(bufs, buf)
-        setdata!(C, R)
-    end
-    return C
-end
-
-"""
-    struct MulLinearOp{T,V,S} <: AbstractMatrix{T}
-
-Abstract matrix representing the following linear operator:
+The operator
 ```
-    L = R + P + a * ∑ᵢ Aᵢ * Bᵢ
+    L = A * B' + α * ∑ᵢ Xᵢ * Yᵢ
 ```
-where `R` and `P` are of type `RkMatrix{T}`, `Aᵢ,Bᵢ` are of type `HMatrix{R,T}`
-and `a` is scalar multiplier. Calling `compressor(L)` produces a low-rank
-approximation of `L`, where `compressor` is an [`AbstractCompressor`](@ref).
+known through its rows and columns, or its products with blocks of vectors, where `(A,
+B)` are low-rank factors (of type `M`), `(Xᵢ, Yᵢ)` are pairs of hierarchical matrices
+(of type `V`), and `α` is a scalar. It is the value of an admissible leaf with its
+deferred updates, which a compressor compresses once (see `_flush_low_rank_leaf!`):
+`compressor(L, axes(L)..., buf)`, through `getblock!` (see [`PartialACA`](@ref)), or
+`mul!` (see [`RandomizedSVD`](@ref)).
 
-Note: this structure is used to group the operations required when multiplying
-hierarchical matrices so that they can later be executed in a way that minimizes
-recompression of intermediate computations.
+    LeafOperator{T}(A, B, pairs, α, buffer = T[], rkbuffer = T[])
+
+The scratch vectors `buffer` and `rkbuffer` grow as needed, and can be reused (e.g.
+taken from the workspace of a flush).
 """
-struct MulLinearOp{T, V, S} <: AbstractMatrix{T}
-    R::Union{RkMatrix{T}, Nothing}
-    P::Union{RkMatrix{T}, Nothing}
+struct LeafOperator{T, M, V, S} <: AbstractMatrix{T}
+    A::M
+    B::M
     pairs::Vector{V}
-    multiplier::S
+    α::S
+    # scratch space for the intermediate vectors of the products `Xᵢ*(Yᵢ*x)`, and for
+    # the products with the low-rank leaves of `Xᵢ`
+    buffer::Vector{T}
+    rkbuffer::Vector{T}
 end
 
-function MulLinearOp{T}(R, P, pairs::Vector{V}, multiplier::S) where {T, V, S}
-    return MulLinearOp{T, V, S}(R, P, pairs, multiplier)
+function LeafOperator{T}(A::M, B::M, pairs::Vector{V}, α::S, buffer = T[], rkbuffer = T[]) where {T, M, V, S}
+    return LeafOperator{T, M, V, S}(A, B, pairs, α, buffer, rkbuffer)
 end
 
-# AbstractMatrix interface
-function Base.size(L::MulLinearOp)
-    isnothing(L.R) || (return size(L.R))
-    isnothing(L.P) || (return size(L.P))
-    isempty(L.pairs) && (return (0, 0))
-    A, B = first(L.pairs)
-    return (size(A, 1), size(B, 2))
+Base.size(L::LeafOperator) = (size(L.A, 1), size(L.B, 1))
+
+function Base.getindex(L::Union{LeafOperator, Adjoint{<:Any, <:LeafOperator}}, args...)
+    return error("calling `getindex` of a `LeafOperator` has been disabled")
 end
 
-function Base.getindex(L::Union{MulLinearOp, Adjoint{<:Any, <:MulLinearOp}}, args...)
-    return error("calling `getindex` of a `MulLinearOp` has been disabled")
-end
+"""
+    _oriented(L::LeafOperator, ::Val{trans})
 
-function getcol!(col, L::MulLinearOp, j)
+The low-rank factors and the coefficient of `L` (`trans = false`), or of its adjoint
+`L' = B*A' + conj(α)*∑ᵢ Yᵢ'*Xᵢ'` (`trans = true`); see `_product`.
+"""
+_oriented(L::LeafOperator, ::Val{false}) = (L.A, L.B, L.α)
+_oriented(L::LeafOperator, ::Val{true}) = (L.B, L.A, conj(L.α))
+
+"""
+    _product(X, Y, ::Val{trans})
+
+The factors of the product `X*Y` (`trans = false`) or of its adjoint (`trans = true`).
+"""
+_product(X, Y, ::Val{false}) = (X, Y)
+_product(X, Y, ::Val{true}) = (adjoint(Y), adjoint(X))
+
+"""
+    _operator_col!(col, L::LeafOperator, trans::Val, j)
+
+The column `j` of `L` (or of its adjoint, see `_oriented`), in `col`.
+"""
+function _operator_col!(col, L::LeafOperator, trans, j)
     fill!(col, zero(eltype(col)))
-    m, n = size(L)
-    T = eltype(L)
-    # compute j-th column of ∑ Aᵢ Bᵢ
-    for (A, B) in L.pairs
-        m, k = size(A)
-        k, n = size(B)
-        tmp = zeros(T, k)
-        jg = j + offset(B)[2] # global index on hierarchical matrix B
-        getcol!(tmp, B, jg)
-        _hgemv_recursive!(col, A, tmp, offset(A))
+    A, B, α = _oriented(L, trans)
+    for (X, Y) in L.pairs
+        X, Y = _product(X, Y, trans)
+        tmp = fill!(_scratch!(L.buffer, size(X, 2)), zero(eltype(L)))
+        getcol!(tmp, Y, j + offset(Y)[2])
+        _hgemv_recursive!(col, X, tmp, offset(X), L.rkbuffer)
     end
-    # multiply the columns by a
-    a = L.multiplier
-    rmul!(col, a)
-    # add R and P (if they exist)
-    R = L.R
-    if !isnothing(R)
-        getcol!(col, R, j, Val(true))
-    end
-    P = L.P
-    if !isnothing(P)
-        getcol!(col, P, j, Val(true))
-    end
+    rmul!(col, α)
+    _add_lowrank_col!(col, A, B, j, L.buffer)
     return col
 end
 
-function getblock!(out, L::MulLinearOp, irange, j::Int)
-    @assert irange == 1:size(L, 1)
-    return getcol!(out, L, j)
+"""
+    _add_lowrank_col!(col, A, B, j, buf)
+
+`col ← col + (A*B')[:, j]`, with the row `j` of `B` adjoined into the scratch vector
+`buf`, so that the product is a matrix-vector product with `A` (BLAS for
+numbers, which a view of `adjoint(B)` with complex entries does not reach).
+"""
+function _add_lowrank_col!(col, A, B, j, buf)
+    x = _scratch!(buf, size(B, 2))
+    for k in eachindex(x)
+        x[k] = adjoint(B[j, k])
+    end
+    return mul!(col, A, x, true, true)
 end
 
 # an entry costs a column
-_can_sample(::MulLinearOp) = false
+_can_sample(::LeafOperator) = false
 
-# a block of whole columns, e.g. for a `TSVD` of the product
-function getblock!(out, L::MulLinearOp, irange, jrange::AbstractVector)
-    for (jloc, j) in enumerate(jrange)
-        getblock!(view(out, :, jloc), L, irange, j)
+function getblock!(out, L::LeafOperator, irange, j::Int)
+    @assert irange == 1:size(L, 1)
+    return _operator_col!(out, L, Val(false), j)
+end
+function getblock!(out, L::Adjoint{<:Any, <:LeafOperator}, irange, j::Int)
+    @assert irange == 1:size(L, 1)
+    return _operator_col!(out, parent(L), Val(true), j)
+end
+# a whole block (e.g. for `TSVD`), column after column
+function getblock!(out::AbstractMatrix, L::LeafOperator, irange, J::AbstractVector{<:Integer})
+    @assert irange == 1:size(L, 1)
+    for (t, j) in enumerate(J)
+        _operator_col!(view(out, :, t), L, Val(false), j)
     end
     return out
 end
+"""
+    _mul!(out, L::LeafOperator, V, trans::Val)
 
-function getcol!(col, adjL::Adjoint{<:Any, <:MulLinearOp}, j)
-    fill!(col, zero(eltype(col)))
-    L = parent(adjL)
-    T = eltype(L)
-    # compute j-th column of ∑ adjoint(Bᵢ)*adjoint(Aᵢ)
-    for (A, B) in L.pairs
-        At, Bt = adjoint(A), adjoint(B)
-        tmp = zeros(T, size(At, 1))
-        jg = j + offset(At)[2]
-        getcol!(tmp, At, jg)
-        _hgemv_recursive!(col, Bt, tmp, offset(Bt))
+`out = L*V` (or `L'*V`, see `_oriented`), through the products of the hierarchical
+matrices with the block of vectors `V`.
+"""
+function _mul!(out, L::LeafOperator, V, trans)
+    fill!(out, zero(eltype(out)))
+    A, B, α = _oriented(L, trans)
+    for (X, Y) in L.pairs
+        X, Y = _product(X, Y, trans)
+        tmp = fill!(_scratch!(L.buffer, (size(Y, 1), size(V, 2))), zero(eltype(L)))
+        _mul131!(tmp, Y, V, true, L.rkbuffer)
+        _mul131!(out, X, tmp, α, L.rkbuffer)
     end
-    # multiply by a
-    a = L.multiplier
-    rmul!(col, conj(a))
-    # add the j-th column of Ct if it has data
-    R = L.R
-    if !isnothing(R)
-        getcol!(col, adjoint(R), j, Val(true))
-    end
-    P = L.P
-    if !isnothing(P)
-        getcol!(col, adjoint(P), j, Val(true))
-    end
-    return col
+    tmp = mul!(_scratch!(L.buffer, (size(B, 2), size(V, 2))), adjoint(B), V)
+    return mul!(out, A, tmp, true, true)
 end
 
-function getblock!(out, L::Adjoint{<:Any, <:MulLinearOp}, irange, j::Int)
-    @assert irange == 1:size(L, 1)
-    return getcol!(out, L, j)
+LinearAlgebra.mul!(out::Matrix, L::LeafOperator, V::Matrix) = _mul!(out, L, V, Val(false))
+LinearAlgebra.mul!(out::Matrix, L::Adjoint{<:Any, <:LeafOperator}, V::Matrix) = _mul!(out, parent(L), V, Val(true))
+
+function (comp::RandomizedSVD)(L::LeafOperator, irange::AbstractRange, jrange::AbstractRange, buf = nothing)
+    @assert irange == axes(L, 1) && jrange == axes(L, 2)
+    return _randomized_svd(L, comp)
 end
 
 #=
@@ -305,28 +200,19 @@ function _mul113!(
     return C
 end
 
-function _mul121!(
-        C::Union{Matrix, SubArray, Adjoint},
-        R::AdjRkOrRk,
-        M::Union{Matrix, SubArray, Adjoint},
-        a::Number,
-    )
-    U, V = _rkfactors(R)
-    return mul!(C, U, adjoint(V) * M, a, true)
-end
-
 function _mul131!(
-        C::Union{Matrix, SubArray, Adjoint},
+        C::AbstractVecOrMat,
         H::HTypes,
-        M::Union{Matrix, SubArray, Adjoint},
+        M::AbstractVecOrMat,
         a::Number,
+        buf = nothing,
     )
     if isleaf(H)
         mat = data(H)
         if mat isa AdjOrMat
             mul!(C, mat, M, a, true)
         elseif mat isa AdjRkOrRk
-            _mul121!(C, mat, M, a)
+            _leaf_gemm!(C, mat, M, a, buf)
         else
             error("$(typeof(mat))")
         end
@@ -337,9 +223,25 @@ function _mul131!(
         jrange = colrange(child) .- shift[2]
         Cview = view(C, irange, :)
         Mview = view(M, jrange, :)
-        _mul131!(Cview, child, Mview, a)
+        _mul131!(Cview, child, Mview, a, buf)
     end
     return C
+end
+
+"""
+    _leaf_gemm!(C, R, M, a, buf)
+
+`C ← C + a*R*M` for a low-rank leaf `R`, with the intermediate product in the scratch
+vector `buf` if one is given (and the entries are numbers).
+"""
+function _leaf_gemm!(C, R, M, a, buf)
+    U, V = _rkfactors(R)
+    return mul!(C, U, adjoint(V) * M, a, true)
+end
+function _leaf_gemm!(C, R::Union{RkMatrix{<:Number}, Adjoint{<:Any, <:RkMatrix{<:Number}}}, M, a, buf::Vector)
+    U, V = _rkfactors(R)
+    tmp = mul!(_scratch!(buf, (size(V, 2), Base.tail(size(M))...)), adjoint(V), M)
+    return mul!(C, U, tmp, a, true)
 end
 
 ############################################################################################
@@ -411,7 +313,7 @@ function _mul_tree!(y, A, x, b, threads)
     if threads
         _hgemv_threads!(y, x, leaves(A), offset(A))  # threaded implementation
     else
-        _hgemv_recursive!(y, A, x, offset(A)) # serial implementation
+        _hgemv_recursive!(y, A, x, offset(A), promote_type(eltype(A), eltype(x))[]) # serial implementation
     end
     return y
 end
@@ -435,27 +337,63 @@ function LinearAlgebra.mul!(
 end
 
 """
-    _hgemv_recursive!(C,A,B,offset)
+    _hgemv_recursive!(C, A, B, offset[, buf])
 
-Internal function used to compute `C[I] <-- C[I] + A*B[J]` where `I =
-rowrange(A) - offset[1]` and `J = rowrange(B) - offset[2]`.
-
-The `offset` argument is used on the caller side to signal if the original
-hierarchical matrix had a `pivot` other than `(1,1)`.
+`C[I] ← C[I] + A*B[J]`, where `I = rowrange(A) .- offset[1]` and `J = colrange(A) .-
+offset[2]`: the vectors `B` and `C` are indexed relative to `offset` (e.g. the offset of
+the block of which `A` is a descendant). The products with low-rank leaves use the
+scratch vector `buf` if one is given (see `_leaf_gemv!`).
 """
-function _hgemv_recursive!(C::AbstractVector, A::Union{HTypes, HTriangular}, B::AbstractVector, offset)
+function _hgemv_recursive!(C::AbstractVector, A::HTypes, B::AbstractVector, offset, buf = nothing)
     if isleaf(A)
-        irange = rowrange(A) .- offset[1]
-        jrange = colrange(A) .- offset[2]
-        d = data(A)
-        mul!(view(C, irange), d, view(B, jrange), 1, 1)
+        _leaf_gemv!(C, A, B, offset, buf)
     else
         for block in children(A)
-            _hgemv_recursive!(C, block, B, offset)
+            _hgemv_recursive!(C, block, B, offset, buf)
         end
     end
     return C
 end
+# the children in the triangle, the diagonal ones being triangles themselves
+function _hgemv_recursive!(C::AbstractVector, A::HTriangular, B::AbstractVector, offset, buf = nothing)
+    if isleaf(A)
+        _leaf_gemv!(C, A, B, offset, buf)
+    else
+        chd = children(parent(A))
+        for j in axes(chd, 2), i in axes(chd, 1)
+            if i == j
+                _hgemv_recursive!(C, _wraptriangular(chd[i, i], A), B, offset, buf)
+            elseif A isa HLowerTriangular ? i > j : i < j
+                _hgemv_recursive!(C, chd[i, j], B, offset, buf)
+            end
+        end
+    end
+    return C
+end
+_leaf_gemv!(C, A, B, offset, buf) = _leaf_gemv!(view(C, rowrange(A) .- offset[1]), data(A), view(B, colrange(A) .- offset[2]), buf)
+
+"""
+    _leaf_gemv!(y, d, x, buf)
+
+`y ← y + d*x` for the data `d` of a leaf, with the intermediate product of a low-rank
+leaf in the scratch vector `buf` if one is given (and the entries are numbers).
+"""
+_leaf_gemv!(y, d, x, buf) = mul!(y, d, x, 1, 1)
+function _leaf_gemv!(y, R::Union{RkMatrix{<:Number}, Adjoint{<:Any, <:RkMatrix{<:Number}}}, x, buf::Vector)
+    U, V = _rkfactors(R)
+    tmp = mul!(_scratch!(buf, size(V, 2)), adjoint(V), x)
+    return mul!(y, U, tmp, 1, 1)
+end
+
+"""
+    _scratch!(buf::Vector, k)
+    _scratch!(buf::Vector, sz::Tuple)
+
+The first `k` entries of `buf` (as a vector), or the first `prod(sz)` entries (as a
+matrix of size `sz`), growing `buf` if needed.
+"""
+_scratch!(buf::Vector, k::Integer) = (length(buf) < k && resize!(buf, k); view(buf, 1:k))
+_scratch!(buf::Vector, sz::Tuple) = reshape(_scratch!(buf, prod(sz)), sz)
 
 function _hgemv_threads!(C::AbstractVector, B::AbstractVector, leaves, offset)
     acc = Threads.Atomic{Int}(1)
@@ -466,13 +404,14 @@ function _hgemv_threads!(C::AbstractVector, B::AbstractVector, leaves, offset)
     @sync for _ in 1:np
         Threads.@spawn begin
             buf = zero(C)
+            scratch = promote_type(eltype(C), eltype(B))[]
             while true
                 i = Threads.atomic_add!(acc, 1)
                 i > nl && break
                 leaf = leaves[i]
                 irange = rowrange(leaf) .- offset[1]
                 jrange = colrange(leaf) .- offset[2]
-                mul!(view(buf, irange), data(leaf), view(B, jrange), 1, 1)
+                _leaf_gemv!(view(buf, irange), data(leaf), view(B, jrange), scratch)
             end
             # add the local buffer to the global buffer
             @lock lck axpy!(true, buf, C)
@@ -502,4 +441,50 @@ function LinearAlgebra.rmul!(H::HMatrix, b::Number)
         rmul!(child, b)
     end
     return H
+end
+
+"""
+    hmul!(C::HMatrix, A, B, a, b, compressor; executor = SerialExecutor())
+
+Similar to `mul!` : compute `C <-- A*B*a + C*b`, where `A,B,C` are hierarchical
+matrices (`A` and `B` possibly adjoints, `C` possibly a `Hermitian`, of which only
+the stored triangle is updated). Every admissible leaf of `C` is compressed once,
+with `compressor`, from its data and all the products which reach it (see
+[`LazyDriver`](@ref)), the numeric work being run by `executor`.
+
+The rows of `A` and `C`, the columns of `A` and the rows of `B`, and the columns of
+`B` and `C` must be clustered in the same way (e.g. built from the same points);
+otherwise an `ArgumentError` is thrown.
+"""
+function hmul!(C::Union{HMatrix, HermitianHMatrix}, A, B, a, b, compressor; kwargs...)
+    rowperm(C) == rowperm(A) && colperm(A) == rowperm(B) && colperm(B) == colperm(C) ||
+        throw(ArgumentError("the factors of `hmul!` must be clustered consistently with each other and with the result"))
+    return _hmul_tree!(C, A, B, a, b, compressor; kwargs...)
+end
+
+"""
+    _hmul_tree!(C, A, B, a, b, compressor; uplo = 'N', executor = SerialExecutor())
+
+Like [`hmul!`](@ref), in the ordering in which the H-matrices are stored, i.e. as
+products of the stored blocks, whatever the points they come from. With `uplo = 'U'`
+(or `'L'`), only the upper (or lower) triangle of the diagonal blocks of `C` is updated.
+"""
+function _hmul_tree!(
+        C::HMatrix, A::Union{HMatrix, AdjointHMatrix}, B::Union{HMatrix, AdjointHMatrix}, a, b, compressor;
+        uplo = 'N', executor = SerialExecutor(),
+    )
+    b == true || rmul!(C, b)
+    d = LazyDriver(C, A, B, compressor; α = a, uplo, executor)
+    _run!(executor) do
+        push!(d, C, A, B)
+        flush_tree!(d, C)
+    end
+    return C
+end
+function _hmul_tree!(C::HermitianHMatrix, A, B, a, b, compressor; kwargs...)
+    _hmul_tree!(parent(C), A, B, a, b, compressor; uplo = C.uplo, kwargs...)
+    return C
+end
+function _hmul_tree!(C, A, B, a, b, compressor; kwargs...)
+    throw(ArgumentError("the factors of `hmul!` must be `HMatrix`s or their adjoints"))
 end
