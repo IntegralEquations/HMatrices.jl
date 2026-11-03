@@ -28,6 +28,10 @@ end
     include("multiplication_test.jl")
 end
 
+@safetestset "Thread executor" begin
+    include("thread_executor_test.jl")
+end
+
 @safetestset "Triangular" begin
     include("triangular_test.jl")
 end
