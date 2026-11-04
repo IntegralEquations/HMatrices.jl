@@ -54,7 +54,7 @@ H_full = HMatrices._tree_matrix(H)
     ## 3.3
     compressor = PartialACA(; atol = 1.0e-8)
     exact = ldiv!(UnitLowerTriangular(H_full), copy(H_full))
-    approx = ldiv!(UnitLowerTriangular(H), deepcopy(H), compressor)
+    approx = HMatrices.hldiv!(UnitLowerTriangular(H), deepcopy(H), compressor)
     @test exact ≈ HMatrices._tree_matrix(approx)
 end
 
@@ -75,6 +75,6 @@ end
     ## 3.3
     compressor = PartialACA(; atol = 1.0e-8)
     exact = rdiv!(deepcopy(H_full), UpperTriangular(H_full))
-    approx = rdiv!(deepcopy(H), UpperTriangular(H), compressor)
+    approx = HMatrices.hrdiv!(deepcopy(H), UpperTriangular(H), compressor)
     @test exact ≈ HMatrices._tree_matrix(approx)
 end

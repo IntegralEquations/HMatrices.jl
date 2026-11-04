@@ -9,6 +9,7 @@ using Printf
 using RecipesBase
 using Base.Threads
 using SparseArrays
+import Random
 
 const AdjOrMat = Union{Matrix, Adjoint{<:Any, <:Matrix}}
 
@@ -48,6 +49,8 @@ include("rkmatrix.jl")
 include("compressor.jl")
 include("hmatrix.jl")
 include("multiplication.jl")
+include("thread_executor.jl")
+include("lazy_factorization.jl")
 include("triangular.jl")
 include("lu.jl")
 include("cholesky.jl")
@@ -66,6 +69,9 @@ public ClusterTree,
     AbstractCompressor,
     PartialACA,
     TSVD,
+    RandomizedSVD,
+    ThreadsExecutor,
+    SerialExecutor,
     allocate_buffer,
     getblock!,
     rowperm,

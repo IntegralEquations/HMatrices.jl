@@ -35,7 +35,8 @@ function children(T::HTriangular)
     end
     return v
 end
-isleaf(H::HTriangular) = isempty(children(H))
+# the diagonal children of an internal node are always in the triangle
+isleaf(H::HTriangular) = isleaf(parent(H))
 
 hasdata(t::HTriangular) = hasdata(parent(t))
 
@@ -46,6 +47,16 @@ end
 Base.show(io::IO, ::MIME"text/plain", tri::HTriangular) = show(io, tri)
 
 function LinearAlgebra.ldiv!(L::HLowerTriangular, B::AbstractVecOrMat)
+    return _ldiv!(L, B, promote_type(eltype(L), eltype(B))[])
+end
+
+"""
+    _ldiv!(L::HLowerTriangular, B, buf)
+
+`B ← L⁻¹B` by block forward substitution, with the products with the low-rank blocks
+of `L` in the scratch vector `buf` (see `_leaf_gemm!`).
+"""
+function _ldiv!(L::HLowerTriangular, B, buf)
     H = parent(L)
     if isleaf(H)
         d = data(H)
@@ -62,10 +73,10 @@ function LinearAlgebra.ldiv!(L::HLowerTriangular, B::AbstractVecOrMat)
             for j in 1:(i - 1) # j<i
                 jrows = colrange(chdH[i, j]) .- shift[2]
                 bj = selectdim(B, 1, jrows)
-                _mul131!(bi, chdH[i, j], bj, -1)
+                _mul131!(bi, chdH[i, j], bj, -1, buf)
             end
             # recursion stage
-            ldiv!(_wraptriangular(chdH[i, i], L), bi)
+            _ldiv!(_wraptriangular(chdH[i, i], L), bi, buf)
         end
     end
     return B
@@ -73,39 +84,23 @@ end
 
 function LinearAlgebra.ldiv!(L::HLowerTriangular, R::RkMatrix)
     ldiv!(L, R.A) # change R.A in-place
-    return R
-end
-
-function LinearAlgebra.ldiv!(L::HLowerTriangular, X::HMatrix, compressor, bufs = nothing)
-    H = parent(L)
-    @debug (isclean(H) || error("HMatrix is dirty"))
-    if isleaf(X)
-        d = data(X)
-        ldiv!(L, d)
-    elseif isleaf(H)
-        error("the triangular factor is a leaf but the right-hand side is not")
-    else
-        chdH = children(H)
-        chdX = children(X)
-        m, n = size(chdH)
-        @assert m == n
-        for k in 1:size(chdX, 2)
-            for i in 1:m
-                for j in 1:(i - 1) # j<i
-                    _hmul_tree!(chdX[i, k], chdH[i, j], chdX[j, k], -1, 1, compressor, bufs)
-                end
-                ldiv!(_wraptriangular(chdH[i, i], L), chdX[i, k], compressor, bufs)
-            end
-        end
-    end
-    return X
+    return _modified_factor!(R, :A)
 end
 
 function LinearAlgebra.ldiv!(U::HUpperTriangular, B::AbstractVecOrMat)
+    return _ldiv!(U, B, promote_type(eltype(U), eltype(B))[])
+end
+
+"""
+    _ldiv!(U::HUpperTriangular, B, buf)
+
+`B ← U⁻¹B` by block backward substitution; see `_ldiv!` for a lower triangle.
+"""
+function _ldiv!(U::HUpperTriangular, B, buf)
     H = parent(U)
     if isleaf(H)
         d = data(H)
-        ldiv!(_wraptriangular(d, U), B) # B <-- L\B
+        ldiv!(_wraptriangular(d, U), B) # B <-- U\B
     else
         @assert !hasdata(H) "only leaves are allowed to have data when using `ldiv`!"
         shift = offset(H)
@@ -118,21 +113,20 @@ function LinearAlgebra.ldiv!(U::HUpperTriangular, B::AbstractVecOrMat)
             for j in (i + 1):n # j>i
                 jrows = colrange(chdH[i, j]) .- shift[2]
                 bj = selectdim(B, 1, jrows)
-                _mul131!(bi, chdH[i, j], bj, -1)
+                _mul131!(bi, chdH[i, j], bj, -1, buf)
             end
             # recursion stage
-            ldiv!(_wraptriangular(chdH[i, i], U), bi)
+            _ldiv!(_wraptriangular(chdH[i, i], U), bi, buf)
         end
     end
     return B
 end
 
-# 1.3
 function LinearAlgebra.rdiv!(B::StridedMatrix, U::HUpperTriangular)
     H = parent(U)
     if isleaf(H)
         d = data(H)
-        rdiv!(B, _wraptriangular(d, U)) # b <-- b/L
+        rdiv!(B, _wraptriangular(d, U)) # B <-- B/U
     else
         @assert !hasdata(H) "only leaves are allowed to have data when using `rdiv`!"
         shift = reverse(offset(H))
@@ -154,34 +148,41 @@ function LinearAlgebra.rdiv!(B::StridedMatrix, U::HUpperTriangular)
     return B
 end
 
-# 2.3
-function LinearAlgebra.rdiv!(R::RkMatrix, U::HUpperTriangular)
-    Bt = rdiv!(Matrix(adjoint(R.B)), U)
-    adjoint!(R.B, Bt)
-    return R
+"""
+    rdiv!(R::RkMatrix, U::HUpperTriangular[, buf::Vector])
+
+`R ← R*U⁻¹`, forming the transposed factor in the scratch vector `buf` (grown if
+needed).
+"""
+function LinearAlgebra.rdiv!(R::RkMatrix, U::HUpperTriangular, buf::Vector = eltype(R)[])
+    Bt = adjoint!(_scratch!(buf, reverse(size(R.B))), R.B)
+    adjoint!(R.B, rdiv!(Bt, U))
+    return _modified_factor!(R, :B)
 end
 
-# 3.3
-function LinearAlgebra.rdiv!(X::HMatrix, U::HUpperTriangular, compressor, bufs = nothing)
-    H = parent(U)
-    if isleaf(X)
-        d = data(X)
-        rdiv!(d, U) # b <-- b/L
-    elseif isleaf(H)
-        error("the triangular factor is a leaf but the left-hand side is not")
-    else
-        @assert !hasdata(H) # only leaves are allowed to have data for the inversion
-        chdX = children(X)
-        chdH = children(H)
-        m, n = size(chdH)
-        for k in 1:size(chdX, 1)
-            for i in 1:m
-                for j in 1:(i - 1)
-                    _hmul_tree!(chdX[k, i], chdX[k, j], chdH[j, i], -1, 1, compressor, bufs)
-                end
-                rdiv!(chdX[k, i], _wraptriangular(chdH[i, i], U), compressor, bufs)
-            end
-        end
-    end
+"""
+    hldiv!(L::HLowerTriangular, X::HMatrix, compressor; executor = SerialExecutor())
+
+`X ← L⁻¹X` for a triangle `L` of an `HMatrix` (or of its adjoint), compressing
+every admissible leaf of `X` once with `compressor` (see [`LazyDriver`](@ref)), the
+numeric work being run by `executor`.
+"""
+function hldiv!(L::HLowerTriangular, X::HMatrix, compressor; executor = SerialExecutor())
+    d = LazyDriver(X, _checkblocks(parent(L)), X, compressor; executor)
+    _run!(() -> _solve_lower!(d, L, X), executor)
     return X
 end
+
+"""
+    hrdiv!(X::HMatrix, U::HUpperTriangular, compressor; executor = SerialExecutor())
+
+`X ← XU⁻¹` for a triangle `U` of an `HMatrix` (or of its adjoint); see [`hldiv!`](@ref).
+"""
+function hrdiv!(X::HMatrix, U::HUpperTriangular, compressor; executor = SerialExecutor())
+    d = LazyDriver(X, X, _checkblocks(parent(U)), compressor; executor)
+    _run!(() -> _solve_upper!(d, X, U), executor)
+    return X
+end
+
+_checkblocks(H::Union{HMatrix, AdjointHMatrix}) = H
+_checkblocks(H) = throw(ArgumentError("triangular solves with an `HMatrix` need a triangle of an `HMatrix` or of its adjoint"))

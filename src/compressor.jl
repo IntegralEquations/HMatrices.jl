@@ -46,11 +46,10 @@ out; it continues from the largest residual if they show an error above the tole
 `samples = 0` disables this check, which is also skipped when an entry costs a whole
 column (in the products of the factorizations).
 
-With `recompress = true`, the result is recompressed by a truncated SVD (see
-[`TSVD`](@ref)) with the same tolerances, which lowers its rank (about 20% less memory
-for single layers) at the cost of a QR and an SVD of the factors (an assembly up to 2–3
-times slower with cheap kernels). The errors of the two steps add up, so the error can
-be up to twice the tolerance.
+With `recompress = true`, the result is recompressed by a truncated SVD, computed from
+QR factorizations of its factors (see [`TSVD`](@ref)), with the same tolerances, which
+lowers its rank at the cost of a QR factorization of each factor and an SVD of a small
+matrix. In the factorizations, the lower ranks also make the later products cheaper.
 
 The default `rtol` is `sqrt(eps(R))`, where `R` is the real type underlying the
 entries of the compressed matrix, or only the accuracy attainable with `R` if `atol` or
@@ -73,7 +72,7 @@ end
 function (paca::PartialACA)(K, irange::AbstractRange, jrange::AbstractRange, bufs = nothing)
     R = _aca_partial(K, irange, jrange, paca.atol, paca.rank, paca.rtol, paca.samples, bufs)
     paca.recompress || return R
-    return _recompress!(R, paca.atol, paca.rtol, paca.rank, bufs)
+    return _recompress!(R, paca.atol, paca.rtol, paca.rank)
 end
 
 (paca::PartialACA)(K::AbstractMatrix) = paca(K, axes(K, 1), axes(K, 2))
@@ -87,20 +86,11 @@ struct ACABuffer{T}
     rb::Vector{Float64} # squared norms of the rows of `B`, `Inf` for the used columns
     pa::Vector{Int}
     pb::Vector{Int}
-    data::Vector{T} # scratch of the recompression, grown via resize!, never shrunk
 end
 
 # every field is resized by each call of `_aca_partial`
 function ACABuffer(T)
-    return ACABuffer{T}(VectorOfVectors(T), VectorOfVectors(T), BitVector(), BitVector(), Float64[], Float64[], Int[], Int[], T[])
-end
-
-function _get_scratch!(buf::ACABuffer{T}, k) where {T}
-    n = k * k
-    if length(buf.data) < n
-        resize!(buf.data, n)
-    end
-    return reshape(view(buf.data, 1:n), k, k)
+    return ACABuffer{T}(VectorOfVectors(T), VectorOfVectors(T), BitVector(), BitVector(), Float64[], Float64[], Int[], Int[])
 end
 
 """
@@ -141,6 +131,7 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, samples, buffer_ = no
     r = 0 # current rank
     zero_rows = true # whether every rejected row of the residual was exactly zero
     exhausted = false # whether every row was used or rejected
+    steps = Float64[] # norm of each rank-one update
     while true
         while er > max(atol, rtol * est_norm) && r < rmax
             # remove index i from allowed row
@@ -196,6 +187,7 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, samples, buffer_ = no
                 B.k += 1
                 # estimate the error by || R_{k} - R_{k-1} || = ||a bᴴ||
                 er = sqrt(_frob2(a, b))
+                push!(steps, er)
                 # estimate the norm by || K || ≈ || R_k ||
                 est_norm = _update_frob_norm(est_norm, A, B)
                 _add_abs2!(ra, a)
@@ -215,14 +207,18 @@ function _aca_partial(K, irange, jrange, atol, rmax, rtol, samples, buffer_ = no
         er = oftype(er, Inf)
     end
     # copy from buffer to matrix and create Rk matrix
-    R_ = RkMatrix(Matrix(A), Matrix(B))
+    R_ = RkMatrix(Matrix(A), Matrix(B), :none, _aca_truncation_error(steps))
     # indicate that `A` and `B` can be reused
     reset!(A)
     reset!(B)
     return R_
 end
 
-# whether single entries of `K` are cheap, as needed by `_aca_residual_sample`
+"""
+    _can_sample(K)
+
+Whether single entries of `K` are cheap, as needed by `_aca_residual_sample`.
+"""
 _can_sample(K) = true
 
 """
@@ -279,6 +275,15 @@ function _add_abs2!(out, a)
     end
     return out
 end
+
+"""
+    _aca_truncation_error(steps)
+
+The estimated truncation errors of an ACA with rank-one updates of norms `steps`:
+keeping `i` updates leaves the next ones, and the error of the last update is estimated
+by its norm (the stopping criterion of the ACA).
+"""
+_aca_truncation_error(steps) = _svd_truncation_error(steps, length(steps), isempty(steps) ? 0.0 : last(steps))
 
 """
     _update_frob_norm(acc,A,B)
@@ -409,11 +414,12 @@ end
     struct TSVD
 
 Compression algorithm based on *a posteriori* truncation of an `SVD`: the singular
-values `σₖ ≤ max(atol, rtol*σ₁)` are dropped, and at most `rank` are kept. This is the
-best approximation of its rank, and its error in the spectral norm is below the
-tolerance; note that [`PartialACA`](@ref) estimates its error in the Frobenius norm
-instead. It evaluates every entry of the block, so it should be used mostly for "small"
-matrices. The default `rtol` is the same as for [`PartialACA`](@ref).
+values `σᵣ₊₁, σᵣ₊₂, …` are dropped, for the smallest `r` such that the error of the
+truncation in the Frobenius norm, `sqrt(σᵣ₊₁² + σᵣ₊₂² + ⋯)`, is at most `max(atol,
+rtol*|M|)`, where `|M|` is the Frobenius norm of the matrix (the norm in which
+[`PartialACA`](@ref) estimates its error), and at most `rank` are kept. This is the best
+approximation of its rank. It evaluates every entry of the block, so it should be used
+mostly for "small" matrices. The default `rtol` is the same as for [`PartialACA`](@ref).
 """
 Base.@kwdef struct TSVD <: AbstractCompressor
     atol::Float64 = 0
@@ -430,13 +436,22 @@ end
 
 (comp::TSVD)(K::AbstractMatrix) = comp(K, axes(K, 1), axes(K, 2))
 
-# number of singular values `S` (sorted decreasingly) above the tolerance, at most
-# `rmax` (zero if they are all below the tolerance)
+"""
+    _truncation_rank(S, atol, rtol, rmax)
+
+The number of singular values `S` (sorted decreasingly) to keep, at most `rmax`, so that
+the Frobenius norm of the dropped ones stays below `max(atol, rtol*norm(S))`.
+"""
 function _truncation_rank(S, atol, rtol, rmax)
     rtol = _rtol(rtol, atol, rmax, eltype(S))
-    isempty(S) && return 0
-    tol = max(atol, rtol * S[1])
-    return min(count(>(tol), S), rmax)
+    tol2 = max(atol, rtol * norm(S))^2
+    r = length(S)
+    tail = zero(tol2)
+    while r > 0 && tail + abs2(S[r]) <= tol2
+        tail += abs2(S[r])
+        r -= 1
+    end
+    return min(r, rmax)
 end
 
 """
@@ -465,35 +480,38 @@ function compress!(M::Base.Matrix, tsvd::TSVD)
         A = F.U[:, 1:r]
         B = @views (F.V[:, 1:r]) * Diagonal(F.S[1:r])
     end
-    return RkMatrix(A, B)
+    return RkMatrix(A, B, :AB, _svd_truncation_error(F.S, r))
 end
 
-function _recompress!(R::RkMatrix{T}, atol, rtol, rmax, bufs = nothing) where {T}
+"""
+    _recompress!(R::RkMatrix, atol, rtol, rmax)
+
+Recompress `R` in place by a truncated SVD (see [`TSVD`](@ref)), computed from QR
+factorizations of its factors, or from `R` itself when they would not be smaller.
+"""
+function _recompress!(R::RkMatrix{T}, atol, rtol, rmax) where {T}
     m, n = size(R)
     k = rank(R)
+    prior = _error_estimate(R)
     if k >= min(m, n) # the QR factors would not be smaller than the matrix
-        Rt = compress!(R.A * adjoint(R.B), TSVD(atol, rmax, rtol))
-        R.A, R.B = Rt.A, Rt.B
-        return R
-    end
-    QA, RA = qr!(R.A)
-    QB, RB = qr!(R.B)
-    if isnothing(bufs)
-        C = RA * adjoint(RB)
+        QA = QB = I
+        F = svd!(R.A * adjoint(R.B))
     else
-        C = _get_scratch!(bufs, k)
-        mul!(C, RA, adjoint(RB))
+        QA, RA = qr!(R.A)
+        QB, RB = qr!(R.B)
+        F = svd!(RA * adjoint(RB))
     end
-    F = svd!(C)
     r = _truncation_rank(F.S, atol, rtol, rmax)
     R.A = QA * (F.U[:, 1:r] * Diagonal(F.S[1:r]))
     R.B = QB * F.V[:, 1:r]
+    R.orthogonality = :AB
+    R.truncation_error = _svd_truncation_error(F.S, r, prior)
     return R
 end
 
 # matrix entries: truncate the equivalent scalar matrix, whose rank is rounded up to a
 # multiple of the size of the entries
-function _recompress!(R::RkMatrix{S}, atol, rtol, rmax, bufs = nothing) where {S <: SMatrix}
+function _recompress!(R::RkMatrix{S}, atol, rtol, rmax) where {S <: SMatrix}
     q = size(S, 2)
     Rs = RkMatrix(_scalar_matrix(R.A), _scalar_matrix(R.B))
     _recompress!(Rs, atol, rtol, rmax > typemax(Int) ÷ q ? typemax(Int) : q * rmax)
@@ -537,13 +555,99 @@ function _block_matrix(::Type{S}, M) where {S <: SMatrix}
 end
 
 """
+    RandomizedSVD(; atol = 0, rank = typemax(Int), rtol = nothing, block = 4)
+
+Compression algorithm based on a randomized SVD (Halko, Martinsson and Tropp, "Finding
+structure with randomness", SIAM Review 53, 2011): an orthonormal basis `Q` of the range
+of the block `M` is given by the Householder QR factorization of the products of `M`
+with random Gaussian vectors, extended by blocks of `block` vectors until the error `|M
+- Q*Q'*M|` estimated from the last block is below `max(atol, rtol*|M|)`, in the
+Frobenius norm. The SVD of `Q'*M` is then truncated as by [`TSVD`](@ref), and at most
+`rank` singular values are kept; with a `rank`, the basis has one more block than the
+rank, so that the singular values kept are accurate. The default `rtol` is the same as
+for [`PartialACA`](@ref).
+
+It only uses the products `M*X` and `M'*X`, whose evaluations are batched. It suits the
+blocks whose updates are deferred in the factorizations and the products: their
+products are cheap, while each of their entries costs a whole column. It is the
+default compressor of [`lu`](@ref) and [`cholesky`](@ref). Any other block is first
+evaluated entirely, so [`PartialACA`](@ref) should be preferred for the assembly.
+
+The error is estimated from the residuals of a single block of random vectors, which is
+more reliable for larger blocks. The random vectors only depend on the size of the
+block, so that the results are reproducible.
+"""
+Base.@kwdef struct RandomizedSVD <: AbstractCompressor
+    atol::Float64 = 0
+    rank::Int = typemax(Int)
+    rtol::Union{Nothing, Float64} = nothing
+    block::Int = 4
+    function RandomizedSVD(atol, rank, rtol, block)
+        block >= 1 || throw(ArgumentError("block = $block must be positive"))
+        return new(_check_tolerances(atol, rank, rtol)..., block)
+    end
+end
+
+function (comp::RandomizedSVD)(K, irange::AbstractRange, jrange::AbstractRange, buf = nothing)
+    M = Base.Matrix{eltype(K)}(undef, length(irange), length(jrange))
+    getblock!(M, K, irange, jrange)
+    return _randomized_svd(M, comp)
+end
+
+(comp::RandomizedSVD)(K::AbstractMatrix) = comp(K, axes(K, 1), axes(K, 2))
+
+"""
+    _randomized_svd(K, comp::RandomizedSVD)
+
+The randomized SVD of `K` (see [`RandomizedSVD`](@ref)), through the products `mul!(Y, K,
+X)` and `mul!(Y, K', X)`.
+"""
+function _randomized_svd(K, comp::RandomizedSVD)
+    T = eltype(K)
+    m, n = size(K)
+    rtol = _rtol(comp.rtol, comp.atol, comp.rank, T)
+    rng = Random.Xoshiro(hash((m, n)))
+    kmax = min(m, n, comp.rank > typemax(Int) - comp.block ? typemax(Int) : comp.rank + comp.block)
+    # the Householder QR factorization of the products with the random vectors, block
+    # after block: the factorization of a block starting at the column `j+1` acts on the
+    # rows `j+1:m` (typed after the factorization of the rows of a matrix)
+    blocks = Tuple{Int, typeof(qr!(view(zeros(T, 1, 1), 1:1, :)))}[]
+    k = 0
+    err = 0.0 # the error of the basis, estimated from the last block
+    norm2, nsamples = 0.0, 0 # estimate of |K|², from the products with the random vectors
+    while k < kmax
+        b = min(comp.block, kmax - k)
+        Y = mul!(Base.Matrix{T}(undef, m, b), K, Random.randn(rng, T, n, b))
+        norm2 += sum(abs2, Y)
+        nsamples += b
+        for (j, F) in blocks # Y ← Q'*Y
+            lmul!(F.Q', view(Y, (j + 1):m, :))
+        end
+        # the rows below the first `k` are the residual of `Y`, in a basis completing `Q`
+        residual = view(Y, (k + 1):m, :)
+        err = norm(residual) / sqrt(b)
+        err <= max(comp.atol, rtol * sqrt(norm2 / nsamples)) && break
+        push!(blocks, (k, qr!(residual)))
+        k += b
+    end
+    Q = Base.Matrix{T}(I, m, k)
+    for (j, F) in Iterators.reverse(blocks)
+        lmul!(F.Q, view(Q, (j + 1):m, (j + 1):k))
+    end
+    F = svd!(mul!(Base.Matrix{T}(undef, n, k), K', Q)) # K'*Q = U*S*V'
+    r = _truncation_rank(F.S, comp.atol, rtol, comp.rank)
+    prior = k == min(m, n) ? 0.0 : err
+    return RkMatrix(Q * (F.V[:, 1:r] * Diagonal(F.S[1:r])), F.U[:, 1:r], :AB, _svd_truncation_error(F.S, r, prior))
+end
+
+"""
     _check_rtol(comp, T)
 
 Check that the tolerances of `comp` are attainable for entries of type `T`, before
 compressing any block.
 """
 _check_rtol(comp, T) = nothing
-function _check_rtol(comp::Union{PartialACA, TSVD}, T)
+function _check_rtol(comp::Union{PartialACA, TSVD, RandomizedSVD}, T)
     _rtol(comp.rtol, comp.atol, comp.rank, T)
     return nothing
 end

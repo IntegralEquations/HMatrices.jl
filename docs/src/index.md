@@ -92,7 +92,8 @@ H = assemble_hmatrix(K, X, Y; atol = 1e-6, threads = false)
 ```
 
 The keyword arguments of [`assemble_hmatrix`](@ref) control the accuracy of the
-low-rank blocks (`atol`, `rtol` and `rank`), which blocks are compressed (`eta`), and
+low-rank blocks (`atol`, `rtol` and `rank`, for a partial ACA, see
+[`PartialACA`](@ref)), which blocks are compressed (`eta`), and
 the size of the smallest clusters (`nmax`). If `K` is a `Hermitian` matrix, wrapping
 it as `Hermitian(K)` assembles only half of it and allows for a Cholesky
 factorization. When `K` is a [`KernelMatrix`](@ref), the points can be omitted (see the
@@ -168,21 +169,17 @@ hierarchical Cholesky factorization is available for an `H` assembled from a
 `Hermitian` matrix):
 
 ```@example assemble-basic
-F = lu(H;atol=1e-6)
+F = lu(H; atol = 1e-6, threads = false)
 ```
 
-Note that unliked the matrix-vector product, factoring `H` is not *exact* in the
-sense that `lu(H) ≠ lu(Matrix(H))`. The accuracy of the approximation can be
-controlled through the keyword arguments `atol`, `rtol` and `rank`, which are used
-in the various intermediate truncations performed during the
-factorization. See [`lu`](@ref) for more details.
-
-!!! important "Truncation error"
-    The parameters `atol` and `rtol` are used to control the truncation of
-    low-rank blocks *adaptively* using an estimate of the true error (in
-    Frobenius norm). These local errors may accumulate after successive
-    truncations, meaning that the global approximation error (in Frobenius norm) may be larger
-    than the prescribed tolerance.
+Note that unlike the matrix-vector product, factoring `H` is not *exact* in the
+sense that `lu(H) ≠ lu(Matrix(H))`: the low-rank blocks of the factors are compressed.
+Every update of a block is deferred until the block is needed, so that each low-rank
+block of the factors is compressed once, from the sum of its updates. The keyword
+arguments `atol`, `rtol` and `rank` control this compression (the truncation of each
+low-rank block of the factors, in the Frobenius norm), which is done by a randomized SVD
+(see [`RandomizedSVD`](@ref)); another compressor can be passed instead, e.g.
+`lu(H, PartialACA(; atol = 1e-6))`. See [`lu!`](@ref) for more details.
 
 The returned object `F` is of the `LU` type, and efficient
 routines are provided to solve linear system using `F`:
@@ -206,6 +203,27 @@ operator.
     time-consuming, a hybrid strategy commonly employed consists of using a
     rough factorization (with e.g. large tolerance or a fixed rank) as a
     preconditioner to an iterative solver.
+
+For an `H` assembled from a `Hermitian` matrix, `cholesky(H; atol)` computes a
+hierarchical Cholesky factorization, used in the same way. A real shift `H + σ*I` of
+such an `H` is also `Hermitian`.
+
+## Threads
+
+The assembly, the products and the factorizations run on Julia's threads with
+`threads = true` (the default) when Julia is started with several threads (e.g. `julia
+--threads=auto`); `threads = false` runs them sequentially. Since the parallelism comes
+from the blocks, which are small, BLAS should then run on a single thread:
+
+```julia
+using LinearAlgebra
+BLAS.set_num_threads(1)
+```
+
+An error raised by a threaded computation is rethrown without the backtrace of the task
+which raised it; running it again with `threads = false` gives the full backtrace. The
+methods taking cluster trees or a compressor (e.g. `lu!(H, comp)`) also accept an
+`executor` ([`ThreadsExecutor`](@ref) or [`SerialExecutor`](@ref)) instead of `threads`.
 
 ## Other kernels
 
