@@ -1,10 +1,8 @@
-# [Reference](@id references-section)
+# [References](@id references-section)
 
-The exported and `public` names of `HMatrices`, and the methods of `Base` and
-`LinearAlgebra` functions for an [`HMatrix`](@ref). The other functions and types are
-described in the [Internals](@ref internals-section).
+Names that are neither exported nor declared `public` are internal, and may change
+without notice.
 
 ```@autodocs
 Modules = [HMatrices]
-Filter = ispublicapi
 ```

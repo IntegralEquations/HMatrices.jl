@@ -16,7 +16,7 @@ approximate certain linear operators containing a hierarchical low-rank
 structure. Once assembled, a hierarchical matrix can be used to accelerate the
 solution of `Ax=b` in a variety of ways. Below you will find a quick
 introduction for how to *assemble* and *utilize* an [`HMatrix`](@ref); see the
-[Reference](@ref references-section) section for more information on the
+[References](@ref references-section) section for more information on the
 available methods and structures.
 
 !!! note 
