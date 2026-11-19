@@ -1,6 +1,6 @@
 name = "HMatrices"
 uuid = "8646bddf-ab1c-4fa7-9c51-ba187d647618"
-version = "0.2.13"
+version = "0.3"
 
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
