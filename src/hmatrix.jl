@@ -48,11 +48,11 @@ parentnode(H::AdjointHMatrix) = H |> parent |> parentnode |> adjoint
 const HermitianHMatrix{R, T} = Hermitian{T, HMatrix{R, T}}
 
 isadmissible(H::HermitianHMatrix) = H |> parent |> isadmissible
-data(H::HermitianHMatrix) = H |> parent |> data |> Hermitian
+data(H::HermitianHMatrix) = Hermitian(data(parent(H)), Symbol(H.uplo))
 rowtree(H::HermitianHMatrix) = H |> parent |> rowtree
 coltree(H::HermitianHMatrix) = H |> parent |> coltree
-children(H::HermitianHMatrix) = H |> parent |> children |> Hermitian
-parentnode(H::HermitianHMatrix) = H |> parent |> parentnode |> Hermitian
+children(H::HermitianHMatrix) = Hermitian(children(parent(H)), Symbol(H.uplo))
+parentnode(H::HermitianHMatrix) = Hermitian(parentnode(parent(H)), Symbol(H.uplo))
 
 const HTypes = Union{HMatrix, AdjointHMatrix, HermitianHMatrix}
 
@@ -225,12 +225,15 @@ columns of `K`. The points are only used to cluster the indices, and are not mod
   `SMatrix` entries; [`getblock!`](@ref) can be overloaded to compute its blocks faster.
   If `K` is a `Hermitian`, only its upper triangle is assembled and a `Hermitian`
   `HMatrix` is returned (this requires `Y === X`).
-- `atol`, `rtol` and `rank` control the compression of the low-rank blocks (see
-  [`PartialACA`](@ref)); by default `rtol = sqrt(eps)` of the real type of the entries,
-  or only the accuracy attainable with that type if `atol` or `rank` is given.
+- `atol`, `rtol` and `rank` control the compression of the low-rank blocks, by a
+  partial ACA (see [`PartialACA`](@ref)); by default `rtol = sqrt(eps)` of the real type
+  of the entries, or only the accuracy attainable with that type if `atol` or `rank` is
+  given.
 - Two clusters are compressed if `min(diameters) < eta * distance`; `eta = Inf`
   compresses every pair of disjoint clusters (weak admissibility).
 - `nmax` is the maximum number of points in a leaf of the cluster trees.
+- The leaves are assembled in parallel with `threads = true` (when Julia runs on
+  several threads).
 
 Every operation on the result (products, `Matrix`, factorizations) uses the ordering of
 `X` and `Y`.
@@ -261,11 +264,13 @@ end
 
 """
     assemble_hmatrix(K, rowtree::ClusterTree, coltree::ClusterTree;
-        adm = StrongAdmissibilityStd(), comp = PartialACA(), threads = true)
+        adm = StrongAdmissibilityStd(), comp = PartialACA(), threads = true, executor)
 
 Lower-level version of [`assemble_hmatrix`](@ref) with given cluster trees, admissibility
 condition `adm` (called on a node of `rowtree` and a node of `coltree` to decide if the
-block is compressed) and compressor `comp` (see [`AbstractCompressor`](@ref)).
+block is compressed) and compressor `comp` (see [`AbstractCompressor`](@ref)). The leaves
+are assembled by `executor`, a [`ThreadsExecutor`](@ref) if `threads = true` and Julia
+runs on several threads, and a [`SerialExecutor`](@ref) otherwise.
 """
 function assemble_hmatrix(
         K::AbstractMatrix,
@@ -274,6 +279,7 @@ function assemble_hmatrix(
         adm = StrongAdmissibilityStd(),
         comp = PartialACA(),
         threads = true,
+        executor = _executor(threads),
     )
     size(K) == (length(rowtree), length(coltree)) ||
         throw(DimensionMismatch("the matrix is of size $(size(K)), but the trees have $(length(rowtree)) and $(length(coltree)) elements"))
@@ -295,13 +301,7 @@ function assemble_hmatrix(
     end
     # the blocks are assembled in the ordering of the trees
     K = PermutedMatrix(K, loc2glob(rowtree), loc2glob(coltree))
-    # now assemble the data in the blocks
-    if threads
-        _assemble_threads!(hmat, K, comp)
-    else
-        _assemble_cpu!(hmat, K, comp, allocate_buffer(comp, T))
-    end
-    return hmat
+    return _assemble!(hmat, K, comp, executor)
 end
 
 """
@@ -349,70 +349,43 @@ function _build_block_structure!(adm, current_node::HMatrix{R, T}) where {R, T}
 end
 
 """
-    _assemble_cpu!(hmat::HMatrix,K,comp)
+    _assemble!(hmat, K, comp, executor)
 
-Assemble data on the leaves of `hmat`. The admissible leaves are compressed
-using the compressor `comp`. This function assumes the structure of `hmat` has
-already been initialized, and therefore should not be called directly. See
-[`HMatrix`](@ref) for information on constructors.
+Assemble the leaves of `hmat`, whose structure is already built, each by a piece of work
+of `executor` which writes it: the admissible leaves are compressed with `comp`, the
+others are evaluated.
 """
-function _assemble_cpu!(hmat, K, comp, bufs)
-    if isleaf(hmat) # base case
-        _process_leaf!(hmat, K, comp, bufs)
-    else
-        # recurse on children
-        for child in children(hmat)
-            _assemble_cpu!(child, K, comp, bufs)
-        end
-    end
-    return hmat
-end
-
-function _process_leaf!(leaf, K, comp, bufs)
-    # for hermitian, the upper triangular stores the data
-    (leaf isa Adjoint || leaf isa Transpose) && (return leaf)
-    H = if leaf isa Hermitian
-        parent(leaf) # the underlying HMatrix
-    elseif leaf isa HMatrix
-        leaf
-    else
-        throw(ArgumentError("Invalid leaf type: $(typeof(leaf))"))
-    end
-    #
-    return if isadmissible(H)
-        _assemble_sparse_block!(H, K, comp, bufs)
-    else
-        _assemble_dense_block!(H, K)
-    end
-end
-
-"""
-    _assemble_threads!(hmat::HMatrix,K,comp)
-
-Like [`_assemble_cpu!`](@ref), but uses threads to assemble the leaves. Note
-that the threads are spawned using `Threads.@spawn`, which means they are
-spawned on the same worker as the caller.
-"""
-function _assemble_threads!(hmat, K, comp)
-    c = leaves(hmat)
-    acc = Threads.Atomic{Int}(1)
-    # spawn np workers to assemble the leaves in parallel
-    np = Threads.nthreads()
-    @sync for _ in 1:np
-        Threads.@spawn begin
-            buf = allocate_buffer(comp, eltype(hmat))
-            while true
-                i = Threads.atomic_add!(acc, 1)
-                i > length(c) && break
-                _process_leaf!(c[i], K, comp, buf)
+function _assemble!(hmat, K, comp, executor)
+    T = eltype(hmat)
+    pool = workspaces(typeof(allocate_buffer(comp, T)))
+    _run!(executor) do
+        for leaf in leaves(hmat)
+            H = _stored_leaf(leaf)
+            isnothing(H) && continue
+            spawn!(executor, (), (H,)) do
+                if isadmissible(H)
+                    with_workspace(buf -> _assemble_sparse_block!(H, K, comp, buf), pool, () -> allocate_buffer(comp, T))
+                else
+                    _assemble_dense_block!(H, K)
+                end
             end
         end
     end
     return hmat
 end
 
+"""
+    _stored_leaf(leaf)
+
+The `HMatrix` storing the data of a leaf of an `HMatrix` or of a `Hermitian` one:
+`nothing` for a leaf of the lower triangle of a `Hermitian`, which stores no data.
+"""
+_stored_leaf(leaf::HMatrix) = leaf
+_stored_leaf(leaf::Hermitian) = parent(leaf)
+_stored_leaf(::Union{Adjoint, Transpose}) = nothing
+
 function _assemble_sparse_block!(hmat, K, comp, bufs)
-    return hmat.data = comp(K, rowrange(hmat), colrange(hmat), bufs)
+    return setdata!(hmat, comp(K, rowrange(hmat), colrange(hmat), bufs))
 end
 
 function _assemble_dense_block!(hmat, K)
@@ -421,7 +394,7 @@ function _assemble_dense_block!(hmat, K)
     T = eltype(hmat)
     out = Matrix{T}(undef, length(irange), length(jrange))
     getblock!(out, K, irange, jrange)
-    hmat.data = out
+    setdata!(hmat, out)
     return hmat
 end
 
@@ -489,17 +462,6 @@ function Base.zero(H::HMatrix)
     return H0
 end
 
-function compress!(H::HMatrix, comp)
-    @assert isclean(H)
-    for leaf in leaves(H)
-        d = data(leaf)
-        if d isa RkMatrix
-            compress!(d, comp)
-        end
-    end
-    return H
-end
-
 ############################################################################################
 # Recipes
 ############################################################################################
@@ -546,19 +508,17 @@ function LinearAlgebra.axpy!(a, X::UniformScaling, Y::HMatrix)
     return _axpy_diagonal!(a, X, Y)
 end
 
-# add `a*X` to the diagonal of the stored blocks of `Y`
+# add `a*X` to the diagonal of the stored blocks of `Y`, which are dense leaves or have
+# diagonal children (also in a `Hermitian`, whose diagonal blocks are stored)
 function _axpy_diagonal!(a, X::UniformScaling, Y::HMatrix)
-    @assert isclean(Y)
-    if hasdata(Y)
+    if isleaf(Y)
         d = data(Y)
-        @assert d isa Matrix
-        n = min(size(d)...)
-        for i in 1:n
+        d isa Matrix || error("a diagonal leaf must be dense")
+        for i in 1:min(size(d)...)
             d[i, i] += a * X.λ
         end
     else
-        n = min(blocksize(Y)...)
-        for i in 1:n
+        for i in 1:min(blocksize(Y)...)
             _axpy_diagonal!(a, X, children(Y)[i, i])
         end
     end
@@ -567,6 +527,12 @@ end
 
 Base.:(+)(X::UniformScaling, Y::HMatrix) = axpy!(true, X, deepcopy(Y))
 Base.:(+)(X::HMatrix, Y::UniformScaling) = Y + X
+
+# a real shift keeps a `Hermitian` Hermitian, and only its stored triangle is modified
+function Base.:(+)(H::HermitianHMatrix, J::UniformScaling{<:Real})
+    return Hermitian(parent(H) + J, Symbol(H.uplo))
+end
+Base.:(+)(J::UniformScaling{<:Real}, H::HermitianHMatrix) = H + J
 
 # adding a sparse matrix to an HMatrix is allowed, but in the current
 # implementation is done to recompress blocks which may increase rank during the

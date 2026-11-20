@@ -24,7 +24,7 @@ adm = StrongAdmissibilityStd(3)
 comp = PartialACA(; atol = 1.0e-10)
 for threads in (false, true)
     H = assemble_hmatrix(K, Xclt, Yclt; adm, comp, threads)
-    hlu = lu(H; atol = 1.0e-10)
+    hlu = lu(H; atol = 1.0e-10, threads)
     y = rand(m)
     M = Matrix(K)
     exact = M \ y
@@ -78,4 +78,23 @@ end
     # products of the factors with several vectors
     Z = rand(n, 2)
     @test norm(F.L * (F.U * Z) - M[F.p, F.q] * Z) < 1.0e-6 * norm(M[F.p, F.q] * Z)
+end
+
+@testset "single precision" begin
+    S = single_layer_sphere(1500)
+    K32 = KernelMatrix((x, y) -> Float32(S.f(x, y)), S.X, S.X)
+    H = assemble_hmatrix(K32; rtol = 1.0e-5, threads = false)
+    y = rand(Float32, 1500)
+    exact = Matrix(K32) \ y
+    for threads in (false, true)
+        F = lu(H; rtol = 1.0e-5, threads)
+        @test eltype(F.factors) == Float32
+        @test norm(F \ y - exact) < 1.0e-3 * norm(exact)
+    end
+end
+
+@testset "non-scalar entries" begin
+    X = rand(SVector{3, Float64}, 500)
+    H = assemble_hmatrix(elastostatic_matrix(X, X, 1, 1), X; threads = false)
+    @test_throws ArgumentError lu(H)
 end

@@ -1,4 +1,5 @@
 using Test
+using Logging
 using StaticArrays
 using HMatrices
 using HMatrices: ClusterTree, CardinalitySplitter, StrongAdmissibilityStd, PartialACA
@@ -7,6 +8,9 @@ using SparseArrays
 using Random
 
 include(joinpath(HMatrices.PROJECT_ROOT, "test", "testutils.jl"))
+
+# adding a random sparse matrix grows the blocks, which `axpy!` warns about
+quiet(f) = with_logger(f, NullLogger())
 
 # a compressor that only implements the method with index ranges, without annotations
 struct RangeOnlyCompressor <: HMatrices.AbstractCompressor
@@ -89,7 +93,7 @@ end
         T = eltype(H)
         m, n = size(H)
         S = spdiagm(0 => rand(T, n))
-        Hnew = axpy!(true, S, deepcopy(H))
+        Hnew = quiet(() -> axpy!(true, S, deepcopy(H)))
         @test Matrix(Hnew) == (H_full + Matrix(S))
     end
     @testset "Vector problem (elasticity)" begin
@@ -99,7 +103,7 @@ end
         T = eltype(H)
         m, n = size(H)
         S = spdiagm(0 => rand(T, n))
-        Hnew = axpy!(true, S, deepcopy(H))
+        Hnew = quiet(() -> axpy!(true, S, deepcopy(H)))
         @test Matrix(Hnew) == (H_full + Matrix(S))
     end
 end
@@ -125,7 +129,7 @@ end
         S = sprand(T, m, n, 0.01)
         # compare the increments: the large diagonal of `H` would hide errors
         for a in (true, 2) # the scaling also applies to admissible blocks
-            Hnew = axpy!(a, S, deepcopy(H))
+            Hnew = quiet(() -> axpy!(a, S, deepcopy(H)))
             @test norm(Matrix(Hnew) - H_full - a * Matrix(S)) < 1.0e-8 * norm(a * S)
         end
     end
@@ -138,7 +142,7 @@ end
         S = sprand(T, m, n, 0.1)
         # compare the increments: the large diagonal of `H` would hide errors
         for a in (true, 2) # the scaling also applies to admissible blocks
-            Hnew = axpy!(a, S, deepcopy(H))
+            Hnew = quiet(() -> axpy!(a, S, deepcopy(H)))
             @test norm(Matrix(Hnew) - H_full - a * Matrix(S)) < 1.0e-8 * norm(a * S)
         end
     end
@@ -262,6 +266,8 @@ end
     @test HMatrices.rowperm(H) != HMatrices.colperm(H)
     @test norm(Matrix(H + 2I) - (M + 2I)) < 1.0e-8 * norm(M)
     @test norm(Matrix(axpy!(3, I, deepcopy(H))) - (M + 3I)) < 1.0e-8 * norm(M)
+    @test iszero(Matrix(zero(H)))
+    @test norm(Matrix(H) - M) < 1.0e-8 * norm(M) # `zero` does not modify `H`
     # the factors of a product must be clustered consistently
     @test_throws ArgumentError HMatrices.hmul!(deepcopy(H), H, H, 1, 0, HMatrices.PartialACA())
     # operations in the user ordering are not defined on a block
